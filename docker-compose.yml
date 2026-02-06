@@ -169,7 +169,7 @@ services:
       EMAIL_HOST: host.docker.internal
       EMAIL_PORT: "25"
       EMAIL_USE_TLS: "False"
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.beams.org.au}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.example.org}
 
   # Celery beat scheduler
   celery-beat:
@@ -240,7 +240,7 @@ services:
       EMAIL_HOST: host.docker.internal
       EMAIL_PORT: "25"
       EMAIL_USE_TLS: "False"
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.beams.org.au}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.example.org}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.props.rule=Host(`${DOMAIN}`)"
