@@ -7,7 +7,10 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-# Use simple static storage for tests (avoids manifest errors)
+# Use local filesystem storage for tests (avoids S3 credential errors)
+settings.STORAGES["default"] = {
+    "BACKEND": "django.core.files.storage.FileSystemStorage",
+}
 settings.STORAGES["staticfiles"] = {
     "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 }

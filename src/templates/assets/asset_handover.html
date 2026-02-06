@@ -26,34 +26,9 @@
                 <input type="text" id="borrower-search" class="form-input w-full rounded-lg px-4 py-2.5 text-cream mb-2" placeholder="Type to filter users..." autocomplete="off">
                 <select name="borrower" id="borrower" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
                     <option value="">Select a person...</option>
-                    {% if borrower_group_id %}
-                    <optgroup label="External Borrowers">
-                        {% for user in users %}
-                        {% if user.groups.all|length_is:"1" %}
-                        {% for g in user.groups.all %}
-                        {% if g.pk == borrower_group_id %}
-                        <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %}</option>
-                        {% endif %}
-                        {% endfor %}
-                        {% endif %}
-                        {% endfor %}
-                    </optgroup>
-                    <optgroup label="Staff">
-                        {% for user in users %}
-                        {% if not user.groups.all|length_is:"0" %}
-                        {% with is_borrower=False %}
-                        {% for g in user.groups.all %}
-                        {% endfor %}
-                        {% endwith %}
-                        {% endif %}
-                        <option value="{{ user.pk }}">{{ user.get_display_name }} ({{ user.username }})</option>
-                        {% endfor %}
-                    </optgroup>
-                    {% else %}
-                    {% for user in users %}
-                    <option value="{{ user.pk }}">{{ user.get_display_name }} ({{ user.username }})</option>
+                    {% for u in users %}
+                    <option value="{{ u.pk }}">{{ u.get_display_name }}{% if u.organisation %} ({{ u.organisation }}){% endif %} ({{ u.username }})</option>
                     {% endfor %}
-                    {% endif %}
                 </select>
             </div>
 

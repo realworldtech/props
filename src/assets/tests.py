@@ -2203,3 +2203,468 @@ class TestCheckinHomeLocation:
         )
         assert response.status_code == 200
         assert response.context["home_location"] == home
+
+
+# ============================================================
+# SESSION 16 TESTS
+# ============================================================
+
+
+class TestAINameSuggestion:
+    """Test ai_name_suggestion field on AssetImage."""
+
+    def test_field_defaults_empty(self, asset, user):
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        buf = BytesIO()
+        PILImage.new("RGB", (10, 10), "red").save(buf, "JPEG")
+        buf.seek(0)
+        img_file = SimpleUploadedFile(
+            "name_test.jpg", buf.getvalue(), content_type="image/jpeg"
+        )
+        image = AssetImage.objects.create(
+            asset=asset, image=img_file, uploaded_by=user
+        )
+        assert image.ai_name_suggestion == ""
+
+    def test_name_suggestion_saved(self, asset, user):
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        buf = BytesIO()
+        PILImage.new("RGB", (10, 10), "red").save(buf, "JPEG")
+        buf.seek(0)
+        img_file = SimpleUploadedFile(
+            "name_sug.jpg", buf.getvalue(), content_type="image/jpeg"
+        )
+        image = AssetImage.objects.create(
+            asset=asset,
+            image=img_file,
+            uploaded_by=user,
+            ai_name_suggestion="Brass Desk Lamp",
+        )
+        image.refresh_from_db()
+        assert image.ai_name_suggestion == "Brass Desk Lamp"
+
+    @patch("assets.services.ai.analyse_image_data")
+    def test_analyse_task_saves_name_suggestion(
+        self, mock_api, db, asset, user
+    ):
+        from io import BytesIO
+
+        from PIL import Image as PILImage
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        mock_api.return_value = {
+            "description": "A brass lamp",
+            "category_suggestion": "Lighting",
+            "condition": "good",
+            "tags": ["brass"],
+            "ocr_text": "",
+            "name_suggestion": "Vintage Brass Lamp",
+        }
+
+        buf = BytesIO()
+        PILImage.new("RGB", (10, 10), "red").save(buf, "JPEG")
+        buf.seek(0)
+        img_file = SimpleUploadedFile(
+            "ai_name.jpg", buf.getvalue(), content_type="image/jpeg"
+        )
+        image = AssetImage.objects.create(
+            asset=asset, image=img_file, uploaded_by=user
+        )
+
+        with override_settings(ANTHROPIC_API_KEY="test-key"):
+            from assets.tasks import analyse_image
+
+            analyse_image(image.pk)
+
+        image.refresh_from_db()
+        assert image.ai_name_suggestion == "Vintage Brass Lamp"
+
+
+class TestHandoverService:
+    """Test custody handover creates two transactions atomically."""
+
+    def test_handover_creates_two_transactions(self, asset, user, second_user):
+        from assets.services.transactions import create_handover
+
+        asset.checked_out_to = user
+        asset.save()
+
+        third_user = User.objects.create_user(
+            username="newborrower",
+            email="new@example.com",
+            password="testpass123!",
+        )
+
+        checkin_txn, checkout_txn = create_handover(
+            asset, third_user, second_user, notes="Test handover"
+        )
+
+        assert checkin_txn.action == "checkin"
+        assert checkout_txn.action == "checkout"
+        assert checkout_txn.borrower == third_user
+        asset.refresh_from_db()
+        assert asset.checked_out_to == third_user
+
+    def test_handover_with_location(self, asset, user, second_user):
+        from assets.services.transactions import create_handover
+
+        asset.checked_out_to = user
+        asset.save()
+        new_loc = Location.objects.create(name="Handover Spot")
+
+        create_handover(asset, second_user, user, to_location=new_loc)
+
+        asset.refresh_from_db()
+        assert asset.checked_out_to == second_user
+        assert asset.current_location == new_loc
+
+    def test_handover_transaction_count(self, asset, user, second_user):
+        from assets.services.transactions import create_handover
+
+        asset.checked_out_to = user
+        asset.save()
+        before_count = Transaction.objects.count()
+
+        create_handover(asset, second_user, user)
+
+        assert Transaction.objects.count() == before_count + 2
+
+
+class TestBackdating:
+    """Test transaction backdating sets is_backdated and preserves created_at."""
+
+    def test_backdated_checkout(self, asset, second_user, user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.services.transactions import create_checkout
+
+        past = timezone.now() - timedelta(days=7)
+        txn = create_checkout(
+            asset, second_user, user, notes="Backdated", timestamp=past
+        )
+        assert txn.is_backdated is True
+        assert txn.timestamp == past
+        # created_at should be roughly now, not the backdated time
+        assert txn.created_at is not None
+
+    def test_non_backdated_is_false(self, asset, second_user, user):
+        from assets.services.transactions import create_checkout
+
+        txn = create_checkout(asset, second_user, user, notes="Normal")
+        assert txn.is_backdated is False
+
+    def test_backdated_checkin(self, asset, second_user, user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.services.transactions import create_checkin
+
+        asset.checked_out_to = second_user
+        asset.save()
+        past = timezone.now() - timedelta(days=3)
+        loc = Location.objects.create(name="Backdate Loc")
+        txn = create_checkin(asset, loc, user, timestamp=past)
+        assert txn.is_backdated is True
+        assert txn.timestamp == past
+
+    def test_backdated_transfer(self, asset, user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.services.transactions import create_transfer
+
+        past = timezone.now() - timedelta(days=5)
+        loc = Location.objects.create(name="Back Transfer")
+        txn = create_transfer(asset, loc, user, timestamp=past)
+        assert txn.is_backdated is True
+
+    def test_backdated_handover(self, asset, user, second_user):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.services.transactions import create_handover
+
+        asset.checked_out_to = user
+        asset.save()
+        past = timezone.now() - timedelta(days=2)
+        checkin_txn, checkout_txn = create_handover(
+            asset, second_user, user, timestamp=past
+        )
+        assert checkin_txn.is_backdated is True
+        assert checkout_txn.is_backdated is True
+        assert checkin_txn.timestamp == past
+
+
+class TestBorrowerRole:
+    """Test Borrower group and role detection."""
+
+    def test_get_user_role_returns_borrower(self, db, password):
+        from django.contrib.auth.models import Group
+
+        from assets.services.permissions import get_user_role
+
+        group, _ = Group.objects.get_or_create(name="Borrower")
+        borrower_user = User.objects.create_user(
+            username="ext_borrower",
+            email="ext@example.com",
+            password=password,
+        )
+        borrower_user.groups.add(group)
+        assert get_user_role(borrower_user) == "borrower"
+
+    def test_borrower_cannot_login(self, client, db, password):
+        from django.contrib.auth.models import Group
+
+        group, _ = Group.objects.get_or_create(name="Borrower")
+        borrower_user = User.objects.create_user(
+            username="nologin_borrower",
+            email="nologin@example.com",
+            password=password,
+        )
+        borrower_user.groups.add(group)
+
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": "nologin_borrower", "password": password},
+        )
+        # Should not redirect to dashboard; should show borrower_no_access
+        assert response.status_code == 200
+        assert b"borrower" in response.content.lower()
+
+
+class TestCanHandoverPermission:
+    """Test can_handover_asset permission check."""
+
+    def test_admin_can_handover(self, admin_user, asset):
+        from assets.services.permissions import can_handover_asset
+
+        assert can_handover_asset(admin_user, asset) is True
+
+    def test_viewer_cannot_handover(self, viewer_user, asset):
+        from assets.services.permissions import can_handover_asset
+
+        assert can_handover_asset(viewer_user, asset) is False
+
+    def test_member_cannot_handover(self, member_user, asset):
+        from assets.services.permissions import can_handover_asset
+
+        assert can_handover_asset(member_user, asset) is False
+
+    def test_department_manager_can_handover(self, user, asset, department):
+        from assets.services.permissions import can_handover_asset
+
+        department.managers.add(user)
+        assert can_handover_asset(user, asset) is True
+
+
+class TestBulkCheckout:
+    """Test bulk checkout service."""
+
+    def test_bulk_checkout_single(self, asset, second_user, user):
+        from assets.services.bulk import bulk_checkout
+
+        result = bulk_checkout(
+            [asset.pk], second_user.pk, user, notes="Bulk test"
+        )
+        assert result["checked_out"] == 1
+        assert result["skipped"] == []
+        asset.refresh_from_db()
+        assert asset.checked_out_to == second_user
+
+    def test_bulk_checkout_skips_already_checked_out(
+        self, asset, second_user, user
+    ):
+        from assets.services.bulk import bulk_checkout
+
+        asset.checked_out_to = second_user
+        asset.save()
+
+        third_user = User.objects.create_user(
+            username="bulk_target",
+            email="bulk@example.com",
+            password="testpass123!",
+        )
+        result = bulk_checkout([asset.pk], third_user.pk, user)
+        assert result["checked_out"] == 0
+        assert asset.name in result["skipped"]
+
+    def test_bulk_checkout_sets_home_location(self, asset, second_user, user):
+        from assets.services.bulk import bulk_checkout
+
+        assert asset.home_location is None
+        bulk_checkout([asset.pk], second_user.pk, user)
+        asset.refresh_from_db()
+        assert asset.home_location is not None
+
+
+class TestBulkCheckin:
+    """Test bulk checkin service."""
+
+    def test_bulk_checkin_single(self, asset, second_user, user, location):
+        from assets.services.bulk import bulk_checkin
+
+        asset.checked_out_to = second_user
+        asset.save()
+
+        new_loc = Location.objects.create(name="Bulk Return")
+        result = bulk_checkin([asset.pk], new_loc.pk, user)
+        assert result["checked_in"] == 1
+        assert result["skipped"] == []
+        asset.refresh_from_db()
+        assert asset.checked_out_to is None
+        assert asset.current_location == new_loc
+
+    def test_bulk_checkin_skips_not_checked_out(self, asset, user, location):
+        from assets.services.bulk import bulk_checkin
+
+        new_loc = Location.objects.create(name="Bulk Return 2")
+        result = bulk_checkin([asset.pk], new_loc.pk, user)
+        assert result["checked_in"] == 0
+        assert asset.name in result["skipped"]
+
+
+class TestHandoverView:
+    """Test the handover view."""
+
+    def test_handover_renders(self, admin_client, asset, second_user):
+        asset.checked_out_to = second_user
+        asset.save()
+        response = admin_client.get(
+            reverse("assets:asset_handover", args=[asset.pk])
+        )
+        assert response.status_code == 200
+
+    def test_handover_redirects_if_not_checked_out(self, admin_client, asset):
+        response = admin_client.get(
+            reverse("assets:asset_handover", args=[asset.pk])
+        )
+        assert response.status_code == 302
+
+    def test_handover_post(self, admin_client, asset, second_user):
+        third_user = User.objects.create_user(
+            username="handover_target",
+            email="handover@example.com",
+            password="testpass123!",
+        )
+        asset.checked_out_to = second_user
+        asset.save()
+
+        response = admin_client.post(
+            reverse("assets:asset_handover", args=[asset.pk]),
+            {"borrower": third_user.pk, "notes": "Handover test"},
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.checked_out_to == third_user
+
+    def test_viewer_cannot_handover(self, viewer_client, asset, second_user):
+        asset.checked_out_to = second_user
+        asset.save()
+        response = viewer_client.get(
+            reverse("assets:asset_handover", args=[asset.pk])
+        )
+        assert response.status_code == 403
+
+
+class TestBackdatingViews:
+    """Test that checkout/checkin/transfer views accept optional date."""
+
+    def test_checkout_with_backdate(self, admin_client, asset, second_user):
+        response = admin_client.post(
+            reverse("assets:asset_checkout", args=[asset.pk]),
+            {
+                "borrower": second_user.pk,
+                "notes": "Backdated checkout",
+                "action_date": "2026-01-15T10:00",
+            },
+        )
+        assert response.status_code == 302
+        txn = Transaction.objects.filter(
+            asset=asset, action="checkout"
+        ).first()
+        assert txn.is_backdated is True
+
+    def test_checkin_with_backdate(
+        self, admin_client, asset, second_user, location
+    ):
+        asset.checked_out_to = second_user
+        asset.save()
+        new_loc = Location.objects.create(name="Backdate CI Loc")
+        response = admin_client.post(
+            reverse("assets:asset_checkin", args=[asset.pk]),
+            {
+                "location": new_loc.pk,
+                "action_date": "2026-01-20T14:30",
+            },
+        )
+        assert response.status_code == 302
+        txn = Transaction.objects.filter(asset=asset, action="checkin").first()
+        assert txn.is_backdated is True
+
+    def test_transfer_with_backdate(self, admin_client, asset):
+        new_loc = Location.objects.create(name="Backdate TR Loc")
+        response = admin_client.post(
+            reverse("assets:asset_transfer", args=[asset.pk]),
+            {
+                "location": new_loc.pk,
+                "action_date": "2026-01-10T09:00",
+            },
+        )
+        assert response.status_code == 302
+        txn = Transaction.objects.filter(
+            asset=asset, action="transfer"
+        ).first()
+        assert txn.is_backdated is True
+
+
+class TestBulkCheckoutCheckinViews:
+    """Test bulk checkout/checkin via the bulk_actions view."""
+
+    def test_bulk_checkout_view(self, admin_client, asset, second_user):
+        response = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk],
+                "bulk_action": "bulk_checkout",
+                "bulk_borrower": second_user.pk,
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.checked_out_to == second_user
+
+    def test_bulk_checkin_view(
+        self, admin_client, asset, second_user, location
+    ):
+        asset.checked_out_to = second_user
+        asset.save()
+        new_loc = Location.objects.create(name="Bulk CI Dest")
+        response = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk],
+                "bulk_action": "bulk_checkin",
+                "bulk_checkin_location": new_loc.pk,
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.checked_out_to is None
+        assert asset.current_location == new_loc
