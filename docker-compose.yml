@@ -156,6 +156,9 @@ services:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       USE_S3: "True"
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-assets}
       AWS_S3_ENDPOINT_URL: http://garage:3900
       AWS_S3_REGION_NAME: garage
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -218,6 +221,9 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ALLOWED_HOSTS: ${DOMAIN}
       USE_S3: "True"
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-assets}
       AWS_S3_ENDPOINT_URL: http://garage:3900
       AWS_S3_REGION_NAME: garage
       CELERY_BROKER_URL: redis://redis:6379/0
