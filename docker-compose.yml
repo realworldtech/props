@@ -134,6 +134,8 @@ services:
   celery-worker:
     build: .
     profiles: ["dev", "prod"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: >
       sh -c "
       if [ -f /var/lib/garage/credentials.env ]; then
@@ -164,6 +166,10 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EMAIL_HOST: host.docker.internal
+      EMAIL_PORT: "25"
+      EMAIL_USE_TLS: "False"
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.beams.org.au}
 
   # Celery beat scheduler
   celery-beat:
@@ -195,6 +201,8 @@ services:
   web-prod:
     build: .
     profiles: ["prod"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: >
       sh -c "
       if [ -f /var/lib/garage/credentials.env ]; then
@@ -229,6 +237,10 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EMAIL_HOST: host.docker.internal
+      EMAIL_PORT: "25"
+      EMAIL_USE_TLS: "False"
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.beams.org.au}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.props.rule=Host(`${DOMAIN}`)"
