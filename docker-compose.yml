@@ -51,10 +51,6 @@ services:
     volumes:
       - garage_data:/var/lib/garage
       - ./garage/garage.toml:/etc/garage.toml:ro
-    ports:
-      - "3900:3900"
-      - "3902:3902"
-      - "3903:3903"
     environment:
       GARAGE_ALLOW_WORLD_READABLE_SECRETS: "true"
     healthcheck:
@@ -244,6 +240,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      TRAEFIK_CERTIFICATESRESOLVERS_LETSENCRYPT_ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
