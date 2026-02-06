@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Start Stocktake - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div>
+        <h1 class="font-display text-2xl font-bold">Start Stocktake</h1>
+        <p class="text-cream/50 mt-1">Select a location to begin a stocktake session.</p>
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <div>
+                <label for="location" class="block text-sm font-medium text-cream/70 mb-1.5">Location *</label>
+                <select name="location" id="location" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                    <option value="">Select a location...</option>
+                    {% for location in locations %}
+                    <option value="{{ location.pk }}">{{ location.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Start Stocktake
+            </button>
+            <a href="{% url 'assets:stocktake_list' %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

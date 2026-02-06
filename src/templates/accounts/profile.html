@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <h1 class="font-display text-3xl font-bold">Profile</h1>
+
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <dl class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+                <dt class="text-cream/50">Username</dt>
+                <dd class="text-cream mt-0.5">{{ profile_user.username }}</dd>
+            </div>
+            <div>
+                <dt class="text-cream/50">Display Name</dt>
+                <dd class="text-cream mt-0.5">{{ profile_user.get_display_name }}</dd>
+            </div>
+            <div>
+                <dt class="text-cream/50">Email</dt>
+                <dd class="text-cream mt-0.5">{{ profile_user.email }}</dd>
+            </div>
+            <div>
+                <dt class="text-cream/50">Phone</dt>
+                <dd class="text-cream mt-0.5">{{ profile_user.phone_number|default:"-" }}</dd>
+            </div>
+        </dl>
+    </div>
+
+    {% if borrowed_assets %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="font-display text-xl font-semibold mb-4">My Borrowed Items</h2>
+        <div class="space-y-2">
+            {% for asset in borrowed_assets %}
+            <a href="{{ asset.get_absolute_url }}" class="block p-3 rounded-lg hover:bg-white/5 transition-colors text-sm">
+                <span class="text-cream">{{ asset.name }}</span>
+                <span class="text-cream/40 ml-2">{{ asset.barcode }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if recent_transactions %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="font-display text-xl font-semibold mb-4">Recent Activity</h2>
+        <div class="space-y-2">
+            {% for tx in recent_transactions %}
+            <div class="flex items-center gap-3 text-sm">
+                <span class="text-cream/70">{{ tx.get_action_display }}</span>
+                <a href="{{ tx.asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ tx.asset.name }}</a>
+                <span class="text-cream/30 text-xs ml-auto">{{ tx.timestamp|timesince }} ago</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

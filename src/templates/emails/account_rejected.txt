@@ -1,0 +1,7 @@
+{% extends "emails/base_email.txt" %}
+{% block content %}Hello {{ display_name }},
+
+Your registration request has not been approved at this time.
+
+If you believe this is an error, please contact the administrator.
+{% endblock %}

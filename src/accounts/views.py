@@ -1,0 +1,488 @@
+"""Authentication views for PROPS."""
+
+import logging
+
+from django_ratelimit.decorators import ratelimit
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import AuthenticationForm
+from django.core import signing
+from django.db import models
+from django.http import HttpResponseForbidden
+from django.shortcuts import redirect, render
+from django.utils import timezone
+
+from .email import send_branded_email
+from .forms import RegistrationForm
+from .models import CustomUser
+
+logger = logging.getLogger(__name__)
+
+
+@ratelimit(key="ip", rate="5/m", method="POST", block=False)
+def login_view(request):
+    """Handle user login with account state detection (S2.15.3-06)."""
+    if request.user.is_authenticated:
+        return redirect("assets:dashboard")
+
+    was_limited = getattr(request, "limited", False)
+    if was_limited:
+        messages.error(
+            request, "Too many login attempts. Please try again shortly."
+        )
+        return render(
+            request, "registration/login.html", {"form": AuthenticationForm()}
+        )
+
+    if request.method == "POST":
+        form = AuthenticationForm(request, data=request.POST)
+        # Check account states before authentication
+        username = request.POST.get("username", "").strip()
+        if username:
+            try:
+                user = CustomUser.objects.get(
+                    models.Q(username__iexact=username)
+                    | models.Q(email__iexact=username)
+                )
+                if not user.is_active:
+                    if user.rejection_reason:
+                        # S2.15.5-03: Rejected
+                        return render(
+                            request,
+                            "registration/account_state.html",
+                            {"state": "rejected"},
+                        )
+                    elif user.email_verified:
+                        # S2.15.3-04: Pending approval
+                        return render(
+                            request,
+                            "registration/account_state.html",
+                            {"state": "pending_approval"},
+                        )
+                    else:
+                        # S2.15.3-05: Unverified
+                        return render(
+                            request,
+                            "registration/account_state.html",
+                            {
+                                "state": "unverified",
+                                "email": user.email,
+                            },
+                        )
+            except CustomUser.DoesNotExist:
+                pass
+            except CustomUser.MultipleObjectsReturned:
+                pass
+
+        if form.is_valid():
+            user = form.get_user()
+            # Block borrower-role users from logging in
+            if user.groups.filter(name="Borrower").exists():
+                return render(
+                    request,
+                    "registration/account_state.html",
+                    {"state": "borrower_no_access"},
+                )
+            login(request, user)
+            next_url = request.GET.get("next", "assets:dashboard")
+            return redirect(next_url)
+    else:
+        form = AuthenticationForm()
+
+    return render(request, "registration/login.html", {"form": form})
+
+
+@ratelimit(key="ip", rate="10/m", method="POST", block=True)
+def logout_view(request):
+    """Handle user logout."""
+    logout(request)
+    messages.success(request, "You have been logged out.")
+    return redirect("accounts:login")
+
+
+@login_required
+def profile_view(request):
+    """Display user profile."""
+    user = request.user
+    recent_transactions = user.transactions.select_related(
+        "asset", "from_location", "to_location"
+    )[:10]
+    borrowed_assets = user.borrowed_assets.select_related(
+        "category", "current_location"
+    )
+
+    return render(
+        request,
+        "accounts/profile.html",
+        {
+            "profile_user": user,
+            "recent_transactions": recent_transactions,
+            "borrowed_assets": borrowed_assets,
+        },
+    )
+
+
+@ratelimit(key="ip", rate="5/h", method="POST", block=False)
+def register_view(request):
+    """Handle user registration (S2.15.1)."""
+    if request.user.is_authenticated:
+        return redirect("assets:dashboard")
+
+    was_limited = getattr(request, "limited", False)
+    if was_limited:
+        messages.error(
+            request, "Too many registration attempts. Please try again later."
+        )
+        return render(
+            request, "registration/register.html", {"form": RegistrationForm()}
+        )
+
+    if request.method == "POST":
+        form = RegistrationForm(request.POST)
+        if form.is_valid():
+            # S2.15.1-09: If email exists, show same confirmation
+            if getattr(form, "_email_exists", False):
+                return render(
+                    request,
+                    "registration/register_confirm.html",
+                    {"email": form.cleaned_data["email"]},
+                )
+            user = form.save()
+            _send_verification_email(user, request)
+            return render(
+                request,
+                "registration/register_confirm.html",
+                {"email": user.email},
+            )
+    else:
+        form = RegistrationForm()
+
+    return render(request, "registration/register.html", {"form": form})
+
+
+def _send_verification_email(user, request):
+    """Send email verification link (S2.15.2)."""
+    signer = signing.TimestampSigner()
+    token = signer.sign(str(user.pk))
+
+    scheme = "https" if request.is_secure() else "http"
+    domain = request.get_host()
+    verify_url = f"{scheme}://{domain}/accounts/verify-email/{token}/"
+
+    send_branded_email(
+        template_name="verification",
+        context={
+            "display_name": user.get_display_name(),
+            "verify_url": verify_url,
+        },
+        subject=f"{settings.SITE_NAME} - Verify your email address",
+        recipient=user.email,
+    )
+
+
+def verify_email_view(request, token):
+    """Handle email verification link (S2.15.2-05)."""
+    signer = signing.TimestampSigner()
+    try:
+        # Max age 48 hours
+        user_pk = signer.unsign(token, max_age=48 * 60 * 60)
+    except signing.SignatureExpired:
+        return render(
+            request,
+            "registration/verify_email.html",
+            {"status": "expired"},
+        )
+    except signing.BadSignature:
+        return render(
+            request,
+            "registration/verify_email.html",
+            {"status": "invalid"},
+        )
+
+    try:
+        user = CustomUser.objects.get(pk=user_pk)
+    except CustomUser.DoesNotExist:
+        return render(
+            request,
+            "registration/verify_email.html",
+            {"status": "invalid"},
+        )
+
+    if user.email_verified:
+        return render(
+            request,
+            "registration/verify_email.html",
+            {"status": "already_verified"},
+        )
+
+    user.email_verified = True
+    user.save(update_fields=["email_verified"])
+
+    # Notify system admins (S2.15.2-11)
+    _notify_admins_new_pending_user(user, request)
+
+    return render(
+        request,
+        "registration/verify_email.html",
+        {"status": "verified"},
+    )
+
+
+def _notify_admins_new_pending_user(user, request):
+    """Notify system admins about a new user pending approval (S2.15.2-11)."""
+    from django.contrib.auth.models import Group
+
+    try:
+        admin_group = Group.objects.get(name="System Admin")
+        admin_emails = list(
+            admin_group.user_set.filter(is_active=True, email__isnull=False)
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
+    except Group.DoesNotExist:
+        admin_emails = list(
+            CustomUser.objects.filter(is_superuser=True, email__isnull=False)
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
+
+    if not admin_emails:
+        return
+
+    dept_name = (
+        user.requested_department.name if user.requested_department else "None"
+    )
+    scheme = "https" if request.is_secure() else "http"
+    domain = request.get_host()
+    approval_url = f"{scheme}://{domain}/accounts/approval-queue/"
+
+    send_branded_email(
+        template_name="admin_new_pending",
+        context={
+            "display_name": user.get_display_name(),
+            "user_email": user.email,
+            "department_name": dept_name,
+            "approval_url": approval_url,
+        },
+        subject=f"{settings.SITE_NAME} - New user pending approval",
+        recipient=admin_emails,
+    )
+
+
+@ratelimit(key="post:email", rate="3/h", method="POST", block=False)
+def resend_verification_view(request):
+    """Resend verification email (S2.15.2-07)."""
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip().lower()
+        was_limited = getattr(request, "limited", False)
+        if not was_limited and email:
+            try:
+                user = CustomUser.objects.get(
+                    email__iexact=email, email_verified=False
+                )
+                _send_verification_email(user, request)
+            except CustomUser.DoesNotExist:
+                pass  # S2.15.2-07: Don't reveal if email exists
+        # Always show same message
+        return render(
+            request,
+            "registration/resend_verification.html",
+            {"sent": True},
+        )
+    return render(
+        request,
+        "registration/resend_verification.html",
+        {"sent": False},
+    )
+
+
+@login_required
+def approval_queue_view(request):
+    """Display pending user approvals (S2.15.4-01). System Admins only."""
+    from assets.services.permissions import get_user_role
+
+    role = get_user_role(request.user)
+    if role != "system_admin":
+        return HttpResponseForbidden("Permission denied")
+
+    tab = request.GET.get("tab", "pending")
+
+    if tab == "history":
+        users = (
+            CustomUser.objects.filter(
+                models.Q(is_active=True, approved_by__isnull=False)
+                | models.Q(rejection_reason__gt="")
+            )
+            .select_related("requested_department", "approved_by")
+            .order_by("-approved_at")
+        )
+    else:
+        users = (
+            CustomUser.objects.filter(
+                is_active=False,
+                email_verified=True,
+                rejection_reason="",
+            )
+            .select_related("requested_department")
+            .order_by("date_joined")
+        )
+
+    from django.contrib.auth.models import Group
+
+    groups = Group.objects.exclude(name="System Admin").order_by("name")
+    from assets.models import Department
+
+    departments = Department.objects.filter(is_active=True).order_by("name")
+
+    return render(
+        request,
+        "accounts/approval_queue.html",
+        {
+            "users": users,
+            "tab": tab,
+            "groups": groups,
+            "departments": departments,
+        },
+    )
+
+
+@login_required
+def approve_user_view(request, user_pk):
+    """Approve a pending user (S2.15.4-05). System Admins only."""
+    from assets.services.permissions import get_user_role
+
+    role = get_user_role(request.user)
+    if role != "system_admin":
+        return HttpResponseForbidden("Permission denied")
+
+    if request.method != "POST":
+        return redirect("accounts:approval_queue")
+
+    pending_user = CustomUser.objects.get(pk=user_pk)
+
+    from django.contrib.auth.models import Group
+
+    from assets.models import Department
+
+    # Get form data
+    group_name = request.POST.get("role", "Member")
+    dept_ids = request.POST.getlist("departments")
+
+    # 1. Activate user
+    pending_user.is_active = True
+    pending_user.approved_by = request.user
+    pending_user.approved_at = timezone.now()
+    pending_user.rejection_reason = ""  # Clear if reversing a rejection
+    pending_user.save(
+        update_fields=[
+            "is_active",
+            "approved_by",
+            "approved_at",
+            "rejection_reason",
+        ]
+    )
+
+    # 2. Add to group
+    try:
+        group = Group.objects.get(name=group_name)
+        pending_user.groups.clear()
+        pending_user.groups.add(group)
+    except Group.DoesNotExist:
+        pass
+
+    # 3. If Department Manager, add to dept managers M2M
+    if group_name == "Department Manager" and dept_ids:
+        for dept_id in dept_ids:
+            try:
+                dept = Department.objects.get(pk=dept_id)
+                dept.managers.add(pending_user)
+            except Department.DoesNotExist:
+                pass
+
+    # 4. Send approval email (S2.15.4-08)
+    dept_names = (
+        list(
+            Department.objects.filter(pk__in=dept_ids).values_list(
+                "name", flat=True
+            )
+        )
+        if dept_ids
+        else []
+    )
+    _send_approval_email(pending_user, group_name, dept_names)
+
+    messages.success(
+        request,
+        f"{pending_user.get_display_name()} has been approved as {group_name}.",
+    )
+    return redirect("accounts:approval_queue")
+
+
+@login_required
+def reject_user_view(request, user_pk):
+    """Reject a pending user (S2.15.5-01). System Admins only."""
+    from assets.services.permissions import get_user_role
+
+    role = get_user_role(request.user)
+    if role != "system_admin":
+        return HttpResponseForbidden("Permission denied")
+
+    if request.method != "POST":
+        return redirect("accounts:approval_queue")
+
+    pending_user = CustomUser.objects.get(pk=user_pk)
+    reason = request.POST.get("rejection_reason", "").strip()
+    if not reason:
+        messages.error(request, "A rejection reason is required.")
+        return redirect("accounts:approval_queue")
+
+    pending_user.rejection_reason = reason
+    pending_user.approved_by = request.user
+    pending_user.approved_at = timezone.now()
+    pending_user.is_active = False
+    pending_user.save(
+        update_fields=[
+            "rejection_reason",
+            "approved_by",
+            "approved_at",
+            "is_active",
+        ]
+    )
+
+    # Send rejection email (S2.15.5-02)
+    _send_rejection_email(pending_user)
+
+    messages.success(
+        request,
+        f"{pending_user.get_display_name()}'s registration has been rejected.",
+    )
+    return redirect("accounts:approval_queue")
+
+
+def _send_approval_email(user, role_name, dept_names):
+    """Send approval notification to user (S2.15.4-08)."""
+    send_branded_email(
+        template_name="account_approved",
+        context={
+            "display_name": user.get_display_name(),
+            "role_name": role_name,
+            "dept_names": ", ".join(dept_names) if dept_names else "",
+        },
+        subject=f"{settings.SITE_NAME} - Your account has been approved",
+        recipient=user.email,
+    )
+
+
+def _send_rejection_email(user):
+    """Send rejection notification to user (S2.15.5-02)."""
+    send_branded_email(
+        template_name="account_rejected",
+        context={
+            "display_name": user.get_display_name(),
+        },
+        subject=f"{settings.SITE_NAME} - Your account registration",
+        recipient=user.email,
+    )

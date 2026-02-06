@@ -1,0 +1,27 @@
+{% extends "emails/base_email.html" %}
+{% block title %}Verify your email - {{ site_name }}{% endblock %}
+{% block content %}
+<p style="margin: 0 0 16px; color: #111827; font-size: 16px;">Hello {{ display_name }},</p>
+<p style="margin: 0 0 16px; color: #374151; font-size: 15px;">
+Please verify your email address by clicking the button below:
+</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 0 24px;">
+<tr>
+<td align="center" style="background-color: {{ brand_primary_color }}; border-radius: 6px;">
+<a href="{{ verify_url }}" style="display: inline-block; padding: 12px 24px; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none;">Verify Email Address</a>
+</td>
+</tr>
+</table>
+<p style="margin: 0 0 8px; color: #6b7280; font-size: 13px;">
+Or copy and paste this link into your browser:
+</p>
+<p style="margin: 0 0 16px; color: #6b7280; font-size: 13px; word-break: break-all;">
+{{ verify_url }}
+</p>
+<p style="margin: 0 0 8px; color: #374151; font-size: 14px;">
+This link will expire in 48 hours.
+</p>
+<p style="margin: 0; color: #6b7280; font-size: 13px;">
+If you did not register for an account, you can safely ignore this email.
+</p>
+{% endblock %}

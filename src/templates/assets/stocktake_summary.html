@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Stocktake Summary - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="font-display text-3xl font-bold">Stocktake Summary</h1>
+        <p class="text-cream/50 mt-1">{{ session.location.name }} &middot; {{ session.get_status_display }}</p>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5">
+            <div class="text-cream/50 text-sm">Expected</div>
+            <div class="text-3xl font-bold mt-1 text-cream">{{ total_expected }}</div>
+        </div>
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5">
+            <div class="text-cream/50 text-sm">Confirmed</div>
+            <div class="text-3xl font-bold mt-1 text-emerald-400">{{ confirmed_count }}</div>
+        </div>
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5">
+            <div class="text-cream/50 text-sm">Missing</div>
+            <div class="text-3xl font-bold mt-1 {% if missing_count > 0 %}text-red-400{% else %}text-cream{% endif %}">{{ missing_count }}</div>
+        </div>
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5">
+            <div class="text-cream/50 text-sm">Unexpected</div>
+            <div class="text-3xl font-bold mt-1 {% if unexpected_count > 0 %}text-yellow-400{% else %}text-cream{% endif %}">{{ unexpected_count }}</div>
+        </div>
+    </div>
+
+    {% if missing_assets %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="font-display text-lg font-semibold text-red-400 mb-4">Missing Assets</h2>
+        <div class="space-y-2">
+            {% for asset in missing_assets %}
+            <div class="flex items-center justify-between p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+                <div>
+                    <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                    <span class="text-cream/40 text-xs font-mono ml-2">{{ asset.barcode }}</span>
+                </div>
+                <span class="text-red-400 text-xs">Not found</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if unexpected_assets %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="font-display text-lg font-semibold text-yellow-400 mb-4">Unexpected Assets</h2>
+        <div class="space-y-2">
+            {% for asset in unexpected_assets %}
+            <div class="flex items-center justify-between p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
+                <div>
+                    <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                    <span class="text-cream/40 text-xs font-mono ml-2">{{ asset.barcode }}</span>
+                </div>
+                <span class="text-yellow-400 text-xs">Not expected here</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <dl class="grid grid-cols-2 gap-4 text-sm">
+            <div>
+                <dt class="text-cream/50">Started by</dt>
+                <dd class="text-cream mt-0.5">{{ session.started_by.get_display_name }}</dd>
+            </div>
+            <div>
+                <dt class="text-cream/50">Started</dt>
+                <dd class="text-cream mt-0.5">{{ session.started_at|date:"d M Y H:i" }}</dd>
+            </div>
+            <div>
+                <dt class="text-cream/50">Completed</dt>
+                <dd class="text-cream mt-0.5">{{ session.ended_at|date:"d M Y H:i" }}</dd>
+            </div>
+            {% if session.notes %}
+            <div class="col-span-2">
+                <dt class="text-cream/50">Notes</dt>
+                <dd class="text-cream/70 mt-0.5">{{ session.notes }}</dd>
+            </div>
+            {% endif %}
+        </dl>
+    </div>
+
+    <div class="flex gap-3">
+        <a href="{% url 'assets:stocktake_list' %}" class="bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm transition-colors">Back to Stocktakes</a>
+        <a href="{% url 'assets:location_detail' session.location.pk %}" class="bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm transition-colors">View Location</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Transaction History - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="font-display text-3xl font-bold">Transaction History</h1>
+            <p class="text-cream/50 mt-1">{{ page_obj.paginator.count }} transaction{{ page_obj.paginator.count|pluralize }}</p>
+        </div>
+
+        <!-- Action filter -->
+        <div class="flex gap-2 flex-wrap">
+            <a href="{% url 'assets:transaction_list' %}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if not current_action %}bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30{% else %}bg-stage-700 text-cream/50 hover:text-cream{% endif %}">All</a>
+            {% for value, label in actions %}
+            <a href="?action={{ value }}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if current_action == value %}bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30{% else %}bg-stage-700 text-cream/50 hover:text-cream{% endif %}">{{ label }}</a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- User and Date Range Filters -->
+    <form method="get" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4">
+        <div class="flex flex-wrap items-end gap-4">
+            {% if current_action %}
+            <input type="hidden" name="action" value="{{ current_action }}">
+            {% endif %}
+            <div>
+                <label class="block text-xs text-cream/50 mb-1">User</label>
+                <select name="user" class="form-input rounded-lg px-3 py-1.5 text-sm text-cream bg-stage-700 border border-white/10">
+                    <option value="">All Users</option>
+                    {% for u in transaction_users %}
+                    <option value="{{ u.pk }}" {% if current_user_id == u.pk|stringformat:"d" %}selected{% endif %}>{{ u.get_display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-cream/50 mb-1">From Date</label>
+                <input type="date" name="date_from" value="{{ date_from }}" class="form-input rounded-lg px-3 py-1.5 text-sm text-cream bg-stage-700 border border-white/10">
+            </div>
+            <div>
+                <label class="block text-xs text-cream/50 mb-1">To Date</label>
+                <input type="date" name="date_to" value="{{ date_to }}" class="form-input rounded-lg px-3 py-1.5 text-sm text-cream bg-stage-700 border border-white/10">
+            </div>
+            <div>
+                <button type="submit" class="bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30 px-4 py-1.5 rounded-lg text-sm hover:bg-spotlight-500/30 transition-colors">Filter</button>
+            </div>
+            {% if current_user_id or date_from or date_to %}
+            <div>
+                <a href="{% url 'assets:transaction_list' %}{% if current_action %}?action={{ current_action }}{% endif %}" class="text-cream/50 hover:text-cream text-sm transition-colors">Clear filters</a>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if page_obj.object_list %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-white/5">
+                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Time</th>
+                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Action</th>
+                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Asset</th>
+                        <th class="text-left px-4 py-3 text-cream/50 font-medium hidden sm:table-cell">By</th>
+                        <th class="text-left px-4 py-3 text-cream/50 font-medium hidden md:table-cell">Details</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for txn in page_obj %}
+                    <tr class="hover:bg-white/[0.02] transition-colors">
+                        <td class="px-4 py-3 text-cream/40 whitespace-nowrap">{{ txn.timestamp|timesince }} ago{% if txn.is_backdated %} <span class="text-amber-400/60 text-xs">(backdated)</span>{% endif %}</td>
+                        <td class="px-4 py-3">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
+                                {% if txn.action == 'checkout' %}bg-purple-500/10 text-purple-400
+                                {% elif txn.action == 'checkin' %}bg-emerald-500/10 text-emerald-400
+                                {% elif txn.action == 'transfer' %}bg-blue-500/10 text-blue-400
+                                {% elif txn.action == 'handover' %}bg-amber-500/10 text-amber-400
+                                {% else %}bg-stage-600 text-cream/50{% endif %}">
+                                {{ txn.get_action_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <a href="{{ txn.asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ txn.asset.name }}</a>
+                        </td>
+                        <td class="px-4 py-3 text-cream/50 hidden sm:table-cell">{% if txn.user %}{{ txn.user.get_display_name }}{% else %}-{% endif %}</td>
+                        <td class="px-4 py-3 text-cream/40 text-xs hidden md:table-cell">
+                            {% if txn.action == 'checkout' and txn.borrower %}
+                                To: {{ txn.borrower.get_display_name }}
+                            {% elif txn.action == 'checkin' and txn.to_location %}
+                                At: {{ txn.to_location }}
+                            {% elif txn.action == 'transfer' %}
+                                {% if txn.from_location %}{{ txn.from_location }}{% endif %}
+                                {% if txn.from_location and txn.to_location %} &rarr; {% endif %}
+                                {% if txn.to_location %}{{ txn.to_location }}{% endif %}
+                            {% endif %}
+                            {% if txn.notes %}
+                            <span class="text-cream/30 ml-2">&middot; {{ txn.notes|truncatewords:8 }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <nav class="flex justify-center gap-2">
+        {% if page_obj.has_previous %}
+        <a href="?{% if current_action %}action={{ current_action }}&{% endif %}{% if current_user_id %}user={{ current_user_id }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.previous_page_number }}" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-sm transition-colors">Previous</a>
+        {% endif %}
+        <span class="px-4 py-2 text-cream/50 text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="?{% if current_action %}action={{ current_action }}&{% endif %}{% if current_user_id %}user={{ current_user_id }}&{% endif %}{% if date_from %}date_from={{ date_from }}&{% endif %}{% if date_to %}date_to={{ date_to }}&{% endif %}page={{ page_obj.next_page_number }}" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-sm transition-colors">Next</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-16">
+        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <h3 class="text-lg font-medium text-cream/70">No transactions yet</h3>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

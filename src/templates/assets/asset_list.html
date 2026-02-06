@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block title %}Assets - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="font-display text-3xl font-bold">Assets</h1>
+            <p class="text-cream/50 mt-1">{{ page_obj.paginator.count }} asset{{ page_obj.paginator.count|pluralize }}</p>
+        </div>
+        <div class="flex gap-3">
+            <a href="{% url 'assets:export_assets' %}?{{ request.GET.urlencode }}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Export
+            </a>
+            <a href="{% url 'assets:asset_create' %}" class="flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Create Asset
+            </a>
+        </div>
+    </div>
+
+    <!-- Search and Filters -->
+    <form method="get" class="space-y-4" id="filter-form">
+        <div class="flex gap-3">
+            <div class="relative flex-1">
+                <svg class="w-4 h-4 text-cream/30 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search name, description, barcode, tags..."
+                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-cream">
+            </div>
+            <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+                Search
+            </button>
+        </div>
+
+        <div class="flex flex-wrap gap-3 items-center">
+            <select name="status" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Statuses</option>
+                {% for value, label in statuses %}
+                <option value="{{ value }}" {% if value == current_status %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="department" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Departments</option>
+                {% for dept in departments %}
+                <option value="{{ dept.pk }}" {% if request.GET.department == dept.pk|stringformat:"d" %}selected{% endif %}>{{ dept.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="category" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat.pk }}" {% if request.GET.category == cat.pk|stringformat:"d" %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="location" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Locations</option>
+                <option value="checked_out" {% if request.GET.location == "checked_out" %}selected{% endif %}>Checked Out</option>
+                {% for loc in locations %}
+                <option value="{{ loc.pk }}" {% if request.GET.location == loc.pk|stringformat:"d" %}selected{% endif %}>{{ loc.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="tag" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Tags</option>
+                {% for t in tags %}
+                <option value="{{ t.pk }}" {% if request.GET.tag == t.pk|stringformat:"d" %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="condition" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Conditions</option>
+                {% for value, label in conditions %}
+                <option value="{{ value }}" {% if request.GET.condition == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+
+            {% if q or request.GET.department or request.GET.category or request.GET.location or request.GET.tag or request.GET.condition or current_status != "active" %}
+            <a href="{% url 'assets:asset_list' %}" class="text-cream/40 hover:text-cream text-sm transition-colors">Clear filters</a>
+            {% endif %}
+        </div>
+
+        <!-- View controls: grid/list toggle + page size -->
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <!-- View mode toggle -->
+                <input type="hidden" name="view" id="view-input" value="{{ view_mode }}">
+                <button type="submit" onclick="document.getElementById('view-input').value='list'" class="p-2 rounded-lg transition-colors {% if view_mode == 'list' %}bg-stage-700 text-cream{% else %}text-cream/40 hover:text-cream{% endif %}" title="List view">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                </button>
+                <button type="submit" onclick="document.getElementById('view-input').value='grid'" class="p-2 rounded-lg transition-colors {% if view_mode == 'grid' %}bg-stage-700 text-cream{% else %}text-cream/40 hover:text-cream{% endif %}" title="Grid view">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                </button>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-cream/40 text-sm">Show</span>
+                <select name="page_size" class="form-input rounded-lg px-2 py-1 text-cream text-sm" onchange="this.form.submit()">
+                    <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+                    <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+                </select>
+                <span class="text-cream/40 text-sm">per page</span>
+            </div>
+        </div>
+    </form>
+
+    {% if page_obj.object_list %}
+
+    <form method="post" action="{% url 'assets:bulk_actions' %}" id="bulk-form">
+    {% csrf_token %}
+    <input type="hidden" name="select_all_matching" id="select-all-matching" value="0">
+    <input type="hidden" name="filter_status" value="{{ current_status }}">
+    <input type="hidden" name="filter_q" value="{{ q }}">
+    <input type="hidden" name="filter_department" value="{{ request.GET.department|default:'' }}">
+    <input type="hidden" name="filter_category" value="{{ request.GET.category|default:'' }}">
+    <input type="hidden" name="filter_location" value="{{ request.GET.location|default:'' }}">
+    <input type="hidden" name="filter_tag" value="{{ request.GET.tag|default:'' }}">
+    <input type="hidden" name="filter_condition" value="{{ request.GET.condition|default:'' }}">
+
+    <!-- Select All Matching Banner (V10) -->
+    <div id="select-all-banner" class="hidden bg-spotlight-500/10 border border-spotlight-500/30 rounded-lg p-3 mb-4 text-center text-sm">
+        <span id="banner-page-text">All <strong>{{ page_obj.object_list|length }}</strong> items on this page are selected.</span>
+        <span id="banner-all-text" class="hidden">All <strong>{{ page_obj.paginator.count }}</strong> matching items across all pages are selected.</span>
+        {% if page_obj.paginator.num_pages > 1 %}
+        <button type="button" id="select-all-matching-btn" class="ml-2 text-spotlight-400 hover:text-spotlight-300 underline font-medium" onclick="toggleSelectAllMatching()">
+            Select all {{ page_obj.paginator.count }} matching items
+        </button>
+        <button type="button" id="clear-all-matching-btn" class="ml-2 text-cream/50 hover:text-cream underline font-medium hidden" onclick="clearSelectAllMatching()">
+            Select only this page
+        </button>
+        {% endif %}
+    </div>
+
+    {% if view_mode == 'grid' %}
+    <!-- Grid View -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {% for asset in page_obj %}
+        <div class="relative bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden card-hover group">
+            <div class="absolute top-2 left-2 z-10">
+                <input type="checkbox" name="asset_ids" value="{{ asset.pk }}" class="bulk-checkbox w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0">
+            </div>
+            <a href="{{ asset.get_absolute_url }}">
+                <div class="aspect-square bg-stage-700 flex items-center justify-center overflow-hidden">
+                    {% if asset.primary_image %}
+                    <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="{{ asset.name }}">
+                    {% else %}
+                    <svg class="w-10 h-10 text-cream/15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    {% endif %}
+                </div>
+                <div class="p-3">
+                    <div class="text-cream text-sm font-medium truncate">{{ asset.name }}</div>
+                    <div class="text-cream/40 text-xs font-mono mt-0.5">{{ asset.barcode }}</div>
+                    <div class="flex items-center justify-between mt-2">
+                        <span class="inline-block px-2 py-0.5 rounded-full text-[10px]
+                            {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
+                            {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
+                            {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
+                            {% else %}bg-stage-600/50 text-cream/50{% endif %}">
+                            {{ asset.get_status_display }}
+                        </span>
+                        {% if asset.is_checked_out %}
+                        <span class="text-blue-400 text-[10px]">Checked out</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <!-- List View -->
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-cream/50 border-b border-white/10">
+                        <th class="py-3 px-4 w-10"><input type="checkbox" id="select-all" class="w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0"></th>
+                        <th class="text-left py-3 px-4 w-12"></th>
+                        <th class="text-left py-3 px-4">Name</th>
+                        <th class="text-left py-3 px-4 hidden md:table-cell">Barcode</th>
+                        <th class="text-left py-3 px-4 hidden lg:table-cell">Category</th>
+                        <th class="text-left py-3 px-4 hidden lg:table-cell">Location</th>
+                        <th class="text-left py-3 px-4 hidden md:table-cell">Condition</th>
+                        <th class="text-left py-3 px-4">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for asset in page_obj %}
+                    <tr class="hover:bg-white/[0.03] transition-colors">
+                        <td class="py-2.5 px-4"><input type="checkbox" name="asset_ids" value="{{ asset.pk }}" class="bulk-checkbox w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0"></td>
+                        <td class="py-2.5 px-4">
+                            <div class="w-10 h-10 rounded-lg bg-stage-700 flex items-center justify-center text-cream/30 overflow-hidden">
+                                {% if asset.primary_image %}
+                                <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover" alt="">
+                                {% else %}
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="py-2.5 px-4">
+                            <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors font-medium">{{ asset.name }}</a>
+                            {% if asset.tags.all %}
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                {% for tag in asset.tags.all %}
+                                <span class="text-[10px] px-1.5 py-0.5 rounded text-cream/70
+    {% if tag.color == 'red' %}bg-red-500/20
+    {% elif tag.color == 'orange' %}bg-orange-500/20
+    {% elif tag.color == 'yellow' %}bg-yellow-500/20
+    {% elif tag.color == 'green' %}bg-green-500/20
+    {% elif tag.color == 'blue' %}bg-blue-500/20
+    {% elif tag.color == 'purple' %}bg-purple-500/20
+    {% elif tag.color == 'pink' %}bg-pink-500/20
+    {% else %}bg-stage-600{% endif %}">{{ tag.name }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="py-2.5 px-4 hidden md:table-cell text-cream/50 font-mono text-xs">{{ asset.barcode }}</td>
+                        <td class="py-2.5 px-4 hidden lg:table-cell text-cream/60">{{ asset.category|default:"-" }}</td>
+                        <td class="py-2.5 px-4 hidden lg:table-cell text-cream/60">
+                            {% if asset.is_checked_out %}
+                            <span class="text-blue-400">{{ asset.checked_out_to.get_display_name }}</span>
+                            {% else %}
+                            {{ asset.current_location|default:"-" }}
+                            {% endif %}
+                        </td>
+                        <td class="py-2.5 px-4 hidden md:table-cell">
+                            <span class="inline-block px-2 py-0.5 rounded-full text-xs
+                                {% if asset.condition == 'excellent' %}bg-emerald-500/20 text-emerald-400
+                                {% elif asset.condition == 'good' %}bg-green-500/20 text-green-400
+                                {% elif asset.condition == 'fair' %}bg-yellow-500/20 text-yellow-400
+                                {% elif asset.condition == 'poor' %}bg-orange-500/20 text-orange-400
+                                {% else %}bg-red-500/20 text-red-400{% endif %}">
+                                {{ asset.get_condition_display }}
+                            </span>
+                        </td>
+                        <td class="py-2.5 px-4">
+                            <span class="inline-block px-2 py-0.5 rounded-full text-xs
+                                {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
+                                {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
+                                {% elif asset.status == 'retired' %}bg-gray-500/20 text-gray-400
+                                {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
+                                {% else %}bg-stage-600/50 text-cream/50{% endif %}">
+                                {{ asset.get_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Bulk Actions Bar -->
+    <div id="bulk-bar" class="hidden fixed bottom-0 left-0 right-0 bg-stage-900 border-t border-white/10 p-4 z-50">
+        <div class="max-w-7xl mx-auto flex items-center gap-4">
+            <span id="bulk-count" class="text-cream/70 text-sm">0 selected</span>
+            <select name="bulk_action" id="bulk-action-select" class="form-input rounded-lg px-3 py-2 text-cream text-sm">
+                <option value="">Choose action...</option>
+                <option value="transfer">Transfer to location</option>
+                <option value="status_change">Change status</option>
+                <option value="bulk_edit">Edit Category/Location</option>
+                <option value="bulk_checkout">Bulk Check Out</option>
+                <option value="bulk_checkin">Bulk Check In</option>
+                <option value="print_labels">Print labels</option>
+            </select>
+            <select name="location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-location">
+                <option value="">Select location...</option>
+                {% for loc in locations %}
+                <option value="{{ loc.pk }}">{{ loc }}</option>
+                {% endfor %}
+            </select>
+            <select name="new_status" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-status">
+                <option value="">Select status...</option>
+                <option value="active">Active</option>
+                <option value="retired">Retired</option>
+            </select>
+            <select name="edit_category" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-edit-category">
+                <option value="">Category (no change)</option>
+                {% for cat in categories %}
+                <option value="{{ cat.pk }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="edit_location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-edit-location">
+                <option value="">Location (no change)</option>
+                {% for loc in locations %}
+                <option value="{{ loc.pk }}">{{ loc }}</option>
+                {% endfor %}
+            </select>
+            <select name="bulk_borrower" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-borrower">
+                <option value="">Select borrower...</option>
+                {% for u in active_users %}
+                <option value="{{ u.pk }}">{{ u.get_display_name }}{% if u.organisation %} ({{ u.organisation }}){% endif %}</option>
+                {% endfor %}
+            </select>
+            <select name="bulk_checkin_location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-checkin-location">
+                <option value="">Select location...</option>
+                {% for loc in locations %}
+                <option value="{{ loc.pk }}">{{ loc }}</option>
+                {% endfor %}
+            </select>
+            <input type="datetime-local" name="bulk_action_date" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-action-date" title="Optional: backdate action">
+            <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-semibold" onclick="return confirm('Apply this action to the selected assets?')">Apply</button>
+        </div>
+    </div>
+    </form>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="flex items-center justify-between">
+        <div class="text-cream/50 text-sm">
+            Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </div>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Previous</a>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <span class="px-3 py-1.5 rounded-lg bg-spotlight-500/20 text-spotlight-400 text-sm border border-spotlight-500/30">{{ num }}</span>
+                {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/50 hover:text-cream text-sm transition-colors">{{ num }}</a>
+                {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/50 hover:text-cream text-sm transition-colors">{{ num }}</a>
+                {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
+                <span class="px-1 py-1.5 text-cream/30 text-sm">...</span>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-16">
+        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+        </svg>
+        <h3 class="text-lg font-medium text-cream/70 mb-2">No assets found</h3>
+        <p class="text-cream/40 text-sm mb-6">{% if q or request.GET.department or request.GET.category %}Try adjusting your filters{% else %}Start by capturing your first asset{% endif %}</p>
+        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            Quick Capture
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const selectAll = document.getElementById('select-all');
+    const bulkBar = document.getElementById('bulk-bar');
+    const bulkCount = document.getElementById('bulk-count');
+    const actionSelect = document.getElementById('bulk-action-select');
+    const locationSelect = document.getElementById('bulk-location');
+    const statusSelect = document.getElementById('bulk-status');
+    const editCategorySelect = document.getElementById('bulk-edit-category');
+    const editLocationSelect = document.getElementById('bulk-edit-location');
+    const selectAllBanner = document.getElementById('select-all-banner');
+    const selectAllMatchingInput = document.getElementById('select-all-matching');
+
+    function getCheckboxes() {
+        return document.querySelectorAll('.bulk-checkbox');
+    }
+
+    function updateBulkBar() {
+        const checkboxes = getCheckboxes();
+        const checked = document.querySelectorAll('.bulk-checkbox:checked');
+        const allOnPageChecked = checkboxes.length > 0 && checked.length === checkboxes.length;
+
+        if (checked.length > 0) {
+            bulkBar.classList.remove('hidden');
+            if (selectAllMatchingInput.value === '1') {
+                bulkCount.textContent = '{{ page_obj.paginator.count }} selected (all matching)';
+            } else {
+                bulkCount.textContent = checked.length + ' selected';
+            }
+        } else {
+            bulkBar.classList.add('hidden');
+            clearSelectAllMatching();
+        }
+
+        // Show/hide select-all-matching banner
+        if (selectAllBanner) {
+            if (allOnPageChecked && checked.length > 0) {
+                selectAllBanner.classList.remove('hidden');
+            } else {
+                selectAllBanner.classList.add('hidden');
+                clearSelectAllMatching();
+            }
+        }
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            getCheckboxes().forEach(function(cb) { cb.checked = selectAll.checked; });
+            updateBulkBar();
+        });
+    }
+
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('bulk-checkbox')) {
+            updateBulkBar();
+            if (selectAll && !e.target.checked) {
+                selectAll.checked = false;
+            }
+        }
+    });
+
+    var bulkBorrowerSelect = document.getElementById('bulk-borrower');
+    var bulkCheckinLocationSelect = document.getElementById('bulk-checkin-location');
+    var bulkActionDateInput = document.getElementById('bulk-action-date');
+
+    if (actionSelect) {
+        actionSelect.addEventListener('change', function() {
+            locationSelect.classList.add('hidden');
+            statusSelect.classList.add('hidden');
+            editCategorySelect.classList.add('hidden');
+            editLocationSelect.classList.add('hidden');
+            bulkBorrowerSelect.classList.add('hidden');
+            bulkCheckinLocationSelect.classList.add('hidden');
+            bulkActionDateInput.classList.add('hidden');
+            if (this.value === 'transfer') {
+                locationSelect.classList.remove('hidden');
+            } else if (this.value === 'status_change') {
+                statusSelect.classList.remove('hidden');
+            } else if (this.value === 'bulk_edit') {
+                editCategorySelect.classList.remove('hidden');
+                editLocationSelect.classList.remove('hidden');
+            } else if (this.value === 'bulk_checkout') {
+                bulkBorrowerSelect.classList.remove('hidden');
+                bulkActionDateInput.classList.remove('hidden');
+                // Lazy-load borrower list
+                if (bulkBorrowerSelect.options.length <= 1) {
+                    fetch('{% url "assets:asset_checkout" 0 %}'.replace('/0/', '/borrowers/'))
+                        .catch(function() {});
+                }
+            } else if (this.value === 'bulk_checkin') {
+                bulkCheckinLocationSelect.classList.remove('hidden');
+                bulkActionDateInput.classList.remove('hidden');
+            }
+        });
+    }
+
+    // V10: Select all matching across pages
+    window.toggleSelectAllMatching = function() {
+        selectAllMatchingInput.value = '1';
+        document.getElementById('banner-page-text').classList.add('hidden');
+        document.getElementById('banner-all-text').classList.remove('hidden');
+        var selectBtn = document.getElementById('select-all-matching-btn');
+        var clearBtn = document.getElementById('clear-all-matching-btn');
+        if (selectBtn) selectBtn.classList.add('hidden');
+        if (clearBtn) clearBtn.classList.remove('hidden');
+        updateBulkBar();
+    };
+
+    window.clearSelectAllMatching = function() {
+        selectAllMatchingInput.value = '0';
+        document.getElementById('banner-page-text').classList.remove('hidden');
+        document.getElementById('banner-all-text').classList.add('hidden');
+        var selectBtn = document.getElementById('select-all-matching-btn');
+        var clearBtn = document.getElementById('clear-all-matching-btn');
+        if (selectBtn) selectBtn.classList.remove('hidden');
+        if (clearBtn) clearBtn.classList.add('hidden');
+        updateBulkBar();
+    };
+})();
+</script>
+{% endblock %}

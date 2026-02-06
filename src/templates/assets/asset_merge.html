@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Merge Assets - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <div>
+        <h1 class="font-display text-2xl font-bold">Merge Assets</h1>
+        <p class="text-cream/50 mt-1">Select the primary asset. All others will be merged into it.</p>
+    </div>
+
+    <form method="post" action="{% url 'assets:asset_merge_execute' %}">
+        {% csrf_token %}
+        <input type="hidden" name="asset_ids" value="{{ asset_ids }}">
+
+        <div class="space-y-3 mb-6">
+            {% for asset in assets %}
+            <label class="flex items-start gap-4 bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 cursor-pointer hover:border-spotlight-500/30 transition-colors">
+                <input type="radio" name="primary_id" value="{{ asset.pk }}" class="mt-1" {% if forloop.first %}checked{% endif %}>
+                <div class="flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-cream font-medium">{{ asset.name }}</span>
+                        <span class="text-xs font-mono text-cream/40">{{ asset.barcode }}</span>
+                        <span class="inline-block px-2 py-0.5 rounded-full text-xs
+                            {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
+                            {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
+                            {% else %}bg-stage-600 text-cream/50{% endif %}">
+                            {{ asset.get_status_display }}
+                        </span>
+                    </div>
+                    <div class="text-sm text-cream/40 mt-1">
+                        {% if asset.category %}{{ asset.category.name }} &middot; {% endif %}
+                        {% if asset.current_location %}{{ asset.current_location }} &middot; {% endif %}
+                        {{ asset.images.count }} image{{ asset.images.count|pluralize }}
+                    </div>
+                    {% if asset.description %}
+                    <p class="text-xs text-cream/30 mt-1 line-clamp-2">{{ asset.description }}</p>
+                    {% endif %}
+                </div>
+            </label>
+            {% endfor %}
+        </div>
+
+        <div class="bg-spotlight-500/10 border border-spotlight-500/20 rounded-xl p-4 mb-6">
+            <p class="text-spotlight-300 text-sm">
+                The selected primary asset will receive all images, NFC tags, transactions, and tags from the other assets.
+                Non-primary assets will be marked as disposed.
+            </p>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Merge Assets
+            </button>
+            <a href="{% url 'assets:asset_list' %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

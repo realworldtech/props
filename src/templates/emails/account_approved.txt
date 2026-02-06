@@ -1,0 +1,10 @@
+{% extends "emails/base_email.txt" %}
+{% block content %}Hello {{ display_name }},
+
+Your account has been approved!
+
+Role: {{ role_name }}
+{% if dept_names %}Department(s): {{ dept_names }}
+{% endif %}
+You can now log in to your account.
+{% endblock %}

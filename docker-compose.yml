@@ -1,0 +1,264 @@
+services:
+  db:
+    image: postgres:17
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: props
+      POSTGRES_USER: props
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-props_dev_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U props"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Garage secrets generator (runs once to create RPC secrets)
+  garage-secrets:
+    image: alpine:latest
+    volumes:
+      - garage_data:/var/lib/garage
+    entrypoint: >
+      /bin/sh -c "
+      if [ ! -f /var/lib/garage/rpc_secret ]; then
+        echo 'Generating Garage secrets...'
+        apk add --no-cache openssl >/dev/null 2>&1
+        openssl rand -hex 32 > /var/lib/garage/rpc_secret
+        openssl rand -hex 32 > /var/lib/garage/admin_token
+        chmod 644 /var/lib/garage/rpc_secret /var/lib/garage/admin_token
+        echo 'Secrets generated'
+      else
+        echo 'Secrets already exist'
+      fi
+      "
+
+  # Garage S3-compatible object storage
+  garage:
+    image: dxflrs/garage:v1.0.1
+    depends_on:
+      garage-secrets:
+        condition: service_completed_successfully
+    volumes:
+      - garage_data:/var/lib/garage
+      - ./garage/garage.toml:/etc/garage.toml:ro
+    ports:
+      - "3900:3900"
+      - "3902:3902"
+      - "3903:3903"
+    environment:
+      GARAGE_ALLOW_WORLD_READABLE_SECRETS: "true"
+    healthcheck:
+      test: ["CMD", "/garage", "-c", "/etc/garage.toml", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.media.rule=Host(`${DOMAIN}`) && PathPrefix(`/media/`)"
+      - "traefik.http.routers.media.entrypoints=websecure"
+      - "traefik.http.routers.media.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.media.priority=100"
+      - "traefik.http.routers.media.middlewares=media-strip,media-host"
+      - "traefik.http.middlewares.media-strip.stripprefix.prefixes=/media"
+      - "traefik.http.middlewares.media-host.headers.customrequestheaders.Host=assets.web.garage.localhost"
+      - "traefik.http.services.media.loadbalancer.server.port=3902"
+    networks:
+      - default
+      - traefik_public
+
+  # Garage initialization (creates bucket and credentials)
+  garage-init:
+    build:
+      context: ./garage
+      dockerfile: Dockerfile.init
+    depends_on:
+      garage:
+        condition: service_healthy
+    volumes:
+      - garage_data:/var/lib/garage
+      - ./garage/garage.toml:/etc/garage.toml:ro
+    environment:
+      BUCKET_NAME: ${S3_BUCKET_NAME:-assets}
+      KEY_NAME: ${S3_KEY_NAME:-assets-key}
+      CREDENTIALS_FILE: /var/lib/garage/credentials.env
+    restart: "no"
+
+  # Dev profile - direct access on port 8003 with hot reload
+  web:
+    build: .
+    profiles: ["dev"]
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        echo 'Loading S3 credentials...';
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      gunicorn --bind 0.0.0.0:8000 --workers 2 --reload props.wsgi:application
+      "
+    volumes:
+      - .:/app
+      - static_volume:/app/src/staticfiles
+      - garage_data:/var/lib/garage:ro
+    ports:
+      - "8003:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+    environment:
+      DEBUG: "True"
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      USE_S3: "True"
+      AWS_S3_ENDPOINT_URL: http://garage:3900
+      AWS_S3_REGION_NAME: garage
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  # Celery worker
+  celery-worker:
+    build: .
+    profiles: ["dev", "prod"]
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      celery -A props worker --loglevel=info
+      "
+    volumes:
+      - .:/app
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      USE_S3: "True"
+      AWS_S3_ENDPOINT_URL: http://garage:3900
+      AWS_S3_REGION_NAME: garage
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  # Celery beat scheduler
+  celery-beat:
+    build: .
+    profiles: ["dev", "prod"]
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      celery -A props beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      "
+    volumes:
+      - .:/app
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+  # Prod profile - behind Traefik
+  web-prod:
+    build: .
+    profiles: ["prod"]
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      gunicorn --bind 0.0.0.0:8000 --workers 4 props.wsgi:application
+      "
+    volumes:
+      - static_volume:/app/src/staticfiles
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+    environment:
+      DEBUG: "False"
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
+      SECRET_KEY: ${SECRET_KEY}
+      ALLOWED_HOSTS: ${DOMAIN}
+      USE_S3: "True"
+      AWS_S3_ENDPOINT_URL: http://garage:3900
+      AWS_S3_REGION_NAME: garage
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.props.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.props.entrypoints=websecure"
+      - "traefik.http.routers.props.tls.certresolver=letsencrypt"
+      - "traefik.http.services.props.loadbalancer.server.port=8000"
+    networks:
+      - default
+      - traefik_public
+
+  # Traefik reverse proxy - prod only
+  traefik:
+    image: traefik:v3.6
+    profiles: ["prod"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - default
+      - traefik_public
+
+networks:
+  traefik_public:
+    external: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_volume:
+  garage_data:
+  traefik_certs:

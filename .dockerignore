@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Specs and docs
+specs/
+docs/
+
+# Implementation tracking
+.impl-tracker*
+
+# Old codebase
+_old/
+
+# Temp files
+.mermaid-tmp/
+
+# Claude Code
+.claude/
+
+# Docker (avoid recursive copies)
+docker-compose.yml
+Dockerfile
+
+# Media (runtime data, not build artifact)
+src/media/
+
+# Traefik config
+traefik/

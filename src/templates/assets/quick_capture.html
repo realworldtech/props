@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Quick Capture - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div class="flex items-center gap-2 text-sm text-cream/50 mb-4">
+        <a href="{% url 'assets:dashboard' %}" class="hover:text-cream transition-colors">Dashboard</a>
+        <span>/</span>
+        <span class="text-cream">Quick Capture</span>
+    </div>
+    <div class="text-center">
+        <h1 class="font-display text-3xl font-bold">Quick Capture</h1>
+        <p class="text-cream/50 mt-1">Rapidly capture assets with minimal info</p>
+    </div>
+
+    {% if just_created %}
+    <!-- Success toast -->
+    <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 animate-slide-down">
+        <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
+            <div>
+                <p class="text-emerald-300 font-medium text-sm">Asset captured!</p>
+                <p class="text-emerald-300/70 text-xs">{{ just_created.name }} &middot; {{ just_created.barcode }}</p>
+            </div>
+        </div>
+        <div class="flex gap-3 mt-3">
+            <a href="{{ just_created.get_absolute_url }}" class="text-emerald-400 text-sm hover:text-emerald-300 transition-colors">View Asset</a>
+            <a href="{% url 'assets:quick_capture' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">Capture Another</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="space-y-5">
+        {% csrf_token %}
+
+        <!-- Camera / Photo Upload -->
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <label class="block text-center cursor-pointer" id="photo-label">
+                <div id="photo-preview" class="hidden mb-3">
+                    <img id="preview-img" class="rounded-lg max-h-48 mx-auto" alt="Preview">
+                </div>
+                <div id="photo-placeholder" class="py-8">
+                    <svg class="w-12 h-12 mx-auto text-cream/30 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <p class="text-cream/50 text-sm">Tap to take a photo or select an image</p>
+                </div>
+                <input type="file" name="image" id="id_image" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple>
+            </label>
+        </div>
+
+        <!-- Name -->
+        <div>
+            <label class="block text-sm font-medium text-cream/70 mb-1.5">Name (optional)</label>
+            {{ form.name }}
+            <p class="text-cream/30 text-xs mt-1">Auto-generated if left blank</p>
+        </div>
+
+        <!-- Notes -->
+        <div>
+            <label class="block text-sm font-medium text-cream/70 mb-1.5">Notes (optional)</label>
+            {{ form.notes }}
+        </div>
+
+        <!-- Scanned Code (hidden, populated by scanner) -->
+        {{ form.scanned_code }}
+
+        <!-- Scan Input -->
+        <div id="scan-section">
+            <button type="button" id="scan-btn"
+                class="w-full bg-stage-700 hover:bg-stage-600 text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                </svg>
+                Scan Barcode / NFC
+            </button>
+            <div id="scan-input-area" class="hidden mt-3 bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4">
+                <label class="block text-sm font-medium text-cream/70 mb-1.5">Enter barcode or NFC tag ID</label>
+                <div class="flex gap-2">
+                    <input type="text" id="scan-text-input" class="form-input flex-1 rounded-lg px-4 py-2.5 text-cream" placeholder="Scan or type code..." autofocus>
+                    <button type="button" id="scan-apply-btn" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">Apply</button>
+                    <button type="button" id="scan-cancel-btn" class="bg-stage-700 hover:bg-stage-600 text-cream/70 px-3 py-2.5 rounded-lg text-sm transition-colors">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="scan-result" class="hidden bg-stage-700 rounded-lg p-3 text-sm text-cream/70">
+            <span>Scanned: </span><span id="scan-code" class="font-mono text-spotlight-400"></span>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit"
+            class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3.5 rounded-lg text-base font-semibold btn-press transition-all">
+            Capture Asset
+        </button>
+    </form>
+
+    <!-- Quick links -->
+    <div class="flex justify-center gap-6 text-sm">
+        <a href="{% url 'assets:drafts_queue' %}" class="text-cream/50 hover:text-cream transition-colors">View Drafts</a>
+        <a href="{% url 'assets:scan' %}" class="text-cream/50 hover:text-cream transition-colors">Scan Lookup</a>
+    </div>
+</div>
+
+<script>
+// Photo preview
+document.querySelector('input[type="file"]')?.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            document.getElementById('preview-img').src = ev.target.result;
+            document.getElementById('photo-preview').classList.remove('hidden');
+            document.getElementById('photo-placeholder').classList.add('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+document.getElementById('scan-btn').addEventListener('click', function() {
+    document.getElementById('scan-btn').classList.add('hidden');
+    document.getElementById('scan-input-area').classList.remove('hidden');
+    document.getElementById('scan-text-input').focus();
+});
+
+document.getElementById('scan-cancel-btn').addEventListener('click', function() {
+    document.getElementById('scan-btn').classList.remove('hidden');
+    document.getElementById('scan-input-area').classList.add('hidden');
+    document.getElementById('scan-text-input').value = '';
+});
+
+function applyScanCode() {
+    var code = document.getElementById('scan-text-input').value.trim();
+    if (code) {
+        document.querySelector('input[name="scanned_code"]').value = code;
+        document.getElementById('scan-result').classList.remove('hidden');
+        document.getElementById('scan-code').textContent = code;
+        document.getElementById('scan-btn').classList.remove('hidden');
+        document.getElementById('scan-input-area').classList.add('hidden');
+    }
+}
+
+document.getElementById('scan-apply-btn').addEventListener('click', applyScanCode);
+document.getElementById('scan-text-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); applyScanCode(); }
+});
+</script>
+{% endblock %}

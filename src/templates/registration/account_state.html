@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Status - {{ SITE_NAME }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'stage': { 900: '#0f0f1a', 800: '#1a1a2e', 700: '#252540', 600: '#363659' },
+                        'spotlight': { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' },
+                        'cream': '#faf7f2',
+                    },
+                    fontFamily: {
+                        'display': ['Playfair Display', 'serif'],
+                        'sans': ['DM Sans', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                {% if state == "pending_approval" %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                {% elif state == "unverified" %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                {% else %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                </svg>
+                {% endif %}
+            </div>
+
+            {% if state == "pending_approval" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Pending Approval</h1>
+            {% elif state == "unverified" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Email Not Verified</h1>
+            {% elif state == "borrower_no_access" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Borrower Account</h1>
+            {% else %}
+            <h1 class="font-display text-3xl font-bold text-cream">Account Unavailable</h1>
+            {% endif %}
+        </div>
+
+        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8 text-center">
+            {% if state == "pending_approval" %}
+            <p class="text-cream/70 mb-4">
+                Your account is currently awaiting administrator approval.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                You will receive an email once your account has been reviewed. This usually takes 1-2 business days.
+            </p>
+
+            {% elif state == "unverified" %}
+            <p class="text-cream/70 mb-4">
+                Your email address has not yet been verified.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                Please check your inbox for the verification email, or request a new one below.
+            </p>
+            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
+                Resend Verification Email
+            </a>
+
+            {% elif state == "borrower_no_access" %}
+            <p class="text-cream/70 mb-4">
+                Your account is set up as an external borrower.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                Borrower accounts do not have login access. Assets are checked out to you by a staff member. If you need direct access, please contact the system administrator.
+            </p>
+
+            {% else %}
+            <p class="text-cream/70 mb-4">
+                Your registration was not approved.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                If you believe this is an error, please contact the system administrator.
+            </p>
+            {% endif %}
+
+            <div class="border-t border-white/5 pt-6 mt-6">
+                <a href="{% url 'accounts:login' %}" class="text-sm text-cream/50 hover:text-cream/70 transition-colors">
+                    Back to sign in
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

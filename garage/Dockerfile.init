@@ -1,0 +1,15 @@
+# Garage init container - combines alpine shell with garage binary
+FROM dxflrs/garage:v1.0.1 AS garage
+FROM alpine:latest
+
+# Copy garage binary from official image
+COPY --from=garage /garage /usr/local/bin/garage
+
+# Install only what we need
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+COPY init.sh /app/init.sh
+RUN chmod +x /app/init.sh
+
+ENTRYPOINT ["/bin/sh", "/app/init.sh"]

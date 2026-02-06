@@ -1,0 +1,45 @@
+"""Asset state machine and transition validation."""
+
+from django.core.exceptions import ValidationError
+
+from ..models import Asset
+
+
+def validate_transition(asset: Asset, new_status: str) -> None:
+    """Validate and raise if the status transition is not allowed.
+
+    Raises ValidationError if the transition is invalid.
+    """
+    if new_status == asset.status:
+        return  # No-op transition is always fine
+
+    if new_status not in dict(Asset.STATUS_CHOICES):
+        raise ValidationError(f"'{new_status}' is not a valid status.")
+
+    if not asset.can_transition_to(new_status):
+        allowed = Asset.VALID_TRANSITIONS.get(asset.status, [])
+        raise ValidationError(
+            f"Cannot transition from '{asset.get_status_display()}' to "
+            f"'{new_status}'. Allowed transitions: "
+            f"{', '.join(allowed) or 'none'}."
+        )
+
+    # §7.5.1: Cannot retire/dispose a checked-out asset
+    if new_status in ("retired", "disposed") and asset.is_checked_out:
+        raise ValidationError(
+            "Cannot retire or dispose a checked-out asset. "
+            "Check it in first."
+        )
+
+
+def transition_asset(asset: Asset, new_status: str) -> Asset:
+    """Validate and perform a status transition.
+
+    Returns the updated (saved) asset.
+    Raises ValidationError if the transition is not allowed.
+    """
+    validate_transition(asset, new_status)
+    asset.status = new_status
+    asset.full_clean()
+    asset.save(update_fields=["status"])
+    return asset

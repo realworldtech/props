@@ -1,0 +1,18 @@
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "props.settings"
+pythonpath = ["src"]
+testpaths = ["src"]
+python_files = ["tests.py", "test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 79
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 79
+known_django = ["django"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]

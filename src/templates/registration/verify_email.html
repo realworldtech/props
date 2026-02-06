@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification - {{ SITE_NAME }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'stage': { 900: '#0f0f1a', 800: '#1a1a2e', 700: '#252540', 600: '#363659' },
+                        'spotlight': { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' },
+                        'cream': '#faf7f2',
+                    },
+                    fontFamily: {
+                        'display': ['Playfair Display', 'serif'],
+                        'sans': ['DM Sans', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                {% if status == "verified" %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                </svg>
+                {% elif status == "expired" %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                {% else %}
+                <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                {% endif %}
+            </div>
+
+            {% if status == "verified" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Email Verified</h1>
+            {% elif status == "expired" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Link Expired</h1>
+            {% elif status == "already_verified" %}
+            <h1 class="font-display text-3xl font-bold text-cream">Already Verified</h1>
+            {% else %}
+            <h1 class="font-display text-3xl font-bold text-cream">Invalid Link</h1>
+            {% endif %}
+        </div>
+
+        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8 text-center">
+            {% if status == "verified" %}
+            <p class="text-cream/70 mb-4">
+                Your email address has been verified successfully.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                Your account is now pending approval by an administrator. You will receive an email once your account has been reviewed.
+            </p>
+
+            {% elif status == "expired" %}
+            <p class="text-cream/70 mb-4">
+                This verification link has expired.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                Verification links are valid for 48 hours. Please request a new one.
+            </p>
+            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
+                Resend Verification Email
+            </a>
+
+            {% elif status == "already_verified" %}
+            <p class="text-cream/70 mb-4">
+                Your email address has already been verified.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                If your account is pending approval, please wait for an administrator to review your registration.
+            </p>
+
+            {% else %}
+            <p class="text-cream/70 mb-4">
+                This verification link is invalid or has been tampered with.
+            </p>
+            <p class="text-cream/50 text-sm mb-6">
+                Please check that you copied the full link from your email, or request a new one.
+            </p>
+            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
+                Resend Verification Email
+            </a>
+            {% endif %}
+
+            <div class="border-t border-white/5 pt-6 mt-6">
+                <a href="{% url 'accounts:login' %}" class="text-sm text-cream/50 hover:text-cream/70 transition-colors">
+                    Back to sign in
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

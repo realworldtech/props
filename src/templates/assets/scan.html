@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Scan - {{ SITE_NAME }}{% endblock %}
+
+{% block extra_head %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+    #reader video {
+        border-radius: 0.75rem;
+    }
+    #reader__scan_region {
+        border-radius: 0.75rem;
+        overflow: hidden;
+    }
+    #reader__dashboard_section_swaplink {
+        color: #f59e0b !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div class="text-center">
+        <h1 class="font-display text-3xl font-bold">Scan Asset</h1>
+        <p class="text-cream/50 mt-1">Scan a barcode or NFC tag to look up an asset</p>
+    </div>
+
+    <!-- Camera Scanner -->
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+        <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-spotlight-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <label class="block text-sm font-medium text-cream/70">Camera Scanner</label>
+        </div>
+
+        <div id="reader" class="rounded-xl overflow-hidden bg-stage-900/50"></div>
+
+        <div id="scanner-status" class="text-sm text-cream/50 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cream/30"></span>
+            Tap "Start Camera" to scan a barcode
+        </div>
+
+        <div class="flex gap-3">
+            <button type="button" id="start-btn" onclick="startScanner()" class="flex-1 flex items-center justify-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-3 rounded-lg font-medium btn-press transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Start Camera
+            </button>
+            <button type="button" id="stop-btn" onclick="stopScanner()" class="hidden flex-1 flex items-center justify-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-3 rounded-lg font-medium btn-press transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                </svg>
+                Stop Camera
+            </button>
+        </div>
+    </div>
+
+    <!-- Manual Entry -->
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+        <label for="scan-input" class="block text-sm font-medium text-cream/70">Enter barcode or NFC tag ID</label>
+        <div class="flex gap-3">
+            <input type="text" id="scan-input" placeholder="Scan or type code..."
+                class="form-input flex-1 rounded-lg px-4 py-3 text-cream text-lg font-mono"
+                autofocus>
+            <button type="button" onclick="doLookup()" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-3 rounded-lg font-medium btn-press transition-all">
+                Look Up
+            </button>
+        </div>
+    </div>
+
+    <!-- NFC Scan Button -->
+    <button type="button" id="nfc-btn" onclick="startNFCScan()" class="w-full bg-stage-700 hover:bg-stage-600 text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2 hidden">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+        </svg>
+        Tap NFC Tag
+    </button>
+
+    <!-- Result templates (hidden) -->
+    <template id="tpl-found">
+        <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <svg class="w-6 h-6 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                <h3 class="text-lg font-medium text-emerald-300">Asset Found</h3>
+                <span class="draft-badge text-xs bg-spotlight-500/20 text-spotlight-400 px-2 py-0.5 rounded-full hidden">Draft</span>
+            </div>
+            <dl class="space-y-2 text-sm mb-4">
+                <div class="flex justify-between">
+                    <dt class="text-cream/50">Name</dt>
+                    <dd class="text-cream font-medium result-name"></dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-cream/50">Barcode</dt>
+                    <dd class="font-mono text-cream/70 result-barcode"></dd>
+                </div>
+                <div class="flex justify-between result-location-row hidden">
+                    <dt class="text-cream/50">Location</dt>
+                    <dd class="text-cream/70 result-location"></dd>
+                </div>
+            </dl>
+            <a href="#" class="result-link inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                View Asset
+            </a>
+        </div>
+    </template>
+
+    <template id="tpl-not-found">
+        <div class="bg-spotlight-500/10 border border-spotlight-500/20 rounded-xl p-6 text-center">
+            <svg class="w-10 h-10 mx-auto text-spotlight-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3 class="text-lg font-medium text-spotlight-300 mb-2">Not Found</h3>
+            <p class="text-cream/50 text-sm mb-4">No asset matches "<span class="font-mono result-code"></span>"</p>
+            <a href="#" class="result-capture-link inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Quick Capture with this code
+            </a>
+        </div>
+    </template>
+
+    <template id="tpl-error">
+        <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-300 text-sm">
+            An error occurred. Please try again.
+        </div>
+    </template>
+
+    <!-- Result container -->
+    <div id="scan-result" class="hidden"></div>
+
+    <!-- Loading -->
+    <div id="scan-loading" class="hidden text-center py-8">
+        <div class="inline-block w-8 h-8 border-2 border-spotlight-500/30 border-t-spotlight-500 rounded-full animate-spin"></div>
+        <p class="text-cream/50 text-sm mt-3">Looking up...</p>
+    </div>
+
+    <!-- Quick links -->
+    <div class="flex justify-center gap-6 text-sm">
+        <a href="{% url 'assets:quick_capture' %}" class="text-cream/50 hover:text-cream transition-colors">Quick Capture</a>
+        <a href="{% url 'assets:asset_list' %}" class="text-cream/50 hover:text-cream transition-colors">Browse Assets</a>
+    </div>
+</div>
+
+<script src="{% static 'js/nfc.js' %}"></script>
+<script>
+const scanInput = document.getElementById('scan-input');
+const scanResult = document.getElementById('scan-result');
+const scanLoading = document.getElementById('scan-loading');
+
+let html5QrcodeScanner = null;
+
+scanInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        doLookup();
+    }
+});
+
+if ('NDEFReader' in window) {
+    document.getElementById('nfc-btn').classList.remove('hidden');
+}
+
+// --- Camera Scanner ---
+
+function updateScannerStatus(text, color) {
+    const el = document.getElementById('scanner-status');
+    while (el.firstChild) el.removeChild(el.firstChild);
+    const dot = document.createElement('span');
+    dot.className = 'w-2 h-2 rounded-full';
+    if (color === 'spotlight') {
+        dot.classList.add('bg-spotlight-400', 'animate-pulse');
+    } else {
+        dot.classList.add('bg-' + color + '-400');
+    }
+    el.appendChild(dot);
+    el.appendChild(document.createTextNode(' ' + text));
+}
+
+function startScanner() {
+    document.getElementById('start-btn').classList.add('hidden');
+    document.getElementById('stop-btn').classList.remove('hidden');
+    updateScannerStatus('Initializing camera...', 'amber');
+
+    html5QrcodeScanner = new Html5Qrcode("reader");
+    html5QrcodeScanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 100 } },
+        (decodedText) => {
+            updateScannerStatus('Found: ' + decodedText, 'emerald');
+            scanInput.value = decodedText;
+            doLookup();
+        },
+        () => {}
+    ).then(() => {
+        updateScannerStatus('Scanning... Point camera at barcode', 'spotlight');
+    }).catch((err) => {
+        updateScannerStatus('Camera error: ' + err, 'red');
+        stopScanner();
+    });
+}
+
+function stopScanner() {
+    if (html5QrcodeScanner) {
+        html5QrcodeScanner.stop().then(() => {
+            html5QrcodeScanner = null;
+        }).catch((err) => {
+            console.error('Error stopping scanner:', err);
+        });
+    }
+    document.getElementById('start-btn').classList.remove('hidden');
+    document.getElementById('stop-btn').classList.add('hidden');
+    updateScannerStatus('Camera stopped', 'cream');
+}
+
+// --- Lookup ---
+
+function doLookup() {
+    const code = scanInput.value.trim();
+    if (!code) return;
+
+    scanResult.classList.add('hidden');
+    scanResult.textContent = '';
+    scanLoading.classList.remove('hidden');
+
+    fetch(`{% url 'assets:scan_lookup' %}?code=${encodeURIComponent(code)}`)
+        .then(r => r.json())
+        .then(data => {
+            scanLoading.classList.add('hidden');
+            scanResult.classList.remove('hidden');
+
+            if (data.found) {
+                const tpl = document.getElementById('tpl-found').content.cloneNode(true);
+                tpl.querySelector('.result-name').textContent = data.asset_name;
+                tpl.querySelector('.result-barcode').textContent = data.barcode;
+                if (data.location) {
+                    tpl.querySelector('.result-location').textContent = data.location;
+                    tpl.querySelector('.result-location-row').classList.remove('hidden');
+                }
+                if (data.is_draft) {
+                    tpl.querySelector('.draft-badge').classList.remove('hidden');
+                }
+                tpl.querySelector('.result-link').href = data.url;
+                scanResult.appendChild(tpl);
+            } else {
+                const tpl = document.getElementById('tpl-not-found').content.cloneNode(true);
+                tpl.querySelector('.result-code').textContent = data.code;
+                tpl.querySelector('.result-capture-link').href = data.quick_capture_url;
+                scanResult.appendChild(tpl);
+            }
+        })
+        .catch(() => {
+            scanLoading.classList.add('hidden');
+            scanResult.classList.remove('hidden');
+            const tpl = document.getElementById('tpl-error').content.cloneNode(true);
+            scanResult.appendChild(tpl);
+        });
+}
+
+function startNFCScan() {
+    const btn = document.getElementById('nfc-btn');
+    btn.textContent = 'Waiting for NFC tag...';
+    btn.disabled = true;
+
+    AssetNFC.startReading(
+        function(result) {
+            const barcode = AssetNFC.extractBarcode(result);
+            if (barcode) {
+                scanInput.value = barcode;
+                doLookup();
+            } else if (result.serialNumber) {
+                scanInput.value = result.serialNumber;
+                doLookup();
+            }
+            AssetNFC.stopReading();
+            btn.textContent = 'Tap NFC Tag';
+            btn.disabled = false;
+        },
+        function(error) {
+            btn.textContent = 'Tap NFC Tag';
+            btn.disabled = false;
+            console.error('NFC error:', error);
+        }
+    );
+}
+</script>
+{% endblock %}

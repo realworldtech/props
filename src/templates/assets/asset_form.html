@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+
+{% block title %}{% if asset %}Edit {{ asset.name }}{% else %}Create Asset{% endif %} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <div class="flex items-center gap-2 text-sm text-cream/50 mb-4">
+        <a href="{% url 'assets:dashboard' %}" class="hover:text-cream transition-colors">Dashboard</a>
+        <span>/</span>
+        {% if asset %}
+        <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-cream transition-colors">{{ asset.name }}</a>
+        <span>/</span>
+        <span class="text-cream">Edit</span>
+        {% else %}
+        <span class="text-cream">Create Asset</span>
+        {% endif %}
+    </div>
+    <div>
+        <h1 class="font-display text-3xl font-bold">{% if asset %}Edit Asset{% else %}Create Asset{% endif %}</h1>
+        {% if asset %}
+        <p class="text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
+        {% endif %}
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="space-y-6" id="asset-form">
+        {% csrf_token %}
+
+        {% if form.errors %}
+        <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+            <p class="text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
+            <ul class="text-red-300/70 text-sm space-y-1">
+                {% for field, errors in form.errors.items %}
+                    {% for error in errors %}
+                    <li>{{ field|title }}: {{ error }}</li>
+                    {% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if asset %}
+        <!-- Edit mode: primary image + name/status at top -->
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="flex items-center justify-center">
+                    {% if primary_image %}
+                    <img src="{{ primary_image.image.url }}" alt="{{ asset.name }}" class="w-full max-h-48 object-contain rounded-lg">
+                    {% else %}
+                    <div class="w-full h-48 bg-stage-700 rounded-lg flex items-center justify-center">
+                        <svg class="w-12 h-12 text-cream/15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="md:col-span-2 space-y-4">
+                    <div>
+                        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                        {{ form.name }}
+                    </div>
+                    <div>
+                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Status</label>
+                        {{ form.status }}
+                        <p class="text-xs text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Basic Information</h2>
+
+            {% if not asset %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                    {{ form.name }}
+                </div>
+                <div>
+                    <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Status</label>
+                    {{ form.status }}
+                    <p class="text-xs text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Description</label>
+                {{ form.description }}
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <label class="block text-sm font-medium text-cream/70" id="label-category">Category <span id="cat-required-star">*</span></label>
+                        <button type="button" id="btn-add-category" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-xs font-bold transition-colors" title="Create new category">+</button>
+                    </div>
+                    <!-- Hidden FK input -->
+                    {{ form.category }}
+                    <!-- Autocomplete UI -->
+                    <div class="relative">
+                        <input type="text" id="category-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search categories..." autocomplete="off">
+                        <button type="button" id="category-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-cream/40 hover:text-cream text-lg">&times;</button>
+                        <div id="category-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <label class="block text-sm font-medium text-cream/70" id="label-location">Location <span id="loc-required-star">*</span></label>
+                        <button type="button" id="btn-add-location" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-xs font-bold transition-colors" title="Create new location">+</button>
+                    </div>
+                    <!-- Hidden FK input -->
+                    {{ form.current_location }}
+                    <!-- Autocomplete UI -->
+                    <div class="relative">
+                        <input type="text" id="location-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search locations..." autocomplete="off">
+                        <button type="button" id="location-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-cream/40 hover:text-cream text-lg">&times;</button>
+                        <div id="location-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="{{ form.quantity.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Quantity</label>
+                    {{ form.quantity }}
+                </div>
+                <div>
+                    <label for="{{ form.condition.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Condition</label>
+                    {{ form.condition }}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Financial</h2>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="{{ form.purchase_price.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Purchase Price</label>
+                    {{ form.purchase_price }}
+                </div>
+                <div>
+                    <label for="{{ form.estimated_value.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Estimated Value</label>
+                    {{ form.estimated_value }}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Tags</h2>
+
+            <!-- Hidden multi-select for form submission -->
+            <div class="hidden">{{ form.tags }}</div>
+
+            <!-- Tag autocomplete UI -->
+            <div id="tag-autocomplete" class="space-y-3">
+                <div class="relative">
+                    <input type="text" id="tag-search-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search or create tags..." autocomplete="off">
+                    <div id="tag-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                </div>
+                <div id="tag-pills" class="flex flex-wrap gap-2"></div>
+            </div>
+        </div>
+
+        {% if asset %}
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Images</h2>
+
+            {% if images %}
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {% for image in images %}
+                <div class="relative group rounded-lg overflow-hidden border border-white/5 bg-stage-900/50">
+                    <img src="{{ image.image.url }}" alt="{{ image.caption }}" class="w-full h-32 object-cover">
+                    {% if image.is_primary %}
+                    <span class="absolute top-2 left-2 bg-spotlight-500 text-stage-900 text-xs font-bold px-2 py-0.5 rounded">Primary</span>
+                    {% endif %}
+                    {% if image.caption %}
+                    <p class="text-xs text-cream/50 px-2 py-1.5 truncate">{{ image.caption }}</p>
+                    {% endif %}
+                    <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {% if not image.is_primary %}
+                        <a href="{% url 'assets:image_set_primary' asset.pk image.pk %}" class="bg-stage-800/80 hover:bg-spotlight-500/30 text-cream/70 hover:text-spotlight-300 rounded p-1 text-xs" title="Set as primary">&#9733;</a>
+                        {% endif %}
+                        <a href="{% url 'assets:image_delete' asset.pk image.pk %}" class="bg-stage-800/80 hover:bg-red-500/30 text-cream/70 hover:text-red-300 rounded p-1 text-xs" title="Delete image" onclick="return confirm('Delete this image?')">&times;</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-cream/40">No images uploaded yet.</p>
+            {% endif %}
+
+            <div class="space-y-3 pt-2">
+                <div>
+                    <label for="id_images" class="block text-sm font-medium text-cream/70 mb-1.5">Upload Images</label>
+                    <input type="file" name="images" id="id_images" multiple accept="image/*" class="form-input w-full rounded-lg px-4 py-2.5 text-cream file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-spotlight-500/20 file:text-spotlight-300 hover:file:bg-spotlight-500/30">
+                </div>
+                <div>
+                    <label for="id_image_captions" class="block text-sm font-medium text-cream/70 mb-1.5">Caption <span class="text-cream/40">(optional, applies to all uploaded images)</span></label>
+                    <input type="text" name="image_captions" id="id_image_captions" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Caption for uploaded images">
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Notes</h2>
+            {{ form.notes }}
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                {% if asset %}Update Asset{% else %}Create Asset{% endif %}
+            </button>
+            <a href="{% if asset %}{% url 'assets:asset_detail' asset.pk %}{% else %}{% url 'assets:asset_list' %}{% endif %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Quick-create modal -->
+<div id="quick-create-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="modal-backdrop"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+        <div class="bg-stage-800 border border-white/10 rounded-xl shadow-2xl w-full max-w-md pointer-events-auto">
+            <div class="flex items-center justify-between p-5 border-b border-white/5">
+                <h3 id="modal-title" class="text-lg font-medium text-cream">Create</h3>
+                <button type="button" id="modal-close-btn" class="text-cream/40 hover:text-cream transition-colors text-xl">&times;</button>
+            </div>
+            <div id="modal-body" class="p-5 space-y-4"></div>
+            <div id="modal-error" class="hidden px-5 pb-2 text-red-400 text-sm"></div>
+            <div class="flex justify-end gap-3 p-5 border-t border-white/5">
+                <button type="button" id="modal-cancel-btn" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
+                <button type="button" id="modal-save-btn" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var csrfToken = '{{ csrf_token }}';
+    var urls = {
+        tagSearch: '{% url "assets:tag_search" %}',
+        tagCreate: '{% url "assets:tag_create_inline" %}',
+        categorySearch: '{% url "assets:category_search" %}',
+        locationSearch: '{% url "assets:location_search" %}',
+        categoryCreate: '{% url "assets:category_create_inline" %}',
+        locationCreate: '{% url "assets:location_create_inline" %}',
+        departmentCreate: '{% url "assets:department_create_inline" %}',
+        departmentList: '{% url "assets:department_list_json" %}'
+    };
+
+    // =====================
+    // Status-dependent required indicators
+    // =====================
+    var statusSelect = document.getElementById('id_status');
+    var catStar = document.getElementById('cat-required-star');
+    var locStar = document.getElementById('loc-required-star');
+
+    function updateRequiredStars() {
+        var isDraft = statusSelect.value === 'draft';
+        catStar.style.display = isDraft ? 'none' : 'inline';
+        locStar.style.display = isDraft ? 'none' : 'inline';
+    }
+    statusSelect.addEventListener('change', updateRequiredStars);
+    updateRequiredStars();
+
+    // =====================
+    // Generic single-select autocomplete
+    // =====================
+    function initAutocomplete(config) {
+        var hiddenInput = document.getElementById(config.hiddenId);
+        var textInput = document.getElementById(config.inputId);
+        var dropdown = document.getElementById(config.dropdownId);
+        var clearBtn = document.getElementById(config.clearId);
+        var selectedId = hiddenInput.value || '';
+        var debounce = null;
+
+        // Set initial display text if there's a pre-selected value
+        if (config.initialText) {
+            textInput.value = config.initialText;
+            clearBtn.classList.remove('hidden');
+        }
+
+        textInput.addEventListener('input', function() {
+            clearTimeout(debounce);
+            var q = textInput.value.trim();
+            // Clear the hidden input when the user starts typing
+            hiddenInput.value = '';
+            selectedId = '';
+            clearBtn.classList.add('hidden');
+            debounce = setTimeout(function() { doSearch(q); }, 200);
+        });
+
+        textInput.addEventListener('focus', function() {
+            if (!selectedId) {
+                doSearch(textInput.value.trim());
+            }
+        });
+
+        textInput.addEventListener('blur', function() {
+            setTimeout(hideDropdown, 150);
+        });
+
+        clearBtn.addEventListener('click', function() {
+            hiddenInput.value = '';
+            textInput.value = '';
+            selectedId = '';
+            clearBtn.classList.add('hidden');
+            textInput.focus();
+            doSearch('');
+        });
+
+        function doSearch(q) {
+            fetch(config.searchUrl + '?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(results) { showResults(results); });
+        }
+
+        function showResults(results) {
+            while (dropdown.firstChild) dropdown.removeChild(dropdown.firstChild);
+            if (results.length === 0) {
+                var empty = document.createElement('div');
+                empty.className = 'px-4 py-2 text-sm text-cream/40';
+                empty.textContent = 'No results found';
+                dropdown.appendChild(empty);
+            }
+            results.forEach(function(item) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'block w-full text-left px-4 py-2 text-sm text-cream/80 hover:bg-white/10 hover:text-cream transition-colors';
+                var label = config.formatLabel ? config.formatLabel(item) : item.name;
+                btn.textContent = label;
+                btn.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    selectItem(item.id, label);
+                });
+                dropdown.appendChild(btn);
+            });
+            dropdown.classList.remove('hidden');
+        }
+
+        function hideDropdown() {
+            dropdown.classList.add('hidden');
+            while (dropdown.firstChild) dropdown.removeChild(dropdown.firstChild);
+        }
+
+        function selectItem(id, label) {
+            hiddenInput.value = id;
+            textInput.value = label;
+            selectedId = id.toString();
+            clearBtn.classList.remove('hidden');
+            hideDropdown();
+        }
+
+        // Expose selectItem for use after inline-create
+        return { selectItem: selectItem };
+    }
+
+    var categoryInitial = '{{ category_name|escapejs }}';
+    var locationInitial = '{{ location_name|escapejs }}';
+
+    var categoryAC = initAutocomplete({
+        hiddenId: 'id_category',
+        inputId: 'category-ac-input',
+        dropdownId: 'category-ac-dropdown',
+        clearId: 'category-ac-clear',
+        searchUrl: urls.categorySearch,
+        initialText: categoryInitial,
+        formatLabel: function(item) {
+            return item.department ? item.name + ' (' + item.department + ')' : item.name;
+        }
+    });
+
+    var locationAC = initAutocomplete({
+        hiddenId: 'id_current_location',
+        inputId: 'location-ac-input',
+        dropdownId: 'location-ac-dropdown',
+        clearId: 'location-ac-clear',
+        searchUrl: urls.locationSearch,
+        initialText: locationInitial
+    });
+
+    // =====================
+    // Quick-create modals
+    // =====================
+    var currentModalType = null;
+    var modal = document.getElementById('quick-create-modal');
+    var modalBody = document.getElementById('modal-body');
+    var modalError = document.getElementById('modal-error');
+
+    function openModal(type) {
+        currentModalType = type;
+        modalError.classList.add('hidden');
+        modalError.textContent = '';
+        while (modalBody.firstChild) modalBody.removeChild(modalBody.firstChild);
+
+        var title = document.getElementById('modal-title');
+
+        if (type === 'category') {
+            title.textContent = 'Create Category';
+            modalBody.appendChild(makeField('modal-cat-name', 'Name *', 'text', 'Category name'));
+            modalBody.appendChild(makeDeptSelect('modal-cat-dept', 'Department *'));
+        } else if (type === 'location') {
+            title.textContent = 'Create Location';
+            modalBody.appendChild(makeField('modal-loc-name', 'Name *', 'text', 'Location name'));
+        }
+
+        modal.classList.remove('hidden');
+        var firstInput = modalBody.querySelector('input');
+        if (firstInput) firstInput.focus();
+    }
+
+    function closeModal() {
+        modal.classList.add('hidden');
+        currentModalType = null;
+    }
+
+    document.getElementById('btn-add-category').addEventListener('click', function() { openModal('category'); });
+    document.getElementById('btn-add-location').addEventListener('click', function() { openModal('location'); });
+    document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+    document.getElementById('modal-backdrop').addEventListener('click', closeModal);
+
+    document.getElementById('modal-save-btn').addEventListener('click', function() {
+        modalError.classList.add('hidden');
+        if (currentModalType === 'category') saveCategory();
+        else if (currentModalType === 'location') saveLocation();
+    });
+
+    modal.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); document.getElementById('modal-save-btn').click(); }
+        if (e.key === 'Escape') closeModal();
+    });
+
+    function saveCategory() {
+        var name = document.getElementById('modal-cat-name').value.trim();
+        var deptId = document.getElementById('modal-cat-dept').value;
+        if (!name) return showModalError('Name is required');
+        if (!deptId) return showModalError('Department is required');
+
+        postJSON(urls.categoryCreate, {name: name, department_id: parseInt(deptId)}, function(data) {
+            if (data.error) return showModalError(data.error);
+            categoryAC.selectItem(data.id, data.name);
+            closeModal();
+        });
+    }
+
+    function saveLocation() {
+        var name = document.getElementById('modal-loc-name').value.trim();
+        if (!name) return showModalError('Name is required');
+
+        postJSON(urls.locationCreate, {name: name}, function(data) {
+            if (data.error) return showModalError(data.error);
+            locationAC.selectItem(data.id, data.name);
+            closeModal();
+        });
+    }
+
+    function showModalError(msg) {
+        modalError.textContent = msg;
+        modalError.classList.remove('hidden');
+    }
+
+    function makeField(id, label, type, placeholder) {
+        var wrapper = document.createElement('div');
+        var lbl = document.createElement('label');
+        lbl.setAttribute('for', id);
+        lbl.className = 'block text-sm font-medium text-cream/70 mb-1.5';
+        lbl.textContent = label;
+        var input = document.createElement('input');
+        input.type = type;
+        input.id = id;
+        input.placeholder = placeholder || '';
+        input.className = 'form-input w-full rounded-lg px-4 py-2.5 text-cream';
+        wrapper.appendChild(lbl);
+        wrapper.appendChild(input);
+        return wrapper;
+    }
+
+    function makeDeptSelect(id, label) {
+        var wrapper = document.createElement('div');
+        var lbl = document.createElement('label');
+        lbl.setAttribute('for', id);
+        lbl.className = 'block text-sm font-medium text-cream/70 mb-1.5';
+        lbl.textContent = label;
+
+        var row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+
+        var select = document.createElement('select');
+        select.id = id;
+        select.className = 'form-input w-full rounded-lg px-4 py-2.5 text-cream';
+        var emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '---------';
+        select.appendChild(emptyOpt);
+
+        // Load departments
+        fetch(urls.departmentList)
+            .then(function(r) { return r.json(); })
+            .then(function(depts) {
+                depts.forEach(function(d) {
+                    var opt = document.createElement('option');
+                    opt.value = d.id;
+                    opt.textContent = d.name;
+                    select.appendChild(opt);
+                });
+            })
+            .catch(function() {});
+
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'inline-flex items-center justify-center w-8 h-8 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-sm font-bold transition-colors flex-shrink-0';
+        addBtn.textContent = '+';
+        addBtn.title = 'Create new department';
+        addBtn.addEventListener('click', function() {
+            var deptName = prompt('Enter new department name:');
+            if (!deptName || !deptName.trim()) return;
+            postJSON(urls.departmentCreate, {name: deptName.trim()}, function(data) {
+                if (data.error) { alert(data.error); return; }
+                var opt = document.createElement('option');
+                opt.value = data.id;
+                opt.textContent = data.name;
+                opt.selected = true;
+                select.appendChild(opt);
+            });
+        });
+
+        row.appendChild(select);
+        row.appendChild(addBtn);
+        wrapper.appendChild(lbl);
+        wrapper.appendChild(row);
+        return wrapper;
+    }
+
+    function postJSON(url, data, callback) {
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify(data),
+        })
+        .then(function(r) { return r.json(); })
+        .then(callback)
+        .catch(function() { showModalError('Request failed. Please try again.'); });
+    }
+
+    // =====================
+    // Tag autocomplete
+    // =====================
+    var tagInput = document.getElementById('tag-search-input');
+    var tagSuggestions = document.getElementById('tag-suggestions');
+    var tagPills = document.getElementById('tag-pills');
+    var tagSelect = document.getElementById('id_tags');
+    var selectedTags = {};
+
+    if (tagSelect) {
+        Array.from(tagSelect.selectedOptions).forEach(function(opt) {
+            selectedTags[opt.value] = opt.textContent.trim();
+        });
+        renderTagPills();
+    }
+
+    var tagDebounce;
+    tagInput.addEventListener('input', function() {
+        clearTimeout(tagDebounce);
+        var q = tagInput.value.trim();
+        if (q.length < 1) { hideTagSuggestions(); return; }
+        tagDebounce = setTimeout(function() { fetchTagSuggestions(q); }, 200);
+    });
+
+    tagInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var q = tagInput.value.trim();
+            if (q) createNewTag(q);
+        }
+    });
+
+    tagInput.addEventListener('blur', function() { setTimeout(hideTagSuggestions, 150); });
+
+    function fetchTagSuggestions(q) {
+        fetch(urls.tagSearch + '?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(tags) { showTagSuggestions(tags, q); });
+    }
+
+    function showTagSuggestions(tags, query) {
+        var filtered = tags.filter(function(t) { return !(t.id.toString() in selectedTags); });
+        while (tagSuggestions.firstChild) tagSuggestions.removeChild(tagSuggestions.firstChild);
+
+        filtered.forEach(function(t) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'block w-full text-left px-4 py-2 text-sm text-cream/80 hover:bg-white/10 hover:text-cream transition-colors';
+            btn.textContent = t.name;
+            btn.addEventListener('mousedown', function(e) { e.preventDefault(); addTagItem(t.id.toString(), t.name); });
+            tagSuggestions.appendChild(btn);
+        });
+
+        var exactMatch = tags.some(function(t) { return t.name.toLowerCase() === query.toLowerCase(); });
+        if (query && !exactMatch) {
+            var createBtn = document.createElement('button');
+            createBtn.type = 'button';
+            createBtn.className = 'block w-full text-left px-4 py-2 text-sm text-spotlight-400 hover:bg-white/10 transition-colors';
+            createBtn.appendChild(document.createTextNode('Create "'));
+            var strong = document.createElement('strong');
+            strong.textContent = query;
+            createBtn.appendChild(strong);
+            createBtn.appendChild(document.createTextNode('"'));
+            createBtn.addEventListener('mousedown', function(e) { e.preventDefault(); createNewTag(query); });
+            tagSuggestions.appendChild(createBtn);
+        }
+
+        if (tagSuggestions.children.length === 0) { hideTagSuggestions(); return; }
+        tagSuggestions.classList.remove('hidden');
+    }
+
+    function hideTagSuggestions() {
+        tagSuggestions.classList.add('hidden');
+        while (tagSuggestions.firstChild) tagSuggestions.removeChild(tagSuggestions.firstChild);
+    }
+
+    function addTagItem(id, name) {
+        selectedTags[id] = name;
+        syncTagSelect();
+        renderTagPills();
+        tagInput.value = '';
+        hideTagSuggestions();
+    }
+
+    function removeTagItem(id) {
+        delete selectedTags[id];
+        syncTagSelect();
+        renderTagPills();
+    }
+
+    function createNewTag(name) {
+        postJSON(urls.tagCreate, {name: name}, function(data) {
+            if (data.id) {
+                if (!tagSelect.querySelector('option[value="' + data.id + '"]')) {
+                    var opt = document.createElement('option');
+                    opt.value = data.id;
+                    opt.textContent = data.name;
+                    tagSelect.appendChild(opt);
+                }
+                addTagItem(data.id.toString(), data.name);
+            }
+        });
+    }
+
+    function syncTagSelect() {
+        Array.from(tagSelect.options).forEach(function(opt) { opt.selected = opt.value in selectedTags; });
+    }
+
+    function renderTagPills() {
+        while (tagPills.firstChild) tagPills.removeChild(tagPills.firstChild);
+        Object.keys(selectedTags).forEach(function(id) {
+            var name = selectedTags[id];
+            var span = document.createElement('span');
+            span.className = 'inline-flex items-center gap-1.5 bg-spotlight-500/20 text-spotlight-300 px-3 py-1 rounded-lg text-sm';
+            span.appendChild(document.createTextNode(name));
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'hover:text-spotlight-100 transition-colors';
+            removeBtn.textContent = '\u00d7';
+            removeBtn.addEventListener('click', function() { removeTagItem(id); });
+            span.appendChild(removeBtn);
+            tagPills.appendChild(span);
+        });
+    }
+})();
+</script>
+{% endblock %}

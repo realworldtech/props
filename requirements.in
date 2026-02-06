@@ -1,0 +1,45 @@
+# Core
+Django>=5.1,<6.0
+gunicorn
+psycopg[binary]
+whitenoise
+
+# Security
+django-ratelimit
+
+# Storage
+django-storages[boto3]
+Pillow
+pi-heif
+
+# Frontend
+django-htmx
+
+# Admin
+django-unfold
+
+# Background tasks
+celery[redis]
+django-celery-beat
+redis
+
+# Barcode & QR
+python-barcode[images]
+qrcode[pil]
+
+# Export
+openpyxl
+
+# AI (optional at runtime, required at build)
+anthropic
+
+# Dev/build tools
+pip-tools
+black
+flake8
+isort
+
+# Testing
+pytest-django
+factory-boy
+coverage

@@ -1,0 +1,10 @@
+{% extends "emails/base_email.txt" %}
+{% block content %}A new user has verified their email and is awaiting approval:
+
+Name: {{ display_name }}
+Email: {{ user_email }}
+Requested Department: {{ department_name }}
+
+Please visit the approval queue to review this request:
+{{ approval_url }}
+{% endblock %}

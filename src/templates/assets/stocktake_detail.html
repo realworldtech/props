@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Stocktake - {{ session.location.name }} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 text-sm text-cream/50 mb-2">
+                <a href="{% url 'assets:stocktake_list' %}" class="hover:text-cream transition-colors">Stocktake Sessions</a>
+                <span>/</span>
+                <span class="text-cream">{{ session.location.name }}</span>
+            </div>
+            <h1 class="font-display text-3xl font-bold">{{ session.location.name }}</h1>
+            <div class="flex items-center gap-3 mt-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                    {% if session.status == 'in_progress' %}bg-blue-500/20 text-blue-400
+                    {% elif session.status == 'completed' %}bg-emerald-500/20 text-emerald-400
+                    {% elif session.status == 'abandoned' %}bg-gray-500/20 text-gray-400
+                    {% endif %}">
+                    {{ session.get_status_display }}
+                </span>
+                <span class="text-cream/50 text-sm">Started by {{ session.started_by.get_display_name }} &middot; {{ session.started_at|date:"d M Y H:i" }}</span>
+            </div>
+        </div>
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 px-5 py-3 text-center">
+            <div class="font-display text-2xl font-bold text-spotlight-400">{{ confirmed_ids|length }} <span class="text-cream/30">/</span> {{ expected|length }}</div>
+            <div class="text-cream/50 text-xs mt-0.5">Confirmed</div>
+        </div>
+    </div>
+
+    {% if session.status == 'in_progress' %}
+    <!-- Scan Input -->
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="text-lg font-medium text-cream/90 mb-4">Scan or Enter Asset Code</h2>
+        <form method="post" action="{% url 'assets:stocktake_confirm' session.pk %}" class="flex gap-3">
+            {% csrf_token %}
+            <input type="text" name="code" id="scan-input" autofocus
+                class="form-input flex-1 rounded-lg px-4 py-2.5 text-cream"
+                placeholder="Scan barcode or enter asset code...">
+            <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-2.5 rounded-lg font-semibold btn-press transition-all">
+                Confirm
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Asset Checklist -->
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <div class="px-6 py-4 border-b border-white/5">
+            <h2 class="text-lg font-medium text-cream/90">Expected Assets</h2>
+        </div>
+        {% if expected %}
+        <div class="divide-y divide-white/5">
+            {% for asset in expected %}
+            <div class="flex items-center gap-4 px-6 py-3 {% if asset.pk in confirmed_ids %}bg-emerald-500/5{% endif %}">
+                <div class="flex-shrink-0">
+                    {% if asset.pk in confirmed_ids %}
+                    <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    {% else %}
+                    {% if session.status == 'in_progress' %}
+                    <form method="post" action="{% url 'assets:stocktake_confirm' session.pk %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="asset_id" value="{{ asset.pk }}">
+                        <button type="submit" class="w-6 h-6 rounded-full border-2 border-cream/20 hover:border-spotlight-400 transition-colors" title="Confirm this asset"></button>
+                    </form>
+                    {% else %}
+                    <div class="w-6 h-6 rounded-full border-2 border-cream/20"></div>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-cream font-medium {% if asset.pk in confirmed_ids %}text-emerald-300{% endif %}">{{ asset.name }}</div>
+                    <div class="text-cream/40 text-xs font-mono">{{ asset.barcode }}</div>
+                </div>
+                {% if asset.pk in confirmed_ids %}
+                <span class="text-emerald-400 text-xs font-medium">Confirmed</span>
+                {% else %}
+                <span class="text-cream/30 text-xs">Pending</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-6 py-8 text-center">
+            <p class="text-cream/40 text-sm">No assets expected at this location.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if session.status == 'in_progress' %}
+    <!-- Complete / Abandon Actions -->
+    <div class="flex gap-3">
+        <form method="post" action="{% url 'assets:stocktake_complete' session.pk %}" class="flex-1" onsubmit="return confirm('Are you sure you want to complete this stocktake?')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="complete">
+            <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Complete Stocktake
+            </button>
+        </form>
+        <form method="post" action="{% url 'assets:stocktake_complete' session.pk %}" onsubmit="return confirm('Are you sure you want to abandon this stocktake? This cannot be undone.')">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="abandon">
+            <button type="submit" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors">
+                Abandon
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

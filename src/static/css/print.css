@@ -1,0 +1,50 @@
+/* Print styles for barcode labels */
+
+@media print {
+    /* Hide navigation and footer */
+    nav, footer, .no-print {
+        display: none !important;
+    }
+
+    /* Reset page margins */
+    @page {
+        margin: 0;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+    }
+
+    /* Label sizing for thermal printers */
+    .label {
+        page-break-after: always;
+    }
+
+    /* Ensure barcodes print clearly */
+    img {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+/* Thermal label sizes (common sizes) */
+.label-62x29 {
+    width: 62mm;
+    height: 29mm;
+}
+
+.label-62x100 {
+    width: 62mm;
+    height: 100mm;
+}
+
+.label-50x30 {
+    width: 50mm;
+    height: 30mm;
+}
+
+.label-40x30 {
+    width: 40mm;
+    height: 30mm;
+}

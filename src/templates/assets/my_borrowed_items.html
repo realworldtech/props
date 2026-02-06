@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}My Borrowed Items - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center gap-2 text-sm text-cream/50 mb-4">
+        <a href="{% url 'assets:dashboard' %}" class="hover:text-cream transition-colors">Dashboard</a>
+        <span>/</span>
+        <span class="text-cream">My Borrowed Items</span>
+    </div>
+    <div>
+        <h1 class="font-display text-3xl font-bold">My Borrowed Items</h1>
+        <p class="text-cream/50 mt-1">Items currently checked out to you</p>
+    </div>
+
+    {% if assets %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-cream/50 border-b border-white/10">
+                        <th class="text-left py-3 px-4">Name</th>
+                        <th class="text-left py-3 px-4 hidden sm:table-cell">Barcode</th>
+                        <th class="text-left py-3 px-4 hidden md:table-cell">Category</th>
+                        <th class="text-left py-3 px-4 hidden md:table-cell">Home Location</th>
+                        <th class="text-right py-3 px-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for asset in assets %}
+                    <tr class="hover:bg-white/[0.03] transition-colors">
+                        <td class="py-2.5 px-4">
+                            <a href="{% url 'assets:asset_detail' asset.pk %}" class="text-cream hover:text-spotlight-400 transition-colors font-medium">{{ asset.name }}</a>
+                        </td>
+                        <td class="py-2.5 px-4 hidden sm:table-cell text-cream/50 font-mono text-xs">{{ asset.barcode }}</td>
+                        <td class="py-2.5 px-4 hidden md:table-cell text-cream/60">{{ asset.category|default:"-" }}</td>
+                        <td class="py-2.5 px-4 hidden md:table-cell text-cream/60">{{ asset.current_location|default:"-" }}</td>
+                        <td class="py-2.5 px-4 text-right">
+                            <a href="{% url 'assets:asset_checkin' asset.pk %}" class="text-emerald-400 hover:text-emerald-300 text-xs transition-colors font-medium">Check In</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-16 bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5">
+        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        <h3 class="text-lg font-medium text-cream/70 mb-2">No borrowed items</h3>
+        <p class="text-cream/40 text-sm">You don't have any items checked out.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

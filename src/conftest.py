@@ -1,0 +1,181 @@
+"""Shared pytest fixtures and factories for PROPS tests."""
+
+import pytest
+
+import django
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+
+# Use simple static storage for tests (avoids manifest errors)
+settings.STORAGES["staticfiles"] = {
+    "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+}
+
+from assets.models import (
+    Asset,
+    AssetImage,
+    Category,
+    Department,
+    Location,
+    NFCTag,
+    StocktakeSession,
+    Tag,
+    Transaction,
+)
+
+User = get_user_model()
+
+
+# --- User fixtures ---
+
+
+@pytest.fixture
+def password():
+    return "testpass123!"
+
+
+@pytest.fixture
+def user(db, password):
+    group, _ = Group.objects.get_or_create(name="Member")
+    u = User.objects.create_user(
+        username="testuser",
+        email="test@example.com",
+        password=password,
+        display_name="Test User",
+    )
+    u.groups.add(group)
+    return u
+
+
+@pytest.fixture
+def admin_user(db, password):
+    return User.objects.create_superuser(
+        username="admin",
+        email="admin@example.com",
+        password=password,
+    )
+
+
+@pytest.fixture
+def member_user(db, password):
+    group, _ = Group.objects.get_or_create(name="Member")
+    u = User.objects.create_user(
+        username="member",
+        email="member@example.com",
+        password=password,
+    )
+    u.groups.add(group)
+    return u
+
+
+@pytest.fixture
+def viewer_user(db, password):
+    group, _ = Group.objects.get_or_create(name="Viewer")
+    u = User.objects.create_user(
+        username="viewer",
+        email="viewer@example.com",
+        password=password,
+    )
+    u.groups.add(group)
+    return u
+
+
+@pytest.fixture
+def client_logged_in(client, user, password):
+    client.login(username=user.username, password=password)
+    return client
+
+
+@pytest.fixture
+def admin_client(client, admin_user, password):
+    client.login(username=admin_user.username, password=password)
+    return client
+
+
+@pytest.fixture
+def member_client(client, member_user, password):
+    client.login(username=member_user.username, password=password)
+    return client
+
+
+@pytest.fixture
+def viewer_client(client, viewer_user, password):
+    client.login(username=viewer_user.username, password=password)
+    return client
+
+
+# --- Core model fixtures ---
+
+
+@pytest.fixture
+def department(db):
+    return Department.objects.create(
+        name="Props",
+        description="Props department",
+    )
+
+
+@pytest.fixture
+def tag(db):
+    return Tag.objects.create(name="fragile", color="red")
+
+
+@pytest.fixture
+def category(department):
+    return Category.objects.create(
+        name="Hand Props",
+        description="Small hand-held items",
+        department=department,
+    )
+
+
+@pytest.fixture
+def location(db):
+    return Location.objects.create(
+        name="Main Store",
+        address="123 Theatre St",
+    )
+
+
+@pytest.fixture
+def child_location(location):
+    return Location.objects.create(
+        name="Shelf A",
+        parent=location,
+    )
+
+
+@pytest.fixture
+def asset(category, location, user):
+    a = Asset(
+        name="Test Prop",
+        description="A test prop for testing",
+        category=category,
+        current_location=location,
+        status="active",
+        created_by=user,
+    )
+    a.save()
+    return a
+
+
+@pytest.fixture
+def draft_asset(user):
+    a = Asset(
+        name="Draft Item",
+        status="draft",
+        created_by=user,
+    )
+    a.save()
+    return a
+
+
+@pytest.fixture
+def second_user(db, password):
+    return User.objects.create_user(
+        username="borrower",
+        email="borrower@example.com",
+        password=password,
+        display_name="Borrower Person",
+    )

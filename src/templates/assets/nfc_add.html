@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Add NFC Tag - {{ asset.name }} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div>
+        <h1 class="font-display text-2xl font-bold">Add NFC Tag</h1>
+        <p class="text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <div>
+                <label for="tag_id" class="block text-sm font-medium text-cream/70 mb-1.5">Tag ID *</label>
+                <input type="text" name="tag_id" id="tag_id" required
+                    class="form-input w-full rounded-lg px-4 py-2.5 text-cream"
+                    placeholder="Scan or enter NFC tag ID">
+            </div>
+
+            <div>
+                <label for="notes" class="block text-sm font-medium text-cream/70 mb-1.5">Notes (optional)</label>
+                <textarea name="notes" id="notes" rows="3"
+                    class="form-input w-full rounded-lg px-4 py-2.5 text-cream"
+                    placeholder="Any notes about this NFC tag..."></textarea>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Add NFC Tag
+            </button>
+            <a href="{% url 'assets:asset_detail' asset.pk %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

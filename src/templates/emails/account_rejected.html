@@ -1,0 +1,11 @@
+{% extends "emails/base_email.html" %}
+{% block title %}Account Registration - {{ site_name }}{% endblock %}
+{% block content %}
+<p style="margin: 0 0 16px; color: #111827; font-size: 16px;">Hello {{ display_name }},</p>
+<p style="margin: 0 0 16px; color: #374151; font-size: 15px;">
+Your registration request has not been approved at this time.
+</p>
+<p style="margin: 0; color: #374151; font-size: 15px;">
+If you believe this is an error, please contact the administrator.
+</p>
+{% endblock %}

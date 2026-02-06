@@ -1,0 +1,7 @@
+{{ site_name }}
+========================================
+
+{% block content %}{% endblock %}
+
+----------------------------------------
+This is an automated message from {{ site_name }}.

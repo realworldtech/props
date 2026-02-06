@@ -1,0 +1,11 @@
+{% extends "emails/base_email.txt" %}
+{% block content %}Hello {{ display_name }},
+
+Please verify your email address by visiting the link below:
+
+{{ verify_url }}
+
+This link will expire in 48 hours.
+
+If you did not register for an account, you can safely ignore this email.
+{% endblock %}
