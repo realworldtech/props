@@ -45,9 +45,8 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 
-# Specs and docs (private — not published)
+# Specs (private — not published)
 specs/
-docs/
 
 # Implementation tracking
 .impl-tracker*
