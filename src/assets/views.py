@@ -2267,20 +2267,26 @@ def ai_apply_suggestions(request, pk, image_pk):
             request.POST.get("create_apply_category")
             and image.ai_category_suggestion
         ):
-            # Create new category and apply it
-            cat, created = Category.objects.get_or_create(
-                name__iexact=image.ai_category_suggestion,
-                defaults={
-                    "name": image.ai_category_suggestion,
-                    "department": asset.department,
-                },
-            )
-            asset.category = cat
-            if created:
-                messages.info(
+            if asset.department is None:
+                messages.warning(
                     request,
-                    f'New category "{cat.name}" created from AI suggestion.',
+                    "Cannot create category: asset has no department set.",
                 )
+            else:
+                # Create new category and apply it
+                cat, created = Category.objects.get_or_create(
+                    name__iexact=image.ai_category_suggestion,
+                    defaults={
+                        "name": image.ai_category_suggestion,
+                        "department": asset.department,
+                    },
+                )
+                asset.category = cat
+                if created:
+                    messages.info(
+                        request,
+                        f'New category "{cat.name}" created from AI suggestion.',
+                    )
 
         if request.POST.get("apply_tags") and image.ai_tag_suggestions:
             for tag_name in image.ai_tag_suggestions:
