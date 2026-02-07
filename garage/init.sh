@@ -95,7 +95,8 @@ if [ "$BUCKET_CREATED" = "false" ]; then
 fi
 
 # Enable website mode for public access
-garage -c /etc/garage.toml bucket website --allow "$BUCKET_NAME" 2>/dev/null || true
+echo "Enabling website mode..."
+garage -c /etc/garage.toml bucket website --allow "$BUCKET_NAME"
 
 # Create or get access key
 echo "Checking key '$KEY_NAME'..."

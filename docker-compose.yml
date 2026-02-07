@@ -65,8 +65,7 @@ services:
       - "traefik.http.routers.media.entrypoints=websecure"
       - "traefik.http.routers.media.tls.certresolver=letsencrypt"
       - "traefik.http.routers.media.priority=100"
-      - "traefik.http.routers.media.middlewares=media-strip,media-host"
-      - "traefik.http.middlewares.media-strip.stripprefix.prefixes=/media"
+      - "traefik.http.routers.media.middlewares=media-host"
       - "traefik.http.middlewares.media-host.headers.customrequestheaders.Host=assets.web.garage.localhost"
       - "traefik.http.services.media.loadbalancer.server.port=3902"
     networks:
@@ -211,7 +210,7 @@ services:
       cd /app/src &&
       python manage.py migrate --noinput &&
       python manage.py collectstatic --noinput &&
-      gunicorn --bind 0.0.0.0:8000 --workers 4 props.wsgi:application
+      gunicorn --bind 0.0.0.0:8000 --workers 4 --access-logfile - --error-logfile - --log-level info props.wsgi:application
       "
     volumes:
       - static_volume:/app/src/staticfiles
