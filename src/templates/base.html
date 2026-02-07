@@ -199,12 +199,10 @@
                             Quick Capture
                         </a>
                         {% endif %}
-                        <div class="hidden md:flex items-center gap-2 text-sm text-cream/50">
-                            <div class="w-8 h-8 rounded-full bg-stage-600 flex items-center justify-center text-cream/70 font-medium">
-                                {{ user.username|make_list|first|upper }}
-                            </div>
-                            <span>{{ user.username }}</span>
-                        </div>
+                        <a href="{% url 'accounts:profile' %}" class="hidden md:flex items-center gap-2 text-sm text-cream/50 hover:text-cream transition-colors">
+                            {% include "includes/avatar.html" with email=user.email size=32 alt=user.get_display_name %}
+                            <span>{{ user.get_display_name }}</span>
+                        </a>
                         {% if user.is_staff %}
                         <a href="{% url 'admin:index' %}" class="hidden md:block text-cream/50 hover:text-cream text-sm transition-colors">Admin</a>
                         {% endif %}

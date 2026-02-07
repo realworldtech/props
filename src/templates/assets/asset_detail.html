@@ -306,7 +306,11 @@
                             {{ tx.get_action_display|first }}
                         </div>
                         <div class="flex-1">
-                            <div class="text-cream">{{ tx.get_action_display }}{% if tx.user %} by {{ tx.user.get_display_name }}{% endif %}</div>
+                            <div class="text-cream flex items-center gap-1.5">
+                                {{ tx.get_action_display }}{% if tx.user %} by
+                                <span class="inline-flex items-center gap-1">{% include "includes/avatar.html" with email=tx.user.email size=24 alt=tx.user.get_display_name %} {{ tx.user.get_display_name }}</span>
+                                {% endif %}
+                            </div>
                             {% if tx.borrower %}
                             <div class="text-cream/50">Borrower: {{ tx.borrower.get_display_name }}</div>
                             {% endif %}

@@ -676,7 +676,7 @@ def _convert_to_jpeg(uploaded_file):
 
     from PIL import Image as PILImage
     from PIL import ImageOps
-    from pillow_heif import register_heif_opener
+    from pi_heif import register_heif_opener
 
     from django.core.files.uploadedfile import InMemoryUploadedFile
 

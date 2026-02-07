@@ -1,0 +1,7 @@
+{% load gravatar %}
+{% gravatar_url email size as avatar_url %}
+<img src="{{ avatar_url }}"
+     alt="{{ alt }}"
+     width="{{ size }}" height="{{ size }}"
+     class="rounded-full"
+     loading="lazy">

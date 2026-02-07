@@ -12,6 +12,9 @@ django-storages[boto3]
 Pillow
 pi-heif
 
+# Avatars
+django-gravatar2
+
 # Frontend
 django-htmx
 

@@ -68,6 +68,8 @@ django==5.2.11
     #   django-unfold
 django-celery-beat==2.8.1
     # via -r requirements.in
+django-gravatar2==1.4.4
+    # via -r requirements.in
 django-htmx==1.27.0
     # via -r requirements.in
 django-ratelimit==4.1.0

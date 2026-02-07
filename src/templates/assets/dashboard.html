@@ -189,7 +189,12 @@
                         <td class="py-2.5 pr-4">
                             <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
                         </td>
-                        <td class="py-2.5 pr-4 text-cream/70">{{ asset.checked_out_to.get_display_name }}{% if asset.checked_out_to.organisation %} <span class="text-cream/40 text-xs">({{ asset.checked_out_to.organisation }})</span>{% endif %}</td>
+                        <td class="py-2.5 pr-4 text-cream/70">
+                            <span class="inline-flex items-center gap-1.5">
+                                {% include "includes/avatar.html" with email=asset.checked_out_to.email size=24 alt=asset.checked_out_to.get_display_name %}
+                                {{ asset.checked_out_to.get_display_name }}{% if asset.checked_out_to.organisation %} <span class="text-cream/40 text-xs">({{ asset.checked_out_to.organisation }})</span>{% endif %}
+                            </span>
+                        </td>
                         <td class="py-2.5 pr-4 text-cream/50 hidden sm:table-cell">{% if asset.checked_out_at %}{{ asset.checked_out_at|timesince }} ago{% else %}-{% endif %}</td>
                         <td class="py-2.5 pr-4 text-cream/50 hidden md:table-cell">{{ asset.category|default:"-" }}</td>
                         <td class="py-2.5 text-right">

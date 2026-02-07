@@ -29,6 +29,35 @@ class CustomUserChangeForm(UserChangeForm):
         )
 
 
+class ProfileEditForm(forms.ModelForm):
+    """Form for editing user profile details."""
+
+    class Meta:
+        model = CustomUser
+        fields = ("display_name", "email", "phone_number", "organisation")
+
+    def clean_phone_number(self):
+        phone = self.cleaned_data.get("phone_number", "").strip()
+        if phone and not re.match(r"^[0-9\s\-\(\)\+]+$", phone):
+            raise forms.ValidationError(
+                "Phone number may only contain digits, spaces, hyphens, "
+                "parentheses, and +."
+            )
+        return phone
+
+    def clean_email(self):
+        email = self.cleaned_data.get("email", "").strip().lower()
+        if (
+            CustomUser.objects.filter(email__iexact=email)
+            .exclude(pk=self.instance.pk)
+            .exists()
+        ):
+            raise forms.ValidationError(
+                "This email address is already in use."
+            )
+        return email
+
+
 class RegistrationForm(UserCreationForm):
     """Public registration form per S2.15.1."""
 

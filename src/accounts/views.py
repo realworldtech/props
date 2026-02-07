@@ -6,17 +6,25 @@ from django_ratelimit.decorators import ratelimit
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import (
+    AuthenticationForm,
+    PasswordChangeForm,
+    PasswordResetForm,
+    SetPasswordForm,
+)
+from django.contrib.auth.tokens import default_token_generator
 from django.core import signing
 from django.db import models
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from .email import send_branded_email
-from .forms import RegistrationForm
+from .forms import ProfileEditForm, RegistrationForm
 from .models import CustomUser
 
 logger = logging.getLogger(__name__)
@@ -486,3 +494,117 @@ def _send_rejection_email(user):
         subject=f"{settings.SITE_NAME} - Your account registration",
         recipient=user.email,
     )
+
+
+@login_required
+def profile_edit_view(request):
+    """Edit user profile details."""
+    user = request.user
+    original_email = user.email
+
+    if request.method == "POST":
+        form = ProfileEditForm(request.POST, instance=user)
+        if form.is_valid():
+            new_email = form.cleaned_data["email"]
+            email_changed = new_email.lower() != original_email.lower()
+
+            form.save()
+
+            if email_changed:
+                user.email_verified = False
+                user.is_active = False
+                user.save(update_fields=["email_verified", "is_active"])
+                _send_verification_email(user, request)
+                logout(request)
+                messages.info(
+                    request,
+                    "Your email has been changed. Please verify your new "
+                    "email address before logging in again.",
+                )
+                return redirect("accounts:login")
+
+            messages.success(request, "Profile updated successfully.")
+            return redirect("accounts:profile")
+    else:
+        form = ProfileEditForm(instance=user)
+
+    return render(request, "accounts/profile_edit.html", {"form": form})
+
+
+@login_required
+def password_change_view(request):
+    """Change current user's password."""
+    if request.method == "POST":
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+            messages.success(request, "Your password has been changed.")
+            return redirect("accounts:profile")
+    else:
+        form = PasswordChangeForm(request.user)
+
+    return render(request, "accounts/password_change.html", {"form": form})
+
+
+def password_reset_view(request):
+    """Request a password reset email."""
+    if request.method == "POST":
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            form.save(
+                request=request,
+                use_https=request.is_secure(),
+                token_generator=default_token_generator,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                email_template_name="accounts/password_reset_email.txt",
+                html_email_template_name="accounts/password_reset_email.html",
+            )
+            return redirect("accounts:password_reset_done")
+    else:
+        form = PasswordResetForm()
+
+    return render(request, "accounts/password_reset.html", {"form": form})
+
+
+def password_reset_done_view(request):
+    """Shown after password reset email has been sent."""
+    return render(request, "accounts/password_reset_done.html")
+
+
+def password_reset_confirm_view(request, uidb64, token):
+    """Set new password after clicking reset link."""
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = CustomUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+        user = None
+
+    if user is not None and default_token_generator.check_token(user, token):
+        if request.method == "POST":
+            form = SetPasswordForm(user, request.POST)
+            if form.is_valid():
+                form.save()
+                messages.success(
+                    request,
+                    "Your password has been reset. You can now log in.",
+                )
+                return redirect("accounts:password_reset_complete")
+        else:
+            form = SetPasswordForm(user)
+        return render(
+            request,
+            "accounts/password_reset_confirm.html",
+            {"form": form, "validlink": True},
+        )
+    else:
+        return render(
+            request,
+            "accounts/password_reset_confirm.html",
+            {"validlink": False},
+        )
+
+
+def password_reset_complete_view(request):
+    """Shown after password has been successfully reset."""
+    return render(request, "accounts/password_reset_complete.html")

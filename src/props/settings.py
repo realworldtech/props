@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_htmx",
     "django_celery_beat",
+    "django_gravatar",
     "accounts",
     "assets",
 ]
@@ -175,6 +176,16 @@ else:
     }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTHENTICATION_BACKENDS = [
+    "accounts.backends.EmailOrUsernameBackend",
+]
+
+# Gravatar avatars
+GRAVATAR_DEFAULT_IMAGE = "mp"
+GRAVATAR_DEFAULT_SIZE = 40
+GRAVATAR_DEFAULT_SECURE = True
+GRAVATAR_DEFAULT_RATING = "g"
 
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "assets:dashboard"

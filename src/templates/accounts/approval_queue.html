@@ -41,7 +41,12 @@
                 <tbody class="divide-y divide-white/5">
                     {% for pending in users %}
                     <tr class="hover:bg-white/5 transition-colors">
-                        <td class="py-3 px-4 text-sm text-cream">{{ pending.get_display_name }}</td>
+                        <td class="py-3 px-4 text-sm text-cream">
+                            <span class="inline-flex items-center gap-2">
+                                {% include "includes/avatar.html" with email=pending.email size=32 alt=pending.get_display_name %}
+                                {{ pending.get_display_name }}
+                            </span>
+                        </td>
                         <td class="py-3 px-4 text-sm text-cream/70">{{ pending.email }}</td>
                         <td class="py-3 px-4 text-sm text-cream/70 hidden md:table-cell">{{ pending.phone|default:"-" }}</td>
                         <td class="py-3 px-4 text-sm text-cream/70 hidden lg:table-cell">{{ pending.requested_department|default:"-" }}</td>
