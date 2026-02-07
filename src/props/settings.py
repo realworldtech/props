@@ -419,6 +419,33 @@ UNFOLD = {
     },
 }
 
+# Logging — ensure tracebacks appear in container logs even with DEBUG=False
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "WARNING",
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+    },
+}
+
 # Startup validation (§S4.9.4-04)
 from django.core.exceptions import ImproperlyConfigured
 
