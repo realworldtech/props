@@ -436,6 +436,13 @@ class AssetImage(models.Model):
         default=False,
         help_text="True when AI suggests a category not found in the database",
     )
+    ai_department_suggestion = models.CharField(
+        max_length=100, blank=True, default=""
+    )
+    ai_department_is_new = models.BooleanField(
+        default=False,
+        help_text="True when AI suggests a department not in the provided list",
+    )
 
     class Meta:
         ordering = ["-is_primary", "-uploaded_at"]

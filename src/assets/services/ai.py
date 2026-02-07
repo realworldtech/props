@@ -85,21 +85,42 @@ def analyse_image_data(
 
     image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
 
-    # Build category list from database
-    from assets.models import Category
+    # Build department list from database
+    from assets.models import Category, Department
 
+    db_departments = list(
+        Department.objects.filter(is_active=True)
+        .values_list("name", flat=True)
+        .order_by("name")
+    )
+    if db_departments:
+        department_hint = (
+            "2. A suggested department — choose from existing departments if "
+            "possible: " + ", ".join(db_departments) + ". "
+            "If none fit, suggest a new descriptive department name. "
+            "Set department_is_new to false if you chose an existing one, "
+            "or true if you suggest a new name.\n"
+        )
+    else:
+        department_hint = (
+            "2. A suggested department (e.g., Props, Costumes, Lighting, "
+            "Sound, Staging, Administration). "
+            "Set department_is_new to true.\n"
+        )
+
+    # Build category list from database
     db_categories = list(
         Category.objects.values_list("name", flat=True).order_by("name")
     )
     if db_categories:
         category_hint = (
-            "2. A suggested category — choose from existing categories if "
+            "3. A suggested category — choose from existing categories if "
             "possible: " + ", ".join(db_categories) + ". "
             "If none fit, suggest a new descriptive category name.\n"
         )
     else:
         category_hint = (
-            "2. A suggested category (e.g., Props, Costumes, Lighting, Sound, "
+            "3. A suggested category (e.g., Props, Costumes, Lighting, Sound, "
             "Set Pieces, Tools, Furniture, Electronics)\n"
         )
 
@@ -108,13 +129,15 @@ def analyse_image_data(
         "tool, or piece of equipment used in performing arts or events). "
         "Provide:\n"
         "1. A brief description (1-2 sentences)\n"
+        + department_hint
         + category_hint
-        + "3. Suggested tags (comma-separated, e.g., fragile, vintage, red)\n"
-        "4. Condition assessment (excellent, good, fair, poor, damaged)\n"
-        "5. Any visible text (OCR)\n"
-        "6. A concise name suggestion for this item (2-5 words, suitable "
+        + "4. Suggested tags (comma-separated, e.g., fragile, vintage, red)\n"
+        "5. Condition assessment (excellent, good, fair, poor, damaged)\n"
+        "6. Any visible text (OCR)\n"
+        "7. A concise name suggestion for this item (2-5 words, suitable "
         "as an asset name)\n\n"
-        "Respond in JSON format with keys: description, category, tags, "
+        "Respond in JSON format with keys: description, "
+        "department_suggestion, department_is_new, category, tags, "
         "condition, ocr_text, name_suggestion"
     )
 

@@ -72,6 +72,10 @@ def analyse_image(self, image_id: int):
             image.ai_error_message = result["error"]
         else:
             image.ai_description = result.get("description", "")
+            image.ai_department_suggestion = result.get(
+                "department_suggestion", ""
+            )
+            image.ai_department_is_new = result.get("department_is_new", False)
             image.ai_category_suggestion = result.get("category", "")
             # Check if suggested category exists in DB
             if image.ai_category_suggestion:
@@ -143,7 +147,10 @@ def reanalyse_image(self, image_id: int):
 
     # Reset AI fields
     image.ai_description = ""
+    image.ai_department_suggestion = ""
+    image.ai_department_is_new = False
     image.ai_category_suggestion = ""
+    image.ai_category_is_new = False
     image.ai_tag_suggestions = []
     image.ai_condition_suggestion = ""
     image.ai_ocr_text = ""

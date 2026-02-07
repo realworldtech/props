@@ -128,6 +128,12 @@
                         <dd class="text-cream mt-0.5">{{ img.ai_name_suggestion }}</dd>
                     </div>
                     {% endif %}
+                    {% if img.ai_department_suggestion %}
+                    <div>
+                        <dt class="text-cream/40 text-xs">Suggested Department</dt>
+                        <dd class="text-cream mt-0.5">{{ img.ai_department_suggestion }}</dd>
+                    </div>
+                    {% endif %}
                     {% if img.ai_category_suggestion %}
                     <div>
                         <dt class="text-cream/40 text-xs">Suggested Category</dt>
@@ -169,8 +175,20 @@
                         <input type="checkbox" name="apply_description" value="1" checked> Apply description
                     </label>
                     {% endif %}
-                    {% if img.ai_category_suggestion %}
                     {% load assets_tags %}
+                    {% if img.ai_department_suggestion %}
+                    {% department_exists img.ai_department_suggestion as dept_exists %}
+                    {% if dept_exists %}
+                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                        <input type="checkbox" name="apply_department" value="1" checked> Apply department ({{ img.ai_department_suggestion }})
+                    </label>
+                    {% else %}
+                    <label class="inline-flex items-center gap-1.5 text-xs text-amber-400/70">
+                        <input type="checkbox" name="create_apply_department" value="1"> Create &amp; apply department "{{ img.ai_department_suggestion }}"
+                    </label>
+                    {% endif %}
+                    {% endif %}
+                    {% if img.ai_category_suggestion %}
                     {% category_exists img.ai_category_suggestion as cat_exists %}
                     {% if cat_exists %}
                     <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">

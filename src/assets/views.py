@@ -2254,6 +2254,34 @@ def ai_apply_suggestions(request, pk, image_pk):
             if image.ai_condition_suggestion in dict(Asset.CONDITION_CHOICES):
                 asset.condition = image.ai_condition_suggestion
 
+        # Resolve department before category (needed for new category creation)
+        resolved_dept = None
+        if (
+            request.POST.get("apply_department")
+            and image.ai_department_suggestion
+        ):
+            try:
+                resolved_dept = Department.objects.get(
+                    name__iexact=image.ai_department_suggestion
+                )
+            except Department.DoesNotExist:
+                pass
+
+        if (
+            request.POST.get("create_apply_department")
+            and image.ai_department_suggestion
+        ):
+            resolved_dept, created = Department.objects.get_or_create(
+                name__iexact=image.ai_department_suggestion,
+                defaults={"name": image.ai_department_suggestion},
+            )
+            if created:
+                messages.info(
+                    request,
+                    f'New department "{resolved_dept.name}" created '
+                    f"from AI suggestion.",
+                )
+
         if request.POST.get("apply_category") and image.ai_category_suggestion:
             try:
                 cat = Category.objects.get(
@@ -2267,18 +2295,20 @@ def ai_apply_suggestions(request, pk, image_pk):
             request.POST.get("create_apply_category")
             and image.ai_category_suggestion
         ):
-            if asset.department is None:
+            # Use resolved department, fall back to asset's current department
+            dept = resolved_dept or asset.department
+            if dept is None:
                 messages.warning(
                     request,
-                    "Cannot create category: asset has no department set.",
+                    "Cannot create category: no department selected. "
+                    "Apply a department first.",
                 )
             else:
-                # Create new category and apply it
                 cat, created = Category.objects.get_or_create(
                     name__iexact=image.ai_category_suggestion,
                     defaults={
                         "name": image.ai_category_suggestion,
-                        "department": asset.department,
+                        "department": dept,
                     },
                 )
                 asset.category = cat
