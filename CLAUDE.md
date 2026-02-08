@@ -139,6 +139,7 @@ Spec documents are expected at `docs/spec/` in the working tree. If the spec rep
 - Target 80%+ test coverage
 - **Test-driven development is mandatory.** For every change: (1) write the test first, (2) run it with `pytest` and verify it fails, (3) implement the code, (4) run the test again and verify it passes. Do not skip the red-green cycle — the failing test must be executed, not just written.
 - **Tests must pass in both environments.** After implementation, run `pytest` locally (venv) and also inside Docker with `docker compose exec web pytest`. If Docker is not running, ask the user to start it — do not skip the Docker verification.
+- **Bug fix workflow.** When fixing a bug, always start by asking: "why didn't we catch this in testing?" Then, before writing any fix: (1) write a test that reproduces the bug, (2) run it and confirm it fails, (3) fix the bug, (4) run the test and confirm it passes. The bug is usually an edge case we hadn't considered — the test ensures we don't regress. Only skip the reproduction test if the bug genuinely cannot be tested (e.g. infrastructure-only issue), and note why.
 
 ## Dependencies
 
