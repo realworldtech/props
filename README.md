@@ -110,6 +110,20 @@ flake8 src/
 
 Configuration is in `pyproject.toml`.
 
+## Contributing
+
+PROPS is built using **specification-driven development** — a formal specification governs application behaviour, and all changes are assessed against it.
+
+Before contributing, please read [CONTRIBUTING.md](CONTRIBUTING.md). In short:
+
+1. **Open an issue first** to discuss your proposed change
+2. **Write tests before code** (TDD — red/green cycle is mandatory)
+3. **Submit a PR** using the provided template, including spec alignment details
+4. **Bug reports** should include logs, screenshots, and reproduction steps — use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+5. **Using AI tools?** We recommend the [`/implement` skill](https://github.com/realworldtech/claude-implement-skill) for Claude Code to keep changes aligned with the spec
+
+Contributions are welcome, but may require spec discussion before merging. By submitting a contribution, you grant Real World Technology Solutions an irrevocable, royalty-free license to distribute your contribution as part of PROPS under both the open-source AGPL-3.0 and any commercial license we offer — this means your code may be included in commercially-licensed versions of the product. See [CONTRIBUTING.md](CONTRIBUTING.md) for full terms.
+
 ## License
 
 Copyright (C) 2024-2026 Real World Technology Solutions
