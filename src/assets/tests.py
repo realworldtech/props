@@ -11,6 +11,8 @@ from django.urls import reverse
 from assets.models import (
     Asset,
     AssetImage,
+    AssetKit,
+    AssetSerial,
     Category,
     Department,
     Location,
@@ -3157,3 +3159,601 @@ class TestAssetImageAdmin:
         assert stats["failed"] == 1
         assert stats["total_prompt_tokens"] == 100
         assert stats["total_completion_tokens"] == 50
+
+
+# ============================================================
+# ASSET KITS & SERIALISATION TESTS (F2)
+# ============================================================
+
+
+class TestAssetNewFields:
+    """Test is_serialised and is_kit defaults on Asset."""
+
+    def test_is_serialised_default_false(self, asset):
+        assert asset.is_serialised is False
+
+    def test_is_kit_default_false(self, asset):
+        assert asset.is_kit is False
+
+    def test_serialised_asset_flag(self, serialised_asset):
+        assert serialised_asset.is_serialised is True
+
+    def test_kit_asset_flag(self, kit_asset):
+        assert kit_asset.is_kit is True
+
+
+class TestTransactionNewFields:
+    """Test new Transaction fields."""
+
+    def test_quantity_default(self, asset, user):
+        txn = Transaction.objects.create(
+            asset=asset, user=user, action="checkout"
+        )
+        assert txn.quantity == 1
+
+    def test_serial_fk_nullable(self, asset, user):
+        txn = Transaction.objects.create(
+            asset=asset, user=user, action="checkout"
+        )
+        assert txn.serial is None
+
+    def test_serial_barcode_nullable(self, asset, user):
+        txn = Transaction.objects.create(
+            asset=asset, user=user, action="checkout"
+        )
+        assert txn.serial_barcode is None
+
+    def test_kit_return_action(self, asset, user):
+        txn = Transaction.objects.create(
+            asset=asset, user=user, action="kit_return"
+        )
+        assert txn.get_action_display() == "Kit Return"
+
+    def test_transaction_with_serial(
+        self, serialised_asset, asset_serial, user
+    ):
+        txn = Transaction.objects.create(
+            asset=serialised_asset,
+            user=user,
+            action="checkout",
+            serial=asset_serial,
+            serial_barcode=asset_serial.barcode,
+        )
+        assert txn.serial == asset_serial
+        assert txn.serial_barcode == asset_serial.barcode
+
+
+class TestAssetSerialModel:
+    """Test AssetSerial model."""
+
+    def test_creation(self, serialised_asset, location):
+        serial = AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="002",
+            barcode="TEST-SERIAL-002",
+            current_location=location,
+        )
+        assert serial.status == "active"
+        assert serial.condition == "good"
+        assert serial.is_archived is False
+
+    def test_str(self, asset_serial, serialised_asset):
+        expected = f"{serialised_asset.name} #001"
+        assert str(asset_serial) == expected
+
+    def test_unique_serial_per_asset(self, serialised_asset, asset_serial):
+        with pytest.raises(Exception):
+            AssetSerial.objects.create(
+                asset=serialised_asset,
+                serial_number="001",
+                barcode="TEST-DIFFERENT",
+            )
+
+    def test_unique_barcode(self, serialised_asset, asset_serial):
+        with pytest.raises(Exception):
+            AssetSerial.objects.create(
+                asset=serialised_asset,
+                serial_number="099",
+                barcode=asset_serial.barcode,
+            )
+
+    def test_cross_table_barcode_validation(self, serialised_asset, asset):
+        serial = AssetSerial(
+            asset=serialised_asset,
+            serial_number="099",
+            barcode=asset.barcode,
+        )
+        with pytest.raises(ValidationError, match="already in use"):
+            serial.clean()
+
+    def test_clean_non_serialised_parent(self, asset, location):
+        serial = AssetSerial(
+            asset=asset,
+            serial_number="001",
+            barcode="TEST-BAD-SERIAL",
+        )
+        with pytest.raises(ValidationError, match="non-serialised"):
+            serial.clean()
+
+    def test_draft_status_rejected(self, serialised_asset):
+        serial = AssetSerial(
+            asset=serialised_asset,
+            serial_number="099",
+            status="draft",
+        )
+        with pytest.raises(ValidationError, match="draft"):
+            serial.clean()
+
+    def test_status_choices(self, db):
+        choices = dict(AssetSerial.STATUS_CHOICES)
+        assert "active" in choices
+        assert "retired" in choices
+        assert "missing" in choices
+        assert "lost" in choices
+        assert "stolen" in choices
+        assert "disposed" in choices
+        assert "draft" not in choices
+
+
+class TestAssetKitModel:
+    """Test AssetKit model."""
+
+    def test_creation(self, kit_component, kit_asset, asset):
+        assert kit_component.kit == kit_asset
+        assert kit_component.component == asset
+        assert kit_component.quantity == 1
+        assert kit_component.is_required is True
+
+    def test_str(self, kit_component, kit_asset, asset):
+        expected = f"{kit_asset.name} -> {asset.name}"
+        assert str(kit_component) == expected
+
+    def test_unique_kit_component(self, kit_component, kit_asset, asset):
+        with pytest.raises(Exception):
+            AssetKit.objects.create(
+                kit=kit_asset,
+                component=asset,
+            )
+
+    def test_clean_kit_must_be_kit(self, asset, category, location, user):
+        non_kit = Asset(
+            name="Not A Kit",
+            category=category,
+            current_location=location,
+            status="active",
+            is_kit=False,
+            created_by=user,
+        )
+        non_kit.save()
+        ak = AssetKit(kit=non_kit, component=asset)
+        with pytest.raises(ValidationError, match="is_kit"):
+            ak.clean()
+
+    def test_no_self_reference(self, kit_asset):
+        ak = AssetKit(kit=kit_asset, component=kit_asset)
+        with pytest.raises(ValidationError, match="itself"):
+            ak.clean()
+
+    def test_circular_reference(self, category, location, user):
+        kit_a = Asset(
+            name="Kit A",
+            category=category,
+            current_location=location,
+            status="active",
+            is_kit=True,
+            created_by=user,
+        )
+        kit_a.save()
+        kit_b = Asset(
+            name="Kit B",
+            category=category,
+            current_location=location,
+            status="active",
+            is_kit=True,
+            created_by=user,
+        )
+        kit_b.save()
+
+        # A contains B
+        AssetKit.objects.create(kit=kit_a, component=kit_b)
+        # B contains A -> circular
+        ak = AssetKit(kit=kit_b, component=kit_a)
+        with pytest.raises(ValidationError, match="Circular"):
+            ak.clean()
+
+    def test_serial_must_belong_to_component(
+        self, kit_asset, serialised_asset, asset_serial, asset
+    ):
+        # asset_serial belongs to serialised_asset, not to asset
+        ak = AssetKit(
+            kit=kit_asset,
+            component=asset,
+            serial=asset_serial,
+        )
+        with pytest.raises(ValidationError, match="component"):
+            ak.clean()
+
+
+class TestDerivedFields:
+    """Test derived properties on Asset for serialised assets."""
+
+    def test_effective_quantity_serialised_no_serials(self, serialised_asset):
+        assert serialised_asset.effective_quantity == 0
+
+    def test_effective_quantity_serialised_with_serials(
+        self, serialised_asset, location
+    ):
+        for i in range(3):
+            AssetSerial.objects.create(
+                asset=serialised_asset,
+                serial_number=f"EQ-{i}",
+                barcode=f"EQ-SERIAL-{i}",
+                current_location=location,
+            )
+        assert serialised_asset.effective_quantity == 3
+
+    def test_effective_quantity_excludes_disposed(
+        self, serialised_asset, location
+    ):
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="EQ-A",
+            barcode="EQ-A-BC",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="EQ-B",
+            barcode="EQ-B-BC",
+            status="disposed",
+            current_location=location,
+        )
+        assert serialised_asset.effective_quantity == 1
+
+    def test_effective_quantity_non_serialised(self, non_serialised_asset):
+        assert non_serialised_asset.effective_quantity == 10
+
+    def test_derived_status_non_serialised(self, asset):
+        assert asset.derived_status == "active"
+
+    def test_derived_status_serialised_active(
+        self, serialised_asset, location
+    ):
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="DS-1",
+            barcode="DS-1-BC",
+            status="active",
+            current_location=location,
+        )
+        assert serialised_asset.derived_status == "active"
+
+    def test_derived_status_serialised_missing_priority(
+        self, serialised_asset, location
+    ):
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="DS-2",
+            barcode="DS-2-BC",
+            status="retired",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="DS-3",
+            barcode="DS-3-BC",
+            status="missing",
+            current_location=location,
+        )
+        # Missing should take priority over retired
+        assert serialised_asset.derived_status == "missing"
+
+    def test_derived_status_no_serials_falls_back(self, serialised_asset):
+        assert serialised_asset.derived_status == "active"
+
+    def test_condition_summary_non_serialised(self, asset):
+        assert asset.condition_summary == "good"
+
+    def test_condition_summary_serialised(self, serialised_asset, location):
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="CS-1",
+            barcode="CS-1-BC",
+            condition="good",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="CS-2",
+            barcode="CS-2-BC",
+            condition="good",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="CS-3",
+            barcode="CS-3-BC",
+            condition="fair",
+            current_location=location,
+        )
+        summary = serialised_asset.condition_summary
+        assert summary["good"] == 2
+        assert summary["fair"] == 1
+
+    def test_available_count_serialised(
+        self, serialised_asset, location, second_user
+    ):
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AC-1",
+            barcode="AC-1-BC",
+            status="active",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AC-2",
+            barcode="AC-2-BC",
+            status="active",
+            checked_out_to=second_user,
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AC-3",
+            barcode="AC-3-BC",
+            status="retired",
+            current_location=location,
+        )
+        assert serialised_asset.available_count == 1
+
+    def test_is_checked_out_serialised(
+        self, serialised_asset, location, second_user
+    ):
+        assert not serialised_asset.is_checked_out
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="CO-1",
+            barcode="CO-1-BC",
+            status="active",
+            checked_out_to=second_user,
+            current_location=location,
+        )
+        assert serialised_asset.is_checked_out
+
+    def test_is_checked_out_non_serialised(self, asset, second_user):
+        assert not asset.is_checked_out
+        asset.checked_out_to = second_user
+        assert asset.is_checked_out
+
+
+class TestSerialBarcodeService:
+    """Test serial barcode generation and cross-table validation."""
+
+    def test_pattern_generation(self):
+        from assets.services.barcode import (
+            generate_serial_barcode_string,
+        )
+
+        result = generate_serial_barcode_string("ASSET-ABCD1234", 1)
+        assert result == "ASSET-ABCD1234-S001"
+
+    def test_pattern_generation_high_index(self):
+        from assets.services.barcode import (
+            generate_serial_barcode_string,
+        )
+
+        result = generate_serial_barcode_string("ASSET-ABCD1234", 42)
+        assert result == "ASSET-ABCD1234-S042"
+
+    def test_cross_table_available(self, db):
+        from assets.services.barcode import (
+            validate_cross_table_barcode,
+        )
+
+        assert validate_cross_table_barcode("TOTALLY-UNIQUE-CODE")
+
+    def test_cross_table_collision_asset(self, asset):
+        from assets.services.barcode import (
+            validate_cross_table_barcode,
+        )
+
+        assert not validate_cross_table_barcode(asset.barcode)
+
+    def test_cross_table_collision_serial(
+        self, serialised_asset, asset_serial
+    ):
+        from assets.services.barcode import (
+            validate_cross_table_barcode,
+        )
+
+        assert not validate_cross_table_barcode(asset_serial.barcode)
+
+    def test_cross_table_exclude_self(self, asset):
+        from assets.services.barcode import (
+            validate_cross_table_barcode,
+        )
+
+        # Excluding the asset itself should make it available
+        assert validate_cross_table_barcode(
+            asset.barcode, exclude_asset_pk=asset.pk
+        )
+
+
+class TestSerialCRUDService:
+    """Test serial CRUD service functions."""
+
+    def test_create_serial(self, serialised_asset):
+        from assets.services.serial import create_serial
+
+        serial = create_serial(
+            serialised_asset, "SVC-001", condition="excellent"
+        )
+        assert serial.pk is not None
+        assert serial.serial_number == "SVC-001"
+        assert serial.barcode is not None
+        assert serial.condition == "excellent"
+
+    def test_create_serial_auto_barcode(self, serialised_asset):
+        from assets.services.serial import create_serial
+
+        serial = create_serial(serialised_asset, "SVC-002")
+        assert serial.barcode.startswith(serialised_asset.barcode)
+        assert "-S" in serial.barcode
+
+    def test_create_serial_non_serialised_fails(self, asset):
+        from assets.services.serial import create_serial
+
+        with pytest.raises(ValidationError, match="non-serialised"):
+            create_serial(asset, "FAIL-001")
+
+    def test_update_serial(self, asset_serial):
+        from assets.services.serial import update_serial
+
+        updated = update_serial(asset_serial, condition="poor")
+        assert updated.condition == "poor"
+        asset_serial.refresh_from_db()
+        assert asset_serial.condition == "poor"
+
+    def test_archive_serial(self, asset_serial):
+        from assets.services.serial import archive_serial
+
+        archived = archive_serial(asset_serial)
+        assert archived.is_archived is True
+        asset_serial.refresh_from_db()
+        assert asset_serial.is_archived is True
+
+    def test_restore_serial(self, asset_serial):
+        from assets.services.serial import archive_serial, restore_serial
+
+        archive_serial(asset_serial)
+        restored = restore_serial(asset_serial)
+        assert restored.is_archived is False
+
+    def test_get_available_serials(
+        self, serialised_asset, location, second_user
+    ):
+        from assets.services.serial import get_available_serials
+
+        s1 = AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AV-1",
+            barcode="AV-1-BC",
+            status="active",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AV-2",
+            barcode="AV-2-BC",
+            status="active",
+            checked_out_to=second_user,
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="AV-3",
+            barcode="AV-3-BC",
+            status="retired",
+            current_location=location,
+        )
+        available = get_available_serials(serialised_asset)
+        assert list(available) == [s1]
+
+    def test_get_serial_summary(self, serialised_asset, location, second_user):
+        from assets.services.serial import get_serial_summary
+
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="SUM-1",
+            barcode="SUM-1-BC",
+            status="active",
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="SUM-2",
+            barcode="SUM-2-BC",
+            status="active",
+            checked_out_to=second_user,
+            current_location=location,
+        )
+        AssetSerial.objects.create(
+            asset=serialised_asset,
+            serial_number="SUM-3",
+            barcode="SUM-3-BC",
+            status="retired",
+            current_location=location,
+        )
+        summary = get_serial_summary(serialised_asset)
+        assert summary["total"] == 3
+        assert summary["by_status"]["active"] == 2
+        assert summary["by_status"]["retired"] == 1
+        assert summary["checked_out"] == 1
+        assert summary["available"] == 1
+
+
+class TestScanLookupSerial:
+    """Test scan lookup resolves serial barcodes."""
+
+    def test_serial_barcode_found(
+        self, client_logged_in, serialised_asset, asset_serial
+    ):
+        response = client_logged_in.get(
+            reverse("assets:scan_lookup") + f"?code={asset_serial.barcode}"
+        )
+        data = response.json()
+        assert data["found"] is True
+        assert data["asset_id"] == serialised_asset.pk
+        assert data["serial_id"] == asset_serial.pk
+        assert f"serial={asset_serial.pk}" in data["url"]
+
+    def test_serial_barcode_case_insensitive(
+        self, client_logged_in, serialised_asset, asset_serial
+    ):
+        response = client_logged_in.get(
+            reverse("assets:scan_lookup")
+            + f"?code={asset_serial.barcode.lower()}"
+        )
+        data = response.json()
+        assert data["found"] is True
+
+    def test_asset_barcode_still_priority(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:scan_lookup") + f"?code={asset.barcode}"
+        )
+        data = response.json()
+        assert data["found"] is True
+        assert "serial_id" not in data
+
+    def test_identifier_serial_redirect(
+        self, client_logged_in, serialised_asset, asset_serial
+    ):
+        response = client_logged_in.get(
+            reverse(
+                "assets:asset_by_identifier",
+                args=[asset_serial.barcode],
+            )
+        )
+        assert response.status_code == 302
+        assert f"serial={asset_serial.pk}" in response.url
+
+
+class TestSerialAdmin:
+    """Test AssetSerial and AssetKit admin registration."""
+
+    def test_asset_serial_admin_registered(self, admin_client, db):
+        response = admin_client.get("/admin/assets/assetserial/")
+        assert response.status_code == 200
+
+    def test_asset_kit_admin_registered(self, admin_client, db):
+        response = admin_client.get("/admin/assets/assetkit/")
+        assert response.status_code == 200
+
+    def test_asset_admin_has_serial_inline(
+        self, admin_client, serialised_asset
+    ):
+        response = admin_client.get(
+            f"/admin/assets/asset/{serialised_asset.pk}/change/"
+        )
+        assert response.status_code == 200

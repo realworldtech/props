@@ -195,6 +195,15 @@ class Asset(models.Model):
         "disposed": [],
     }
 
+    is_serialised = models.BooleanField(
+        default=False,
+        help_text="Track individual serial units for this asset",
+    )
+    is_kit = models.BooleanField(
+        default=False,
+        help_text="This asset is a kit containing other assets",
+    )
+
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     category = models.ForeignKey(
@@ -369,7 +378,76 @@ class Asset(models.Model):
     @property
     def is_checked_out(self):
         """Return whether the asset is currently checked out."""
+        if self.is_serialised:
+            return self.serials.filter(
+                checked_out_to__isnull=False,
+                is_archived=False,
+            ).exists()
         return self.checked_out_to is not None
+
+    @property
+    def effective_quantity(self):
+        """Count of trackable units."""
+        if self.is_serialised:
+            return (
+                self.serials.filter(
+                    is_archived=False,
+                )
+                .exclude(status="disposed")
+                .count()
+            )
+        return self.quantity
+
+    @property
+    def derived_status(self):
+        """Aggregate status from serials, or own status."""
+        if not self.is_serialised:
+            return self.status
+        statuses = set(
+            self.serials.filter(is_archived=False).values_list(
+                "status", flat=True
+            )
+        )
+        if not statuses:
+            return self.status
+        # Priority order
+        for s in [
+            "active",
+            "missing",
+            "lost",
+            "stolen",
+            "retired",
+            "disposed",
+        ]:
+            if s in statuses:
+                return s
+        return self.status
+
+    @property
+    def condition_summary(self):
+        """Summary of conditions across serials, or own condition."""
+        if not self.is_serialised:
+            return self.condition
+        from django.db.models import Count
+
+        return dict(
+            self.serials.filter(is_archived=False)
+            .values_list("condition")
+            .annotate(count=Count("id"))
+        )
+
+    @property
+    def available_count(self):
+        """Number of units available for checkout."""
+        if self.is_serialised:
+            return self.serials.filter(
+                status="active",
+                checked_out_to__isnull=True,
+                is_archived=False,
+            ).count()
+        if self.checked_out_to is not None:
+            return max(0, self.quantity - 1)
+        return self.quantity
 
     @property
     def checked_out_at(self):
@@ -582,6 +660,7 @@ class Transaction(models.Model):
         ("relocate", "Relocate"),
         ("audit", "Audit"),
         ("handover", "Handover"),
+        ("kit_return", "Kit Return"),
     ]
 
     asset = models.ForeignKey(
@@ -622,6 +701,24 @@ class Transaction(models.Model):
         blank=True,
         help_text="Expected return date for checkouts",
     )
+    quantity = models.PositiveIntegerField(
+        default=1,
+        help_text="Number of units in this transaction",
+    )
+    serial = models.ForeignKey(
+        "AssetSerial",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transactions",
+        help_text="Specific serial unit for serialised assets",
+    )
+    serial_barcode = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="Denormalised barcode snapshot of the serial",
+    )
     notes = models.TextField(blank=True)
     timestamp = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
@@ -655,6 +752,179 @@ class Transaction(models.Model):
         raise ValidationError(
             "Transactions are immutable and cannot be deleted."
         )
+
+
+class AssetSerial(models.Model):
+    """Individual serialised unit of a parent asset."""
+
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("retired", "Retired"),
+        ("missing", "Missing"),
+        ("lost", "Lost"),
+        ("stolen", "Stolen"),
+        ("disposed", "Disposed"),
+    ]
+
+    CONDITION_CHOICES = Asset.CONDITION_CHOICES
+
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="serials",
+    )
+    serial_number = models.CharField(max_length=100)
+    barcode = models.CharField(
+        max_length=50, unique=True, null=True, blank=True
+    )
+    barcode_image = models.ImageField(
+        upload_to="barcodes/serial/", blank=True, null=True
+    )
+    condition = models.CharField(
+        max_length=20, choices=CONDITION_CHOICES, default="good"
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="active"
+    )
+    notes = models.TextField(blank=True)
+    checked_out_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="borrowed_serials",
+    )
+    current_location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="serials",
+    )
+    lost_stolen_notes = models.TextField(
+        blank=True,
+        help_text="Details about loss or theft circumstances",
+    )
+    is_archived = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["serial_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["asset", "serial_number"],
+                name="unique_serial_per_asset",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["asset", "status"],
+                name="idx_serial_asset_status",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.asset.name} #{self.serial_number}"
+
+    def clean(self):
+        super().clean()
+        # Parent must be serialised
+        if self.asset_id and not self.asset.is_serialised:
+            raise ValidationError(
+                "Cannot create serial units for a " "non-serialised asset."
+            )
+        # Status must not be draft
+        if self.status == "draft":
+            raise ValidationError(
+                {"status": "'draft' is not a valid serial status."}
+            )
+        # Cross-table barcode uniqueness
+        if self.barcode:
+            if (
+                Asset.objects.filter(barcode=self.barcode)
+                .exclude(pk=None)
+                .exists()
+            ):
+                raise ValidationError(
+                    {
+                        "barcode": "This barcode is already in use "
+                        "by an asset."
+                    }
+                )
+
+
+class AssetKit(models.Model):
+    """Links component assets into a kit."""
+
+    kit = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="kit_components",
+    )
+    component = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="member_of_kits",
+    )
+    quantity = models.PositiveIntegerField(default=1)
+    is_required = models.BooleanField(default=True)
+    is_kit_only = models.BooleanField(
+        default=False,
+        help_text="Component can only be checked out as part of this kit",
+    )
+    serial = models.ForeignKey(
+        AssetSerial,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="kit_memberships",
+        help_text="Specific serial unit if component is serialised",
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kit", "component"],
+                name="unique_kit_component",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.kit.name} -> {self.component.name}"
+
+    def clean(self):
+        super().clean()
+        # Kit asset must have is_kit=True
+        if self.kit_id and not self.kit.is_kit:
+            raise ValidationError("The kit asset must have is_kit=True.")
+        # No self-reference
+        if self.kit_id and self.component_id:
+            if self.kit_id == self.component_id:
+                raise ValidationError(
+                    "An asset cannot be a component of itself."
+                )
+            # Circular reference detection
+            self._check_circular(self.component_id, {self.kit_id})
+
+        # If serial is set, it must belong to the component
+        if self.serial_id and self.component_id:
+            if self.serial.asset_id != self.component_id:
+                raise ValidationError(
+                    {"serial": "Serial must belong to the " "component asset."}
+                )
+
+    def _check_circular(self, component_id, visited):
+        """Recursively check for circular kit references."""
+        sub_kits = AssetKit.objects.filter(kit_id=component_id).values_list(
+            "component_id", flat=True
+        )
+        for sub_id in sub_kits:
+            if sub_id in visited:
+                raise ValidationError("Circular kit reference detected.")
+            visited.add(sub_id)
+            self._check_circular(sub_id, visited)
 
 
 class StocktakeSession(models.Model):

@@ -18,6 +18,8 @@ settings.STORAGES["staticfiles"] = {
 from assets.models import (
     Asset,
     AssetImage,
+    AssetKit,
+    AssetSerial,
     Category,
     Department,
     Location,
@@ -181,4 +183,75 @@ def second_user(db, password):
         email="borrower@example.com",
         password=password,
         display_name="Borrower Person",
+    )
+
+
+# --- Serialisation & Kit fixtures ---
+
+
+@pytest.fixture
+def serialised_asset(category, location, user):
+    a = Asset(
+        name="Wireless Mic Set",
+        description="Set of wireless microphones",
+        category=category,
+        current_location=location,
+        status="active",
+        is_serialised=True,
+        created_by=user,
+    )
+    a.save()
+    return a
+
+
+@pytest.fixture
+def non_serialised_asset(category, location, user):
+    a = Asset(
+        name="Cable Bundle",
+        description="Pack of XLR cables",
+        category=category,
+        current_location=location,
+        status="active",
+        is_serialised=False,
+        quantity=10,
+        created_by=user,
+    )
+    a.save()
+    return a
+
+
+@pytest.fixture
+def asset_serial(serialised_asset, location):
+    return AssetSerial.objects.create(
+        asset=serialised_asset,
+        serial_number="001",
+        barcode=f"{serialised_asset.barcode}-S001",
+        status="active",
+        condition="good",
+        current_location=location,
+    )
+
+
+@pytest.fixture
+def kit_asset(category, location, user):
+    a = Asset(
+        name="Sound Kit",
+        description="Complete sound kit",
+        category=category,
+        current_location=location,
+        status="active",
+        is_kit=True,
+        created_by=user,
+    )
+    a.save()
+    return a
+
+
+@pytest.fixture
+def kit_component(kit_asset, asset):
+    return AssetKit.objects.create(
+        kit=kit_asset,
+        component=asset,
+        quantity=1,
+        is_required=True,
     )

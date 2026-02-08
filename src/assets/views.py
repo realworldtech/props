@@ -23,6 +23,7 @@ from .forms import (
 from .models import (
     Asset,
     AssetImage,
+    AssetSerial,
     Category,
     Department,
     Location,
@@ -629,7 +630,34 @@ def scan_lookup(request):
     except Asset.DoesNotExist:
         pass
 
-    # 2. Check active NFC tag
+    # 2. Check serial barcode
+    try:
+        serial = AssetSerial.objects.select_related("asset").get(
+            barcode__iexact=code
+        )
+        parent = serial.asset
+        url = f"{parent.get_absolute_url()}?serial={serial.pk}"
+        return JsonResponse(
+            {
+                "found": True,
+                "asset_id": parent.pk,
+                "asset_name": parent.name,
+                "barcode": parent.barcode,
+                "serial_id": serial.pk,
+                "serial_number": serial.serial_number,
+                "location": (
+                    str(serial.current_location or parent.current_location)
+                    if (serial.current_location or parent.current_location)
+                    else None
+                ),
+                "url": url,
+                "is_draft": parent.status == "draft",
+            }
+        )
+    except AssetSerial.DoesNotExist:
+        pass
+
+    # 3. Check active NFC tag
     nfc_asset = NFCTag.get_asset_by_tag(code)
     if nfc_asset:
         return JsonResponse(
@@ -648,7 +676,7 @@ def scan_lookup(request):
             }
         )
 
-    # 3. Not found - redirect to quick capture
+    # 4. Not found - redirect to quick capture
     from django.urls import reverse
 
     return JsonResponse(
@@ -672,12 +700,22 @@ def asset_by_identifier(request, identifier):
     except Asset.DoesNotExist:
         pass
 
-    # 2. Active NFC tag match
+    # 2. Serial barcode match
+    try:
+        serial = AssetSerial.objects.select_related("asset").get(
+            barcode__iexact=identifier
+        )
+        parent = serial.asset
+        return redirect(f"{parent.get_absolute_url()}?serial={serial.pk}")
+    except AssetSerial.DoesNotExist:
+        pass
+
+    # 3. Active NFC tag match
     nfc_asset = NFCTag.get_asset_by_tag(identifier)
     if nfc_asset:
         return redirect("assets:asset_detail", pk=nfc_asset.pk)
 
-    # 3. Not found - redirect to Quick Capture
+    # 4. Not found - redirect to Quick Capture
     from django.urls import reverse
 
     return redirect(f"{reverse('assets:quick_capture')}?code={identifier}")

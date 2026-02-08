@@ -64,6 +64,39 @@ def generate_qr_image(
     return ContentFile(buffer.getvalue())
 
 
+def generate_serial_barcode_string(
+    asset_barcode: str, serial_index: int
+) -> str:
+    """Generate a serial barcode: {ASSET_BARCODE}-S{NNN}."""
+    return f"{asset_barcode}-S{serial_index:03d}"
+
+
+def validate_cross_table_barcode(
+    barcode_value: str,
+    exclude_asset_pk=None,
+    exclude_serial_pk=None,
+) -> bool:
+    """Check barcode is unique across Asset and AssetSerial tables.
+
+    Returns True if the barcode is available (no collision).
+    """
+    from assets.models import Asset, AssetSerial
+
+    asset_qs = Asset.objects.filter(barcode=barcode_value)
+    if exclude_asset_pk:
+        asset_qs = asset_qs.exclude(pk=exclude_asset_pk)
+    if asset_qs.exists():
+        return False
+
+    serial_qs = AssetSerial.objects.filter(barcode=barcode_value)
+    if exclude_serial_pk:
+        serial_qs = serial_qs.exclude(pk=exclude_serial_pk)
+    if serial_qs.exists():
+        return False
+
+    return True
+
+
 def get_asset_url(barcode_text: str) -> str:
     """Build the public asset URL from a barcode.
 

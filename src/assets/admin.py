@@ -19,6 +19,8 @@ from django.utils.html import format_html
 from .models import (
     Asset,
     AssetImage,
+    AssetKit,
+    AssetSerial,
     Category,
     Department,
     Location,
@@ -55,6 +57,36 @@ class AssetImageInline(TabularInline):
         "ai_ocr_text",
         "ai_prompt_tokens",
         "ai_completion_tokens",
+    ]
+
+
+class AssetSerialInline(TabularInline):
+    model = AssetSerial
+    extra = 0
+    fields = [
+        "serial_number",
+        "barcode",
+        "status",
+        "condition",
+        "checked_out_to",
+        "current_location",
+    ]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(is_archived=False)
+
+
+class AssetKitInline(TabularInline):
+    model = AssetKit
+    fk_name = "kit"
+    extra = 0
+    fields = [
+        "component",
+        "quantity",
+        "is_required",
+        "is_kit_only",
+        "serial",
+        "notes",
     ]
 
 
@@ -156,6 +188,8 @@ class AssetAdmin(ModelAdmin):
         ("category", RelatedDropdownFilter),
         ("current_location", RelatedDropdownFilter),
         ("tags", MultipleRelatedDropdownFilter),
+        "is_serialised",
+        "is_kit",
     ]
     list_filter_submit = True
     search_fields = ["name", "barcode", "description"]
@@ -167,7 +201,12 @@ class AssetAdmin(ModelAdmin):
     ]
     autocomplete_fields = ["category", "current_location", "checked_out_to"]
     filter_horizontal = ["tags"]
-    inlines = [AssetImageInline, NFCTagInline]
+    inlines = [
+        AssetSerialInline,
+        AssetKitInline,
+        AssetImageInline,
+        NFCTagInline,
+    ]
 
     fieldsets = (
         (
@@ -180,6 +219,8 @@ class AssetAdmin(ModelAdmin):
                     "category",
                     "current_location",
                     "home_location",
+                    "is_serialised",
+                    "is_kit",
                 )
             },
         ),
@@ -425,6 +466,73 @@ class AssetImageAdmin(ModelAdmin):
         )
         extra_context["ai_stats"] = stats
         return super().changelist_view(request, extra_context=extra_context)
+
+
+@admin.register(AssetSerial)
+class AssetSerialAdmin(ModelAdmin):
+    list_display = [
+        "serial_number",
+        "asset",
+        "barcode",
+        "display_status",
+        "display_condition",
+        "checked_out_to",
+        "current_location",
+        "is_archived",
+    ]
+    list_filter = [
+        ("status", ChoicesDropdownFilter),
+        ("condition", ChoicesDropdownFilter),
+        "is_archived",
+    ]
+    search_fields = [
+        "serial_number",
+        "barcode",
+        "asset__name",
+        "asset__barcode",
+    ]
+
+    @display(
+        description="Status",
+        label={
+            "active": "success",
+            "retired": "warning",
+            "missing": "danger",
+            "lost": "danger",
+            "stolen": "danger",
+            "disposed": "default",
+        },
+    )
+    def display_status(self, obj):
+        return obj.status
+
+    @display(
+        description="Condition",
+        label={
+            "excellent": "success",
+            "good": "success",
+            "fair": "info",
+            "poor": "warning",
+            "damaged": "danger",
+        },
+    )
+    def display_condition(self, obj):
+        return obj.condition
+
+
+@admin.register(AssetKit)
+class AssetKitAdmin(ModelAdmin):
+    list_display = [
+        "kit",
+        "component",
+        "quantity",
+        "is_required",
+        "is_kit_only",
+    ]
+    search_fields = [
+        "kit__name",
+        "component__name",
+    ]
 
 
 @admin.register(NFCTag)
