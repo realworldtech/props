@@ -635,7 +635,9 @@ def scan_lookup(request):
         {
             "found": False,
             "code": code,
-            "quick_capture_url": f"{reverse('assets:quick_capture')}?code={code}",
+            "quick_capture_url": (
+                f"{reverse('assets:quick_capture')}?code={code}"
+            ),
         }
     )
 
@@ -674,9 +676,9 @@ def _convert_to_jpeg(uploaded_file):
     """
     from io import BytesIO
 
+    from pi_heif import register_heif_opener
     from PIL import Image as PILImage
     from PIL import ImageOps
-    from pi_heif import register_heif_opener
 
     from django.core.files.uploadedfile import InMemoryUploadedFile
 
@@ -1187,7 +1189,8 @@ def asset_label(request, pk):
         buffer = BytesIO()
         qr_img.save(buffer, format="PNG")
         buffer.seek(0)
-        qr_data_uri = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+        encoded = base64.b64encode(buffer.getvalue()).decode()
+        qr_data_uri = f"data:image/png;base64,{encoded}"
     except ImportError:
         pass
 
@@ -2315,7 +2318,8 @@ def ai_apply_suggestions(request, pk, image_pk):
                 if created:
                     messages.info(
                         request,
-                        f'New category "{cat.name}" created from AI suggestion.',
+                        f'New category "{cat.name}" created'
+                        f" from AI suggestion.",
                     )
 
         if request.POST.get("apply_tags") and image.ai_tag_suggestions:
@@ -2346,7 +2350,8 @@ def ai_status(request, pk, image_pk):
         f'border border-purple-500/20 p-4 flex items-center gap-3">'
         f'<div class="w-5 h-5 border-2 border-purple-500/30 '
         f'border-t-purple-500 rounded-full animate-spin"></div>'
-        f'<span class="text-purple-300 text-sm">AI analysis in progress...</span>'
+        f'<span class="text-purple-300 text-sm">'
+        f"AI analysis in progress...</span>"
         f"</div>"
     )
 

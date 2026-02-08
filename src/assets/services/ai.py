@@ -189,6 +189,6 @@ def analyse_image_data(
         logger.error("Failed to parse AI response as JSON: %s", e)
         return {"error": f"Invalid JSON response from AI: {e}"}
     except Exception as e:
-        # Let Anthropic exceptions bubble up to the task for proper retry handling
+        # Let Anthropic exceptions bubble up for retry
         logger.error("AI analysis failed: %s", e)
         raise

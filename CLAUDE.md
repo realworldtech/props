@@ -18,8 +18,8 @@ docker compose --profile dev up -d
 # Start production stack (Traefik with auto-SSL)
 docker compose --profile prod up -d
 
-# Run tests (from repo root, outside Docker)
-pytest
+# Run tests (from repo root, use the venv)
+.venv/bin/pytest
 
 # Run tests inside Docker
 docker compose exec web pytest

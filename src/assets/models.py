@@ -441,7 +441,8 @@ class AssetImage(models.Model):
     )
     ai_department_is_new = models.BooleanField(
         default=False,
-        help_text="True when AI suggests a department not in the provided list",
+        help_text="True when AI suggests a department"
+        " not in the provided list",
     )
 
     class Meta:

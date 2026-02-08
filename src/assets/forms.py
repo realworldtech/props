@@ -4,6 +4,9 @@ from django import forms
 
 from .models import Asset, AssetImage, Category, Location, Tag
 
+_CSS = "form-input w-full rounded-lg" " px-4 py-2.5 text-cream"
+_CSS_LG = "form-input w-full rounded-lg" " px-4 py-3 text-cream text-lg"
+
 # Only these statuses are user-selectable on the form.
 # Other transitions (missing, disposed) happen via specific workflows.
 FORM_STATUS_CHOICES = [
@@ -21,7 +24,7 @@ class AssetForm(forms.ModelForm):
         initial="active",
         widget=forms.Select(
             attrs={
-                "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                "class": _CSS,
             }
         ),
         help_text="Draft assets can be saved without category or location.",
@@ -45,13 +48,13 @@ class AssetForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "placeholder": "Asset name",
                 }
             ),
             "description": forms.Textarea(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "rows": 3,
                     "placeholder": "Description",
                 }
@@ -62,13 +65,13 @@ class AssetForm(forms.ModelForm):
             ),
             "quantity": forms.NumberInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "min": 1,
                 }
             ),
             "condition": forms.Select(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                 }
             ),
             "tags": forms.SelectMultiple(
@@ -79,13 +82,13 @@ class AssetForm(forms.ModelForm):
             ),
             "notes": forms.Textarea(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "rows": 3,
                 }
             ),
             "purchase_price": forms.NumberInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "step": "0.01",
                     "min": "0",
                     "placeholder": "0.00",
@@ -93,7 +96,7 @@ class AssetForm(forms.ModelForm):
             ),
             "estimated_value": forms.NumberInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "step": "0.01",
                     "min": "0",
                     "placeholder": "0.00",
@@ -112,7 +115,8 @@ class AssetForm(forms.ModelForm):
             is_active=True
         )
 
-        # For edit, expand status choices if current status is beyond draft/active
+        # For edit, expand choices if current status is beyond
+        # draft/active
         if self.instance and self.instance.pk:
             current = self.instance.status
             if current not in dict(FORM_STATUS_CHOICES):
@@ -159,7 +163,7 @@ class AssetImageForm(forms.ModelForm):
         widgets = {
             "caption": forms.TextInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "placeholder": "Caption (optional)",
                 }
             ),
@@ -174,7 +178,7 @@ class QuickCaptureForm(forms.Form):
         required=False,
         widget=forms.TextInput(
             attrs={
-                "class": "form-input w-full rounded-lg px-4 py-3 text-cream text-lg",
+                "class": _CSS_LG,
                 "placeholder": "Asset name (optional)",
             }
         ),
@@ -183,7 +187,7 @@ class QuickCaptureForm(forms.Form):
         required=False,
         widget=forms.Textarea(
             attrs={
-                "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                "class": _CSS,
                 "rows": 2,
                 "placeholder": "Notes (optional)",
             }
@@ -221,7 +225,7 @@ class TagForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "placeholder": "Tag name",
                 }
             ),
@@ -248,19 +252,19 @@ class CategoryForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                 }
             ),
             "description": forms.Textarea(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "rows": 3,
                 }
             ),
             "icon": forms.HiddenInput(attrs={"id": "id_icon"}),
             "department": forms.Select(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                 }
             ),
         }
@@ -275,24 +279,24 @@ class LocationForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                 }
             ),
             "address": forms.Textarea(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "rows": 2,
                 }
             ),
             "description": forms.Textarea(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                     "rows": 2,
                 }
             ),
             "parent": forms.Select(
                 attrs={
-                    "class": "form-input w-full rounded-lg px-4 py-2.5 text-cream",
+                    "class": _CSS,
                 }
             ),
         }

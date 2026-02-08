@@ -25,12 +25,12 @@ def hex_to_oklch(hex_color: str) -> tuple[float, float, float]:
     b_lin = linearize(b_srgb)
 
     # M1: linear sRGB → LMS (combined sRGB-to-XYZ and XYZ-to-LMS)
-    l = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin
+    lms_l = 0.4122214708 * r_lin + 0.5363325363 * g_lin + 0.0514459929 * b_lin
     m = 0.2119034982 * r_lin + 0.6806995451 * g_lin + 0.1073969566 * b_lin
     s = 0.0883024619 * r_lin + 0.2817188376 * g_lin + 0.6299787005 * b_lin
 
     # Cube root (LMS → LMS')
-    l_ = math.copysign(abs(l) ** (1.0 / 3.0), l) if l != 0 else 0.0
+    l_ = math.copysign(abs(lms_l) ** (1.0 / 3.0), lms_l) if lms_l != 0 else 0.0
     m_ = math.copysign(abs(m) ** (1.0 / 3.0), m) if m != 0 else 0.0
     s_ = math.copysign(abs(s) ** (1.0 / 3.0), s) if s != 0 else 0.0
 

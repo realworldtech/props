@@ -20,8 +20,7 @@ from django.db import models
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import urlsafe_base64_decode
 
 from .email import send_branded_email
 from .forms import ProfileEditForm, RegistrationForm
@@ -424,7 +423,8 @@ def approve_user_view(request, user_pk):
 
     messages.success(
         request,
-        f"{pending_user.get_display_name()} has been approved as {group_name}.",
+        f"{pending_user.get_display_name()} has been approved"
+        f" as {group_name}.",
     )
     return redirect("accounts:approval_queue")
 

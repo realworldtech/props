@@ -98,7 +98,7 @@ class RegistrationForm(UserCreationForm):
         return email
 
     def _generate_username(self, email: str) -> str:
-        """Generate username from email prefix with numeric suffix if needed."""
+        """Generate username from email prefix with suffix."""
         base = email.split("@")[0].lower()
         # Clean to valid chars
         base = re.sub(r"[^a-z0-9_]", "", base) or "user"

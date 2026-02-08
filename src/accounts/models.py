@@ -65,7 +65,7 @@ class CustomUser(AbstractUser):
 
     @property
     def account_state(self):
-        """Return the account state: active, pending_approval, unverified, rejected."""
+        """Return the account state: active, pending, unverified."""
         if self.is_active:
             return "active"
         if self.email_verified and self.rejection_reason:

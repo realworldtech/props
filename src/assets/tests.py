@@ -2343,7 +2343,7 @@ class TestHandoverService:
 
 
 class TestBackdating:
-    """Test transaction backdating sets is_backdated and preserves created_at."""
+    """Test backdating sets is_backdated and preserves created_at."""
 
     def test_backdated_checkout(self, asset, second_user, user):
         from datetime import timedelta

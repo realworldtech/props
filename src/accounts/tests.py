@@ -1,7 +1,5 @@
 """Tests for the accounts app."""
 
-import pytest
-
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
@@ -49,7 +47,6 @@ class TestCustomUser:
     def test_email_is_required(self, db):
         # AbstractUser doesn't enforce blank=False at DB level by default,
         # but our model sets blank=False
-        user = User(username="noemail", password="pass123!")
         # email field has blank=False
         assert User._meta.get_field("email").blank is False
 

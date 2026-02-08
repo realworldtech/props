@@ -62,7 +62,10 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             "Department Management",
             {
                 "fields": ("display_managed_departments",),
-                "description": "Departments this user manages. Edit from the Department admin.",
+                "description": (
+                    "Departments this user manages."
+                    " Edit from the Department admin."
+                ),
             },
         ),
         (

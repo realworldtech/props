@@ -403,14 +403,18 @@ UNFOLD = {
                         "title": "Intervals",
                         "icon": "timer",
                         "link": reverse_lazy(
-                            "admin:django_celery_beat_intervalschedule_changelist"
+                            "admin:django_celery_beat"
+                            "_intervalschedule"
+                            "_changelist"
                         ),
                     },
                     {
                         "title": "Crontabs",
                         "icon": "calendar_clock",
                         "link": reverse_lazy(
-                            "admin:django_celery_beat_crontabschedule_changelist"
+                            "admin:django_celery_beat"
+                            "_crontabschedule"
+                            "_changelist"
                         ),
                     },
                 ],

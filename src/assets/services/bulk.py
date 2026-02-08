@@ -2,7 +2,7 @@
 
 from django.contrib.auth import get_user_model
 
-from ..models import Asset, Category, Location, Transaction
+from ..models import Asset, Category, Location
 
 User = get_user_model()
 

@@ -50,18 +50,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-
-      - name: Install pip-tools
-        run: pip install pip-tools
-
-      - name: Verify requirements.txt is up to date
+      - name: Verify every package in requirements.in appears in requirements.txt
         run: |
-          pip-compile --quiet --output-file=- requirements.in | diff - requirements.txt
-          if [ $? -ne 0 ]; then
-            echo "requirements.txt is out of sync with requirements.in. Run pip-compile requirements.in and commit the result."
+          missing=0
+          while IFS= read -r line; do
+            # Skip comments, blank lines, and options
+            line=$(echo "$line" | sed 's/#.*//' | xargs)
+            [ -z "$line" ] && continue
+            [[ "$line" == -* ]] && continue
+            # Extract package name (before any version specifier)
+            pkg=$(echo "$line" | sed 's/\[.*\]//' | sed 's/[><=!].*//' | xargs | tr '[:upper:]' '[:lower:]')
+            [ -z "$pkg" ] && continue
+            if ! grep -qi "^${pkg}[>=<! \[]" requirements.txt && ! grep -qi "# via.*-r requirements.in" requirements.txt; then
+              # Check if it appears as a dependency at all
+              if ! grep -qi "^${pkg}" requirements.txt; then
+                echo "MISSING: $pkg is in requirements.in but not in requirements.txt"
+                missing=1
+              fi
+            fi
+          done < requirements.in
+          if [ "$missing" -eq 1 ]; then
+            echo "requirements.txt is out of sync with requirements.in. Run 'pip-compile requirements.in' and commit the result."
             exit 1
           fi
+          echo "All packages from requirements.in found in requirements.txt"

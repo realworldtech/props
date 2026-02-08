@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from django.core.cache import cache
-from django.test import override_settings
 
 from props.colors import generate_oklch_palette, hex_to_oklch
 
