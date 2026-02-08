@@ -57,5 +57,8 @@ _old/
 # Temp files
 .mermaid-tmp/
 
+# Tailwind standalone CLI binary
+bin/
+
 # Claude Code
 .claude/
