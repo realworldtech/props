@@ -1,6 +1,7 @@
 """Bulk operations service for assets."""
 
 from django.contrib.auth import get_user_model
+from django.db.models import F
 
 from ..models import Asset, Category, Location
 
@@ -37,22 +38,28 @@ def bulk_status_change(
 ) -> tuple[int, list[str]]:
     """Change the status of multiple assets.
 
+    Validates each transition individually, then applies all valid
+    status changes in a single bulk_update query.
+
     Returns a tuple of (success_count, list of failure messages).
     """
     from .state import validate_transition
 
-    assets = Asset.objects.filter(pk__in=asset_ids)
-    count = 0
+    assets = list(Asset.objects.filter(pk__in=asset_ids))
+    valid_assets: list[Asset] = []
     failures: list[str] = []
     for asset in assets:
         try:
             validate_transition(asset, new_status)
             asset.status = new_status
-            asset.save(update_fields=["status"])
-            count += 1
+            valid_assets.append(asset)
         except Exception as exc:
             failures.append(f"{asset.name}: {exc}")
-    return count, failures
+
+    if valid_assets:
+        Asset.objects.bulk_update(valid_assets, ["status"])
+
+    return len(valid_assets), failures
 
 
 def bulk_edit(
@@ -62,34 +69,26 @@ def bulk_edit(
 ) -> int:
     """Bulk edit category and/or location for multiple assets.
 
+    Uses a single queryset.update() call instead of per-object saves.
+
     Returns the number of assets updated.
     """
     assets = Asset.objects.filter(pk__in=asset_ids)
 
-    update_fields: list[str] = []
-    category = None
-    location = None
+    update_kwargs: dict = {}
 
     if category_id:
         category = Category.objects.get(pk=category_id)
-        update_fields.append("category")
+        update_kwargs["category"] = category
 
     if location_id:
         location = Location.objects.get(pk=location_id, is_active=True)
-        update_fields.append("current_location")
+        update_kwargs["current_location"] = location
 
-    if not update_fields:
+    if not update_kwargs:
         return 0
 
-    count = 0
-    for asset in assets:
-        if category is not None:
-            asset.category = category
-        if location is not None:
-            asset.current_location = location
-        asset.save(update_fields=update_fields)
-        count += 1
-    return count
+    return assets.update(**update_kwargs)
 
 
 def bulk_checkout(
@@ -101,25 +100,47 @@ def bulk_checkout(
 ) -> dict:
     """Check out multiple assets to a single borrower.
 
+    Batches the home_location pre-assignment into a single query,
+    then performs per-object checkout transactions.
+
     Returns a dict with 'checked_out' count and 'skipped' list.
     """
     from .transactions import create_checkout
 
     borrower = User.objects.get(pk=borrower_id)
-    assets = Asset.objects.filter(
-        pk__in=asset_ids, status__in=["active", "draft"]
+    assets = list(
+        Asset.objects.filter(pk__in=asset_ids, status__in=["active", "draft"])
     )
-    count = 0
+
+    # Separate checked-out assets (skip) from eligible ones
     skipped: list[str] = []
+    eligible: list[Asset] = []
     for asset in assets:
         if asset.is_checked_out:
             skipped.append(asset.name)
-            continue
-        if not asset.home_location:
+        else:
+            eligible.append(asset)
+
+    # Batch-set home_location for eligible assets that don't have one
+    needs_home = [a for a in eligible if not a.home_location]
+    if needs_home:
+        Asset.objects.filter(
+            pk__in=[a.pk for a in needs_home],
+            home_location__isnull=True,
+        ).update(home_location=F("current_location"))
+        # Refresh in-memory objects so create_checkout sees
+        # the updated home_location
+        for asset in needs_home:
             asset.home_location = asset.current_location
-            asset.save(update_fields=["home_location"])
+
+    count = 0
+    for asset in eligible:
         create_checkout(
-            asset, borrower, performed_by, notes=notes, timestamp=timestamp
+            asset,
+            borrower,
+            performed_by,
+            notes=notes,
+            timestamp=timestamp,
         )
         count += 1
     return {"checked_out": count, "skipped": skipped}

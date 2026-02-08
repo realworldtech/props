@@ -66,3 +66,30 @@ def print_zpl(zpl: str) -> bool:
     except (OSError, socket.timeout) as e:
         logger.error("Failed to print to %s:%s: %s", host, port, e)
         return False
+
+
+def generate_batch_zpl(assets: list) -> str:
+    """Generate concatenated ZPL for a batch of asset labels.
+
+    Each asset produces one label. The ZPL commands are concatenated
+    so the entire batch can be sent in a single print_zpl() call.
+    """
+    zpl_parts = []
+    for asset in assets:
+        category_name = asset.category.name if asset.category else ""
+        zpl_parts.append(
+            generate_zpl(asset.barcode, asset.name, category_name)
+        )
+    return "".join(zpl_parts)
+
+
+def print_batch_labels(assets: list) -> tuple[bool, int]:
+    """Generate and print labels for a batch of assets.
+
+    Returns (success, count) tuple.
+    """
+    if not assets:
+        return True, 0
+    zpl = generate_batch_zpl(assets)
+    success = print_zpl(zpl)
+    return success, len(assets)

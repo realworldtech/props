@@ -1,0 +1,14 @@
+{% extends "admin/change_list.html" %}
+{% block content %}
+{% if ai_stats %}
+<div style="display:flex;gap:2rem;padding:1rem;margin-bottom:1rem;background:var(--color-bg-sidebar, #f8f9fa);border-radius:8px;font-size:0.875rem;">
+    <div><strong>Total Images:</strong> {{ ai_stats.total_images }}</div>
+    <div><strong>Analysed:</strong> {{ ai_stats.analysed }}</div>
+    <div><strong>Failed:</strong> {{ ai_stats.failed }}</div>
+    <div><strong>Prompt Tokens:</strong> {{ ai_stats.total_prompt_tokens|default:"0" }}</div>
+    <div><strong>Completion Tokens:</strong> {{ ai_stats.total_completion_tokens|default:"0" }}</div>
+    <div><strong>Total Tokens:</strong> {{ ai_stats.total_prompt_tokens|default:0|add:ai_stats.total_completion_tokens|default:0 }}</div>
+</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}

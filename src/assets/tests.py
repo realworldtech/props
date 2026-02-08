@@ -2431,6 +2431,10 @@ class TestBorrowerRole:
 
     def test_borrower_cannot_login(self, client, db, password):
         from django.contrib.auth.models import Group
+        from django.core.cache import cache
+
+        # Clear ratelimit cache so earlier login tests don't block us
+        cache.clear()
 
         group, _ = Group.objects.get_or_create(name="Borrower")
         borrower_user = User.objects.create_user(
@@ -2933,3 +2937,223 @@ class TestBarcodePregeneration:
     def test_pregenerate_viewer_denied(self, viewer_client, db):
         response = viewer_client.get(reverse("assets:barcode_pregenerate"))
         assert response.status_code == 403
+
+
+class TestZebraBatchPrinting:
+    def test_generate_batch_zpl_empty(self):
+        from assets.services.zebra import generate_batch_zpl
+
+        result = generate_batch_zpl([])
+        assert result == ""
+
+    def test_generate_batch_zpl_multiple(
+        self, asset, category, location, user
+    ):
+        from assets.services.zebra import generate_batch_zpl
+
+        # Create additional assets
+        asset2 = Asset.objects.create(
+            name="Second Asset",
+            barcode="ASSET-12345678",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        asset3 = Asset.objects.create(
+            name="Third Asset",
+            barcode="ASSET-87654321",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+
+        result = generate_batch_zpl([asset, asset2, asset3])
+
+        # Should contain multiple ZPL blocks
+        assert result.count("^XA") == 3
+        assert result.count("^XZ") == 3
+
+        # Should contain all three barcodes
+        assert asset.barcode in result
+        assert "ASSET-12345678" in result
+        assert "ASSET-87654321" in result
+
+        # Should contain all asset names
+        assert asset.name in result
+        assert "Second Asset" in result
+        assert "Third Asset" in result
+
+    def test_print_batch_labels_success(
+        self, asset, category, location, user, settings
+    ):
+        from unittest.mock import MagicMock, patch
+
+        from assets.services.zebra import print_batch_labels
+
+        # Configure mock printer settings
+        settings.ZEBRA_PRINTER_HOST = "192.168.1.100"
+        settings.ZEBRA_PRINTER_PORT = 9100
+
+        asset2 = Asset.objects.create(
+            name="Second Asset",
+            barcode="ASSET-12345678",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+
+        with patch("assets.services.zebra.socket.socket") as mock_socket:
+            mock_sock_instance = MagicMock()
+            mock_socket.return_value.__enter__.return_value = (
+                mock_sock_instance
+            )
+
+            success, count = print_batch_labels([asset, asset2])
+
+            assert success is True
+            assert count == 2
+            assert mock_sock_instance.sendall.called
+
+    def test_print_batch_labels_empty(self):
+        from assets.services.zebra import print_batch_labels
+
+        success, count = print_batch_labels([])
+        assert success is True
+        assert count == 0
+
+
+# ============================================================
+# QUERY COUNT REGRESSION TESTS
+# ============================================================
+
+
+class TestQueryCounts:
+    """Lock in query counts for key views to prevent N+1 regressions.
+
+    Uses django_assert_num_queries to verify that views execute a fixed
+    number of SQL queries regardless of data volume.
+    """
+
+    def test_dashboard_query_count(
+        self,
+        django_assert_num_queries,
+        client_logged_in,
+        asset,
+        department,
+        category,
+        location,
+        tag,
+    ):
+        """Dashboard should use a fixed number of queries."""
+        asset.tags.add(tag)
+        with django_assert_num_queries(20):
+            response = client_logged_in.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+
+    def test_asset_list_query_count(
+        self,
+        django_assert_num_queries,
+        client_logged_in,
+        asset,
+    ):
+        """Asset list should use a fixed number of queries."""
+        with django_assert_num_queries(16):
+            response = client_logged_in.get(reverse("assets:asset_list"))
+        assert response.status_code == 200
+
+    def test_asset_detail_query_count(
+        self,
+        django_assert_num_queries,
+        client_logged_in,
+        asset,
+    ):
+        """Asset detail should use a fixed number of queries."""
+        with django_assert_num_queries(28):
+            response = client_logged_in.get(
+                reverse("assets:asset_detail", args=[asset.pk])
+            )
+        assert response.status_code == 200
+
+
+# ============================================================
+# ADMIN TESTS
+# ============================================================
+
+
+class TestAssetAdmin:
+    """Test AssetAdmin custom display methods."""
+
+    def test_ai_analysis_summary_no_images(self, admin_user, asset):
+        from assets.admin import AssetAdmin
+
+        admin_instance = AssetAdmin(Asset, None)
+        result = admin_instance.ai_analysis_summary(asset)
+        assert result == "-"
+
+    def test_ai_analysis_summary_with_images(self, admin_user, asset, user):
+        from assets.admin import AssetAdmin
+
+        # Create images with different statuses
+        AssetImage.objects.create(
+            asset=asset,
+            image="test1.jpg",
+            ai_processing_status="completed",
+            uploaded_by=user,
+        )
+        AssetImage.objects.create(
+            asset=asset,
+            image="test2.jpg",
+            ai_processing_status="pending",
+            uploaded_by=user,
+        )
+        AssetImage.objects.create(
+            asset=asset,
+            image="test3.jpg",
+            ai_processing_status="completed",
+            uploaded_by=user,
+        )
+
+        admin_instance = AssetAdmin(Asset, None)
+        result = admin_instance.ai_analysis_summary(asset)
+        assert result == "2/3 analysed"
+
+
+class TestAssetImageAdmin:
+    """Test AssetImageAdmin changelist with AI stats."""
+
+    def test_changelist_includes_ai_stats(self, admin_client, asset, user):
+        # Create images with AI data
+        AssetImage.objects.create(
+            asset=asset,
+            image="test1.jpg",
+            ai_processing_status="completed",
+            ai_prompt_tokens=100,
+            ai_completion_tokens=50,
+            uploaded_by=user,
+        )
+        AssetImage.objects.create(
+            asset=asset,
+            image="test2.jpg",
+            ai_processing_status="failed",
+            ai_prompt_tokens=0,
+            ai_completion_tokens=0,
+            uploaded_by=user,
+        )
+        AssetImage.objects.create(
+            asset=asset,
+            image="test3.jpg",
+            ai_processing_status="pending",
+            ai_prompt_tokens=0,
+            ai_completion_tokens=0,
+            uploaded_by=user,
+        )
+
+        response = admin_client.get("/admin/assets/assetimage/")
+        assert response.status_code == 200
+        assert "ai_stats" in response.context
+        stats = response.context["ai_stats"]
+        assert stats["total_images"] == 3
+        assert stats["analysed"] == 1
+        assert stats["failed"] == 1
+        assert stats["total_prompt_tokens"] == 100
+        assert stats["total_completion_tokens"] == 50

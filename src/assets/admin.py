@@ -10,6 +10,7 @@ from unfold.decorators import action, display
 from unfold.enums import ActionVariant
 
 from django.contrib import admin, messages
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
@@ -145,6 +146,7 @@ class AssetAdmin(ModelAdmin):
         "current_location",
         "display_condition",
         "display_checked_out",
+        "ai_analysis_summary",
         "updated_at",
     ]
     list_filter = [
@@ -258,6 +260,15 @@ class AssetAdmin(ModelAdmin):
         if obj.checked_out_to:
             return obj.checked_out_to.get_display_name()
         return None
+
+    @display(description="AI Analysis")
+    def ai_analysis_summary(self, obj):
+        images = obj.images.all()
+        total = images.count()
+        if not total:
+            return "-"
+        completed = images.filter(ai_processing_status="completed").count()
+        return f"{completed}/{total} analysed"
 
     def barcode_image_preview(self, obj):
         if obj.barcode_image:
@@ -401,6 +412,19 @@ class AssetImageAdmin(ModelAdmin):
         if obj.ai_prompt_tokens or obj.ai_completion_tokens:
             return f"{obj.ai_prompt_tokens + obj.ai_completion_tokens}"
         return "-"
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        qs = self.get_queryset(request)
+        stats = qs.aggregate(
+            total_images=Count("id"),
+            analysed=Count("id", filter=Q(ai_processing_status="completed")),
+            failed=Count("id", filter=Q(ai_processing_status="failed")),
+            total_prompt_tokens=Sum("ai_prompt_tokens"),
+            total_completion_tokens=Sum("ai_completion_tokens"),
+        )
+        extra_context["ai_stats"] = stats
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.register(NFCTag)
