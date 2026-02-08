@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,7 +37,7 @@
         }
     </script>
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -46,30 +57,30 @@
             </div>
 
             {% if state == "pending_approval" %}
-            <h1 class="font-display text-3xl font-bold text-cream">Pending Approval</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Pending Approval</h1>
             {% elif state == "unverified" %}
-            <h1 class="font-display text-3xl font-bold text-cream">Email Not Verified</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Email Not Verified</h1>
             {% elif state == "borrower_no_access" %}
-            <h1 class="font-display text-3xl font-bold text-cream">Borrower Account</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Borrower Account</h1>
             {% else %}
-            <h1 class="font-display text-3xl font-bold text-cream">Account Unavailable</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Account Unavailable</h1>
             {% endif %}
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8 text-center">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8 text-center">
             {% if state == "pending_approval" %}
-            <p class="text-cream/70 mb-4">
+            <p class="text-stage-600 dark:text-cream/70 mb-4">
                 Your account is currently awaiting administrator approval.
             </p>
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 You will receive an email once your account has been reviewed. This usually takes 1-2 business days.
             </p>
 
             {% elif state == "unverified" %}
-            <p class="text-cream/70 mb-4">
+            <p class="text-stage-600 dark:text-cream/70 mb-4">
                 Your email address has not yet been verified.
             </p>
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Please check your inbox for the verification email, or request a new one below.
             </p>
             <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
@@ -77,24 +88,24 @@
             </a>
 
             {% elif state == "borrower_no_access" %}
-            <p class="text-cream/70 mb-4">
+            <p class="text-stage-600 dark:text-cream/70 mb-4">
                 Your account is set up as an external borrower.
             </p>
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Borrower accounts do not have login access. Assets are checked out to you by a staff member. If you need direct access, please contact the system administrator.
             </p>
 
             {% else %}
-            <p class="text-cream/70 mb-4">
+            <p class="text-stage-600 dark:text-cream/70 mb-4">
                 Your registration was not approved.
             </p>
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 If you believe this is an error, please contact the system administrator.
             </p>
             {% endif %}
 
-            <div class="border-t border-white/5 pt-6 mt-6">
-                <a href="{% url 'accounts:login' %}" class="text-sm text-cream/50 hover:text-cream/70 transition-colors">
+            <div class="border-t border-stage-200 dark:border-white/5 pt-6 mt-6">
+                <a href="{% url 'accounts:login' %}" class="text-sm text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70 transition-colors">
                     Back to sign in
                 </a>
             </div>

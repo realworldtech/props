@@ -195,6 +195,25 @@ def asset_list(request):
     if condition:
         queryset = queryset.filter(condition=condition)
 
+    # Sorting
+    SORT_FIELDS = {
+        "name": "name",
+        "-name": "-name",
+        "status": "status",
+        "-status": "-status",
+        "category": "category__name",
+        "-category": "-category__name",
+        "location": "current_location__name",
+        "-location": "-current_location__name",
+        "updated": "updated_at",
+        "-updated": "-updated_at",
+        "condition": "condition",
+        "-condition": "-condition",
+    }
+    sort = request.GET.get("sort", "-updated")
+    order_by = SORT_FIELDS.get(sort, "-updated_at")
+    queryset = queryset.order_by(order_by)
+
     # Pagination
     try:
         page_size = int(request.GET.get("page_size", 25))
@@ -230,6 +249,7 @@ def asset_list(request):
         "conditions": Asset.CONDITION_CHOICES,
         "statuses": Asset.STATUS_CHOICES,
         "page_size": page_size,
+        "current_sort": sort,
         "active_users": active_users,
     }
 
@@ -1050,6 +1070,70 @@ def asset_transfer(request, pk):
     )
 
 
+@login_required
+def asset_relocate(request, pk):
+    """Relocate an asset's home location."""
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
+        raise PermissionDenied
+
+    if asset.status not in ("active",):
+        messages.error(request, "Only active assets can be relocated.")
+        return redirect("assets:asset_detail", pk=pk)
+
+    if request.method == "POST":
+        location_id = request.POST.get("location")
+        notes = request.POST.get("notes", "")
+
+        try:
+            to_location = Location.objects.get(pk=location_id, is_active=True)
+        except Location.DoesNotExist:
+            messages.error(request, "Invalid location selected.")
+            return redirect("assets:asset_relocate", pk=pk)
+
+        # Parse optional backdating (same pattern as transfer)
+        action_date_str = request.POST.get("action_date", "").strip()
+        extra_kwargs = {}
+        if action_date_str:
+            from django.utils.dateparse import parse_datetime
+
+            action_date = parse_datetime(action_date_str)
+            if action_date:
+                if timezone.is_naive(action_date):
+                    action_date = timezone.make_aware(action_date)
+                if action_date <= timezone.now():
+                    extra_kwargs = {
+                        "timestamp": action_date,
+                        "is_backdated": True,
+                    }
+
+        old_home = asset.home_location
+        Transaction.objects.create(
+            asset=asset,
+            user=request.user,
+            action="relocate",
+            from_location=old_home,
+            to_location=to_location,
+            notes=notes,
+            **extra_kwargs,
+        )
+        asset.home_location = to_location
+        asset.save(update_fields=["home_location"])
+
+        messages.success(
+            request,
+            f"'{asset.name}' home location changed" f" to {to_location.name}.",
+        )
+        return redirect("assets:asset_detail", pk=pk)
+
+    locations = Location.objects.filter(is_active=True)
+    return render(
+        request,
+        "assets/asset_relocate.html",
+        {"asset": asset, "locations": locations},
+    )
+
+
 # --- Transaction History ---
 
 
@@ -1223,6 +1307,66 @@ def asset_label_zpl(request, pk):
             "Failed to send label to printer. Check printer configuration.",
         )
     return redirect("assets:asset_detail", pk=pk)
+
+
+@login_required
+def barcode_pregenerate(request):
+    """Pre-generate a batch of barcode labels for blank assets."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        try:
+            quantity = int(request.POST.get("quantity", 10))
+        except (ValueError, TypeError):
+            quantity = 10
+        quantity = min(max(quantity, 1), 100)  # Clamp 1-100
+
+        # Generate blank draft assets with barcodes
+        created_assets = []
+        for i in range(quantity):
+            asset = Asset(
+                name=f"Pre-generated #{i + 1}",
+                status="draft",
+                created_by=request.user,
+            )
+            asset.save()
+            created_assets.append(asset)
+
+        # Generate QR codes for labels
+        label_assets = []
+        for asset in created_assets:
+            qr_data_uri = ""
+            try:
+                import base64
+                from io import BytesIO
+
+                import qrcode
+
+                qr = qrcode.QRCode(version=1, box_size=4, border=1)
+                qr.add_data(request.build_absolute_uri(f"/a/{asset.barcode}/"))
+                qr.make(fit=True)
+                qr_img = qr.make_image(fill_color="black", back_color="white")
+                buffer = BytesIO()
+                qr_img.save(buffer, format="PNG")
+                buffer.seek(0)
+                qr_data_uri = (
+                    f"data:image/png;base64,"
+                    f"{base64.b64encode(buffer.getvalue()).decode()}"
+                )
+            except ImportError:
+                pass
+            label_assets.append({"asset": asset, "qr_data_uri": qr_data_uri})
+
+        messages.success(request, f"{quantity} barcode labels pre-generated.")
+        return render(
+            request,
+            "assets/bulk_labels.html",
+            {"label_assets": label_assets},
+        )
+
+    return render(request, "assets/barcode_pregenerate.html")
 
 
 # --- NFC Tag Management ---

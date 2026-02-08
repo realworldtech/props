@@ -126,7 +126,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "en-au"
-TIME_ZONE = "Australia/Sydney"
+TIME_ZONE = os.environ.get("TIME_ZONE", "Australia/Sydney")
 USE_I18N = True
 USE_TZ = True
 
@@ -229,8 +229,10 @@ if DEBUG and not EMAIL_HOST:
 # Site configuration
 SITE_NAME = os.environ.get("SITE_NAME", "PROPS")
 SITE_SHORT_NAME = os.environ.get("SITE_SHORT_NAME", "PROPS")
+SITE_URL = os.environ.get("SITE_URL", "")
 BARCODE_PREFIX = os.environ.get("BARCODE_PREFIX", "ASSET")
 BRAND_PRIMARY_COLOR = os.environ.get("BRAND_PRIMARY_COLOR", "#4F46E5")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 
 # Celery configuration
 CELERY_BROKER_URL = os.environ.get(

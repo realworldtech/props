@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,7 +37,7 @@
         }
     </script>
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -34,27 +45,27 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
             </div>
-            <h1 class="font-display text-3xl font-bold text-cream">Check Your Email</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Check Your Email</h1>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8 text-center">
-            <p class="text-cream/70 mb-4">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8 text-center">
+            <p class="text-stage-600 dark:text-cream/70 mb-4">
                 A verification email has been sent to:
             </p>
-            <p class="text-spotlight-400 font-medium mb-6">{{ email }}</p>
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-spotlight-600 dark:text-spotlight-400 font-medium mb-6">{{ email }}</p>
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Please check your inbox and click the verification link to complete your registration.
                 The link will expire in 48 hours.
             </p>
-            <p class="text-cream/40 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/40 text-sm mb-6">
                 If you don't see the email, check your spam folder.
             </p>
 
-            <div class="border-t border-white/5 pt-6 space-y-3">
-                <a href="{% url 'accounts:resend_verification' %}" class="block text-sm text-spotlight-400 hover:text-spotlight-500 font-medium transition-colors">
+            <div class="border-t border-stage-200 dark:border-white/5 pt-6 space-y-3">
+                <a href="{% url 'accounts:resend_verification' %}" class="block text-sm text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-500 font-medium transition-colors">
                     Resend verification email
                 </a>
-                <a href="{% url 'accounts:login' %}" class="block text-sm text-cream/50 hover:text-cream/70 transition-colors">
+                <a href="{% url 'accounts:login' %}" class="block text-sm text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70 transition-colors">
                     Back to sign in
                 </a>
             </div>

@@ -172,6 +172,8 @@ class Asset(models.Model):
         ("retired", "Retired"),
         ("disposed", "Disposed"),
         ("missing", "Missing"),
+        ("lost", "Lost"),
+        ("stolen", "Stolen"),
     ]
 
     CONDITION_CHOICES = [
@@ -185,9 +187,11 @@ class Asset(models.Model):
     # Valid state transitions: from_status -> [to_statuses]
     VALID_TRANSITIONS = {
         "draft": ["active", "disposed"],
-        "active": ["retired", "missing", "disposed"],
+        "active": ["retired", "missing", "lost", "stolen", "disposed"],
         "retired": ["active", "disposed"],
-        "missing": ["active", "disposed"],
+        "missing": ["active", "lost", "stolen", "disposed"],
+        "lost": ["active", "disposed"],
+        "stolen": ["active", "disposed"],
         "disposed": [],
     }
 
@@ -224,6 +228,10 @@ class Asset(models.Model):
         max_length=20, choices=CONDITION_CHOICES, default="good"
     )
     notes = models.TextField(blank=True)
+    lost_stolen_notes = models.TextField(
+        blank=True,
+        help_text="Details about loss or theft circumstances",
+    )
     barcode_image = models.ImageField(
         upload_to="barcodes/", blank=True, null=True
     )
@@ -571,6 +579,7 @@ class Transaction(models.Model):
         ("checkout", "Check Out"),
         ("checkin", "Check In"),
         ("transfer", "Transfer"),
+        ("relocate", "Relocate"),
         ("audit", "Audit"),
         ("handover", "Handover"),
     ]
@@ -607,6 +616,11 @@ class Transaction(models.Model):
         blank=True,
         related_name="borrower_transactions",
         help_text="The person the asset is checked out to",
+    )
+    due_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Expected return date for checkouts",
     )
     notes = models.TextField(blank=True)
     timestamp = models.DateTimeField(default=timezone.now)

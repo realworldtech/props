@@ -74,6 +74,11 @@ urlpatterns = [
         name="asset_transfer",
     ),
     path(
+        "assets/<int:pk>/relocate/",
+        views.asset_relocate,
+        name="asset_relocate",
+    ),
+    path(
         "assets/<int:pk>/handover/",
         views.asset_handover,
         name="asset_handover",
@@ -88,6 +93,11 @@ urlpatterns = [
         "assets/<int:pk>/label/zpl/",
         views.asset_label_zpl,
         name="asset_label_zpl",
+    ),
+    path(
+        "labels/pregenerate/",
+        views.barcode_pregenerate,
+        name="barcode_pregenerate",
     ),
     # Transactions
     path("transactions/", views.transaction_list, name="transaction_list"),

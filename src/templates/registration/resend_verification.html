@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,7 +37,7 @@
         }
     </script>
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -34,34 +45,34 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
             </div>
-            <h1 class="font-display text-3xl font-bold text-cream">Resend Verification</h1>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Resend Verification</h1>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8">
             {% if sent %}
             <div class="text-center">
                 <div class="mb-4">
-                    <svg class="w-12 h-12 text-spotlight-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg class="w-12 h-12 text-spotlight-600 dark:text-spotlight-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
                     </svg>
                 </div>
-                <p class="text-cream/70 mb-4">
+                <p class="text-stage-600 dark:text-cream/70 mb-4">
                     If an account with that email address exists and is unverified, a new verification email has been sent.
                 </p>
-                <p class="text-cream/50 text-sm mb-6">
+                <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                     Please check your inbox and spam folder.
                 </p>
             </div>
             {% else %}
-            <p class="text-cream/50 text-sm mb-6">
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Enter the email address you registered with and we'll send a new verification link.
             </p>
             <form method="post" class="space-y-5">
                 {% csrf_token %}
                 <div>
-                    <label for="id_email" class="block text-sm font-medium text-cream/70 mb-1.5">Email Address</label>
+                    <label for="id_email" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email Address</label>
                     <input type="email" name="email" id="id_email" required
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
                         placeholder="you@example.com">
                 </div>
                 <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
@@ -70,8 +81,8 @@
             </form>
             {% endif %}
 
-            <div class="border-t border-white/5 pt-6 mt-6 text-center">
-                <a href="{% url 'accounts:login' %}" class="text-sm text-cream/50 hover:text-cream/70 transition-colors">
+            <div class="border-t border-stage-200 dark:border-white/5 pt-6 mt-6 text-center">
+                <a href="{% url 'accounts:login' %}" class="text-sm text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70 transition-colors">
                     Back to sign in
                 </a>
             </div>

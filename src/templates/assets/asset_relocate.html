@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Relocate {{ asset.name }} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div class="flex items-center gap-2 text-sm text-cream/50 mb-4">
+        <a href="{% url 'assets:dashboard' %}" class="hover:text-cream transition-colors">Dashboard</a>
+        <span>/</span>
+        <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-cream transition-colors">{{ asset.name }}</a>
+        <span>/</span>
+        <span class="text-cream">Relocate</span>
+    </div>
+    <div>
+        <h1 class="font-display text-2xl font-bold">Relocate Asset</h1>
+        <p class="text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
+        <p class="text-cream/40 text-sm mt-2">This changes the asset's <strong>home location</strong> without checking it out. The current location is not affected.</p>
+        {% if asset.home_location %}
+        <p class="text-cream/40 text-sm mt-1">Current home location: {{ asset.home_location.full_path }}</p>
+        {% endif %}
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            <div>
+                <label for="location" class="block text-sm font-medium text-cream/70 mb-1.5">New Home Location *</label>
+                <select name="location" id="location" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                    <option value="">Select a location...</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.pk }}">{{ loc.full_path }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-cream/70 mb-1.5">Date of action <span class="text-cream/40">(optional, defaults to now)</span></label>
+                <input type="datetime-local" name="action_date" class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                <p class="text-xs text-cream/40 mt-1">Set a past date if recording a historical action.</p>
+            </div>
+
+            <div>
+                <label for="notes" class="block text-sm font-medium text-cream/70 mb-1.5">Notes (optional)</label>
+                <textarea name="notes" id="notes" rows="2" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Reason for relocation, etc."></textarea>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Relocate
+            </button>
+            <a href="{% url 'assets:asset_detail' asset.pk %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

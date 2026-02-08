@@ -2,6 +2,11 @@
 
 {% block title %}{{ asset.name }} - {{ SITE_NAME }}{% endblock %}
 
+{% block extra_head %}
+<style>[x-cloak] { display: none !important; }</style>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <!-- Breadcrumb -->
@@ -51,6 +56,9 @@
             {% if can_edit and asset.status == 'active' and not asset.is_checked_out %}
             <a href="{% url 'assets:asset_transfer' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">Transfer</a>
             {% endif %}
+            {% if can_edit and asset.status == 'active' %}
+            <a href="{% url 'assets:asset_relocate' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">Relocate</a>
+            {% endif %}
             <a href="{% url 'assets:asset_label' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
                 Print Label
@@ -65,7 +73,36 @@
         <!-- Main Info -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Images -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6"
+                 x-data="{
+                    lightboxOpen: false,
+                    currentIndex: 0,
+                    images: [
+                        {% for img in images %}
+                        { url: '{{ img.image.url }}', caption: '{{ img.caption|escapejs }}' }{% if not forloop.last %},{% endif %}
+                        {% endfor %}
+                    ],
+                    open(index) {
+                        this.currentIndex = index;
+                        this.lightboxOpen = true;
+                    },
+                    close() {
+                        this.lightboxOpen = false;
+                    },
+                    next() {
+                        if (this.images.length > 1) {
+                            this.currentIndex = (this.currentIndex + 1) % this.images.length;
+                        }
+                    },
+                    prev() {
+                        if (this.images.length > 1) {
+                            this.currentIndex = (this.currentIndex - 1 + this.images.length) % this.images.length;
+                        }
+                    }
+                 }"
+                 @keydown.escape.window="close()"
+                 @keydown.arrow-right.window="if (lightboxOpen) next()"
+                 @keydown.arrow-left.window="if (lightboxOpen) prev()">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="font-display text-lg font-semibold">Images</h2>
                 </div>
@@ -73,11 +110,13 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                     {% for img in images %}
                     <div class="relative rounded-lg overflow-hidden bg-stage-700 aspect-square group">
-                        <img src="{{ img.image.url }}" class="w-full h-full object-cover" alt="{{ img.caption }}">
+                        <img src="{{ img.image.url }}" class="w-full h-full object-cover cursor-pointer" alt="{{ img.caption }}"
+                             @click="open({{ forloop.counter0 }})">
                         {% if img.is_primary %}
                         <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-spotlight-500/90 text-stage-900 text-xs font-medium">Primary</span>
                         {% endif %}
-                        <div class="absolute inset-0 bg-stage-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <div class="absolute inset-0 bg-stage-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
+                             @click.stop>
                             {% if not img.is_primary %}
                             <form method="post" action="{% url 'assets:image_set_primary' asset.pk img.pk %}">
                                 {% csrf_token %}
@@ -97,6 +136,65 @@
                         {% endif %}
                     </div>
                     {% endfor %}
+                </div>
+
+                <!-- Lightbox Modal -->
+                <div x-show="lightboxOpen"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0"
+                     x-transition:enter-end="opacity-100"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100"
+                     x-transition:leave-end="opacity-0"
+                     class="fixed inset-0 z-50 flex items-center justify-center"
+                     x-cloak>
+                    <!-- Backdrop -->
+                    <div class="absolute inset-0 bg-stage-900/90 backdrop-blur-sm" @click="close()"></div>
+
+                    <!-- Content -->
+                    <div class="relative z-10 max-w-5xl max-h-[90vh] w-full mx-4 flex flex-col items-center">
+                        <!-- Close button -->
+                        <button @click="close()"
+                                class="absolute -top-10 right-0 text-cream/60 hover:text-cream transition-colors">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+
+                        <!-- Image -->
+                        <img :src="images[currentIndex]?.url"
+                             :alt="images[currentIndex]?.caption"
+                             class="max-h-[85vh] max-w-full object-contain rounded-lg shadow-2xl"
+                             @click.stop>
+
+                        <!-- Caption -->
+                        <div x-show="images[currentIndex]?.caption"
+                             class="mt-3 text-cream/70 text-sm text-center"
+                             x-text="images[currentIndex]?.caption"></div>
+
+                        <!-- Image counter -->
+                        <div x-show="images.length > 1"
+                             class="mt-2 text-cream/40 text-xs"
+                             x-text="(currentIndex + 1) + ' / ' + images.length"></div>
+
+                        <!-- Prev button -->
+                        <button x-show="images.length > 1"
+                                @click.stop="prev()"
+                                class="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 sm:ml-0 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-white/10">
+                            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                        </button>
+
+                        <!-- Next button -->
+                        <button x-show="images.length > 1"
+                                @click.stop="next()"
+                                class="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 sm:mr-0 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-white/10">
+                            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 {% endif %}
 
@@ -319,6 +417,7 @@
                             {% if tx.action == 'checkout' %}bg-blue-500/20 text-blue-400
                             {% elif tx.action == 'checkin' %}bg-emerald-500/20 text-emerald-400
                             {% elif tx.action == 'transfer' %}bg-purple-500/20 text-purple-400
+                            {% elif tx.action == 'relocate' %}bg-indigo-500/20 text-indigo-400
                             {% elif tx.action == 'handover' %}bg-amber-500/20 text-amber-400
                             {% else %}bg-spotlight-500/20 text-spotlight-400{% endif %}">
                             {{ tx.get_action_display|first }}

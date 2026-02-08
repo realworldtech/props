@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,9 +10,21 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+    <script>
+        // Apply theme before render to prevent flash
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -70,26 +82,42 @@
     </script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <style>
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #1a1a2e; }
-        ::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+        /* Dark mode scrollbar */
+        .dark ::-webkit-scrollbar { width: 8px; height: 8px; }
+        .dark ::-webkit-scrollbar-track { background: #1a1a2e; }
+        .dark ::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+
+        /* Light mode scrollbar */
+        :root:not(.dark) ::-webkit-scrollbar { width: 8px; height: 8px; }
+        :root:not(.dark) ::-webkit-scrollbar-track { background: #f0ede8; }
+        :root:not(.dark) ::-webkit-scrollbar-thumb { background: #c4bfb6; border-radius: 4px; }
+        :root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #d97706; }
 
         .texture-overlay {
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-            opacity: 0.03;
             pointer-events: none;
         }
+        .dark .texture-overlay { opacity: 0.03; }
+        :root:not(.dark) .texture-overlay { opacity: 0.015; }
 
-        .spotlight-bg {
+        .dark .spotlight-bg {
             background: radial-gradient(ellipse at top, rgba(245, 158, 11, 0.08) 0%, transparent 50%),
                         radial-gradient(ellipse at 80% 20%, rgba(139, 38, 53, 0.05) 0%, transparent 40%);
         }
+        :root:not(.dark) .spotlight-bg {
+            background: radial-gradient(ellipse at top, rgba(245, 158, 11, 0.04) 0%, transparent 50%),
+                        radial-gradient(ellipse at 80% 20%, rgba(139, 38, 53, 0.02) 0%, transparent 40%);
+        }
 
         .card-hover { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .card-hover:hover {
+        .dark .card-hover:hover {
             transform: translateY(-2px);
             box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(245, 158, 11, 0.1);
+        }
+        :root:not(.dark) .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(245, 158, 11, 0.15);
         }
 
         .btn-press:active { transform: scale(0.98); }
@@ -109,30 +137,42 @@
         }
         .nav-link:hover::after, .nav-link.active::after { width: 100%; }
 
-        .form-input {
+        .dark .form-input {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.2s ease;
         }
-        .form-input:focus {
+        .dark .form-input:focus {
             background: rgba(255, 255, 255, 0.08);
             border-color: #f59e0b;
             box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
         }
-        .form-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+        .dark .form-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+
+        :root:not(.dark) .form-input {
+            background: rgba(0, 0, 0, 0.03);
+            border: 1px solid rgba(0, 0, 0, 0.12);
+        }
+        :root:not(.dark) .form-input:focus {
+            background: rgba(0, 0, 0, 0.02);
+            border-color: #d97706;
+            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+        }
+        :root:not(.dark) .form-input::placeholder { color: rgba(0, 0, 0, 0.35); }
+
+        .form-input { transition: all 0.2s ease; }
 
         .mobile-menu { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
         .mobile-menu.open { max-height: 600px; }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans antialiased">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans antialiased">
     <div class="fixed inset-0 texture-overlay"></div>
     <div class="fixed inset-0 spotlight-bg pointer-events-none"></div>
 
     <div class="relative z-10 min-h-screen flex flex-col">
         {% if user.is_authenticated %}
-        <nav class="bg-stage-800/80 backdrop-blur-xl border-b border-white/5 sticky top-0 z-50">
+        <nav class="bg-white/80 dark:bg-stage-800/80 backdrop-blur-xl border-b border-stage-200 dark:border-white/5 sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6">
                 <div class="flex justify-between items-center h-16">
                     <a href="{% url 'assets:dashboard' %}" class="flex items-center gap-3 group">
@@ -141,14 +181,14 @@
                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
                         </div>
-                        <span class="font-display font-semibold text-xl text-cream hidden sm:block">{{ SITE_SHORT_NAME }}</span>
+                        <span class="font-display font-semibold text-xl text-stage-900 dark:text-cream hidden sm:block">{{ SITE_SHORT_NAME }}</span>
                     </a>
 
                     <div class="hidden md:flex items-center gap-1">
-                        <a href="{% url 'assets:dashboard' %}" class="nav-link px-4 py-2 text-sm text-cream/70 hover:text-cream transition-colors">Dashboard</a>
-                        <a href="{% url 'assets:asset_list' %}" class="nav-link px-4 py-2 text-sm text-cream/70 hover:text-cream transition-colors">Assets</a>
+                        <a href="{% url 'assets:dashboard' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">Dashboard</a>
+                        <a href="{% url 'assets:asset_list' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">Assets</a>
                         {% if can_capture %}
-                        <a href="{% url 'assets:scan' %}" class="nav-link px-4 py-2 text-sm text-cream/70 hover:text-cream transition-colors">
+                        <a href="{% url 'assets:scan' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">
                             <span class="flex items-center gap-1.5">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
@@ -159,27 +199,27 @@
                         {% endif %}
                         {% if can_manage %}
                         <div class="relative" id="manage-dropdown">
-                            <button onclick="toggleManageDropdown()" class="nav-link px-4 py-2 text-sm text-cream/70 hover:text-cream transition-colors flex items-center gap-1">
+                            <button onclick="toggleManageDropdown()" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors flex items-center gap-1">
                                 Manage
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                                 </svg>
                             </button>
-                            <div id="manage-menu" class="hidden absolute top-full left-0 mt-1 w-48 bg-stage-800 border border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
+                            <div id="manage-menu" class="hidden absolute top-full left-0 mt-1 w-48 bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
                                 <div class="py-1">
-                                    <p class="px-4 py-1.5 text-xs font-medium text-cream/40 uppercase tracking-wider">Organisation</p>
-                                    <a href="{% url 'assets:category_list' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Categories</a>
-                                    <a href="{% url 'assets:location_list' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Locations</a>
-                                    <a href="{% url 'assets:tag_list' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Tags</a>
+                                    <p class="px-4 py-1.5 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Organisation</p>
+                                    <a href="{% url 'assets:category_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Categories</a>
+                                    <a href="{% url 'assets:location_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Locations</a>
+                                    <a href="{% url 'assets:tag_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Tags</a>
                                 </div>
-                                <div class="border-t border-white/5 py-1">
-                                    <p class="px-4 py-1.5 text-xs font-medium text-cream/40 uppercase tracking-wider">Operations</p>
-                                    <a href="{% url 'assets:transaction_list' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Transactions</a>
-                                    <a href="{% url 'assets:stocktake_list' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Stocktake</a>
-                                    <a href="{% url 'assets:drafts_queue' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">Drafts</a>
-                                    <a href="{% url 'assets:my_borrowed_items' %}" class="block px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">My Borrowed Items</a>
+                                <div class="border-t border-stage-200 dark:border-white/5 py-1">
+                                    <p class="px-4 py-1.5 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Operations</p>
+                                    <a href="{% url 'assets:transaction_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Transactions</a>
+                                    <a href="{% url 'assets:stocktake_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Stocktake</a>
+                                    <a href="{% url 'assets:drafts_queue' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Drafts</a>
+                                    <a href="{% url 'assets:my_borrowed_items' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">My Borrowed Items</a>
                                     {% if user_role == "system_admin" %}
-                                    <a href="{% url 'accounts:approval_queue' %}" class="flex items-center justify-between px-4 py-2 text-sm text-cream/70 hover:text-cream hover:bg-white/5 transition-colors">
+                                    <a href="{% url 'accounts:approval_queue' %}" class="flex items-center justify-between px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                                         Approval Queue
                                         {% if pending_approvals_count > 0 %}<span class="px-1.5 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400">{{ pending_approvals_count }}</span>{% endif %}
                                     </a>
@@ -199,16 +239,20 @@
                             Quick Capture
                         </a>
                         {% endif %}
-                        <a href="{% url 'accounts:profile' %}" class="hidden md:flex items-center gap-2 text-sm text-cream/50 hover:text-cream transition-colors">
+                        <button onclick="toggleTheme()" class="p-2 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Toggle theme">
+                            <svg class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                            <svg class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        </button>
+                        <a href="{% url 'accounts:profile' %}" class="hidden md:flex items-center gap-2 text-sm text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">
                             {% include "includes/avatar.html" with email=user.email size=32 alt=user.get_display_name %}
                             <span>{{ user.get_display_name }}</span>
                         </a>
                         {% if user.is_staff %}
-                        <a href="{% url 'admin:index' %}" class="hidden md:block text-cream/50 hover:text-cream text-sm transition-colors">Admin</a>
+                        <a href="{% url 'admin:index' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Admin</a>
                         {% endif %}
-                        <a href="{% url 'accounts:logout' %}" class="hidden md:block text-cream/50 hover:text-cream text-sm transition-colors">Logout</a>
+                        <a href="{% url 'accounts:logout' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Logout</a>
 
-                        <button onclick="toggleMobileMenu()" class="md:hidden p-2 text-cream/70 hover:text-cream">
+                        <button onclick="toggleMobileMenu()" class="md:hidden p-2 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                             </svg>
@@ -216,10 +260,10 @@
                     </div>
                 </div>
 
-                <div id="mobile-menu" class="mobile-menu md:hidden border-t border-white/5">
+                <div id="mobile-menu" class="mobile-menu md:hidden border-t border-stage-200 dark:border-white/5">
                     <div class="py-3 space-y-1">
                         {% if can_capture %}
-                        <a href="{% url 'assets:quick_capture' %}" class="block px-4 py-2.5 text-spotlight-400 hover:text-spotlight-300 hover:bg-white/5 rounded-lg transition-colors font-medium">
+                        <a href="{% url 'assets:quick_capture' %}" class="block px-4 py-2.5 text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
                             <span class="flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -228,10 +272,10 @@
                             </span>
                         </a>
                         {% endif %}
-                        <a href="{% url 'assets:dashboard' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Dashboard</a>
-                        <a href="{% url 'assets:asset_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Assets</a>
+                        <a href="{% url 'assets:dashboard' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Dashboard</a>
+                        <a href="{% url 'assets:asset_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Assets</a>
                         {% if can_capture %}
-                        <a href="{% url 'assets:scan' %}" class="block px-4 py-2.5 text-spotlight-400 hover:text-spotlight-300 hover:bg-white/5 rounded-lg transition-colors font-medium">
+                        <a href="{% url 'assets:scan' %}" class="block px-4 py-2.5 text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
                             <span class="flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
@@ -241,29 +285,29 @@
                         </a>
                         {% endif %}
                         {% if can_manage %}
-                        <div class="border-t border-white/5 pt-3 mt-3">
-                            <p class="px-4 py-1 text-xs font-medium text-cream/40 uppercase tracking-wider">Manage</p>
-                            <a href="{% url 'assets:category_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Categories</a>
-                            <a href="{% url 'assets:location_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Locations</a>
-                            <a href="{% url 'assets:tag_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Tags</a>
-                            <a href="{% url 'assets:transaction_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Transactions</a>
-                            <a href="{% url 'assets:stocktake_list' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Stocktake</a>
-                            <a href="{% url 'assets:drafts_queue' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Drafts</a>
-                            <a href="{% url 'assets:my_borrowed_items' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">My Borrowed Items</a>
+                        <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
+                            <p class="px-4 py-1 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Manage</p>
+                            <a href="{% url 'assets:category_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Categories</a>
+                            <a href="{% url 'assets:location_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Locations</a>
+                            <a href="{% url 'assets:tag_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Tags</a>
+                            <a href="{% url 'assets:transaction_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Transactions</a>
+                            <a href="{% url 'assets:stocktake_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Stocktake</a>
+                            <a href="{% url 'assets:drafts_queue' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Drafts</a>
+                            <a href="{% url 'assets:my_borrowed_items' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">My Borrowed Items</a>
                             {% if user_role == "system_admin" %}
-                            <a href="{% url 'accounts:approval_queue' %}" class="flex items-center justify-between px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">
+                            <a href="{% url 'accounts:approval_queue' %}" class="flex items-center justify-between px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">
                                 Approval Queue
                                 {% if pending_approvals_count > 0 %}<span class="px-1.5 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-400">{{ pending_approvals_count }}</span>{% endif %}
                             </a>
                             {% endif %}
                         </div>
                         {% endif %}
-                        <div class="border-t border-white/5 pt-3 mt-3">
-                            <a href="{% url 'accounts:profile' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Profile</a>
+                        <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
+                            <a href="{% url 'accounts:profile' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Profile</a>
                             {% if user.is_staff %}
-                            <a href="{% url 'admin:index' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Admin</a>
+                            <a href="{% url 'admin:index' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Admin</a>
                             {% endif %}
-                            <a href="{% url 'accounts:logout' %}" class="block px-4 py-2.5 text-cream/70 hover:text-cream hover:bg-white/5 rounded-lg transition-colors">Logout</a>
+                            <a href="{% url 'accounts:logout' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Logout</a>
                         </div>
                     </div>
                 </div>
@@ -300,14 +344,24 @@
             </div>
         </main>
 
-        <footer class="border-t border-white/5 py-6 mt-auto">
+        <footer class="border-t border-stage-200 dark:border-white/5 py-6 mt-auto">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 text-center">
-                <p class="text-sm text-cream/30">{{ SITE_NAME }}</p>
+                <p class="text-sm text-stage-500 dark:text-cream/30">{{ SITE_NAME }}</p>
             </div>
         </footer>
     </div>
 
     <script>
+        function toggleTheme() {
+            var html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark');
+                localStorage.setItem('props-theme', 'light');
+            } else {
+                html.classList.add('dark');
+                localStorage.setItem('props-theme', 'dark');
+            }
+        }
         function toggleMobileMenu() {
             const menu = document.getElementById('mobile-menu');
             menu.classList.toggle('open');

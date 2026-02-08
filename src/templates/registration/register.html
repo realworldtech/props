@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,7 +37,7 @@
         }
     </script>
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -34,11 +45,11 @@
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
             </div>
-            <h1 class="font-display text-3xl font-bold text-cream">Create Account</h1>
-            <p class="text-cream/50 mt-2">Register for {{ SITE_SHORT_NAME }}</p>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">Create Account</h1>
+            <p class="text-stage-500 dark:text-cream/50 mt-2">Register for {{ SITE_SHORT_NAME }}</p>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8">
             {% if messages %}
             {% for message in messages %}
             <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
@@ -58,9 +69,9 @@
             <form method="post" class="space-y-5">
                 {% csrf_token %}
                 <div>
-                    <label for="id_email" class="block text-sm font-medium text-cream/70 mb-1.5">Email Address</label>
+                    <label for="id_email" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email Address</label>
                     <input type="email" name="email" id="id_email" required value="{{ form.email.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
                         placeholder="you@example.com">
                     {% if form.email.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.email.errors.0 }}</p>
@@ -68,9 +79,9 @@
                 </div>
 
                 <div>
-                    <label for="id_display_name" class="block text-sm font-medium text-cream/70 mb-1.5">Display Name</label>
+                    <label for="id_display_name" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Display Name</label>
                     <input type="text" name="display_name" id="id_display_name" required value="{{ form.display_name.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
                         placeholder="Your name">
                     {% if form.display_name.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.display_name.errors.0 }}</p>
@@ -78,9 +89,9 @@
                 </div>
 
                 <div>
-                    <label for="id_phone_number" class="block text-sm font-medium text-cream/70 mb-1.5">Phone Number <span class="text-cream/30">(optional)</span></label>
+                    <label for="id_phone_number" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Phone Number <span class="text-stage-500 dark:text-cream/30">(optional)</span></label>
                     <input type="tel" name="phone_number" id="id_phone_number" value="{{ form.phone_number.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
                         placeholder="+61 400 000 000">
                     {% if form.phone_number.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.phone_number.errors.0 }}</p>
@@ -88,12 +99,12 @@
                 </div>
 
                 <div>
-                    <label for="id_requested_department" class="block text-sm font-medium text-cream/70 mb-1.5">Department</label>
+                    <label for="id_requested_department" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Department</label>
                     <select name="requested_department" id="id_requested_department" required
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
-                        <option value="" class="bg-stage-800">Select a department...</option>
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        <option value="" class="bg-white dark:bg-stage-800">Select a department...</option>
                         {% for dept in form.requested_department.field.queryset %}
-                        <option value="{{ dept.pk }}" class="bg-stage-800"
+                        <option value="{{ dept.pk }}" class="bg-white dark:bg-stage-800"
                             {% if form.requested_department.value|stringformat:"s" == dept.pk|stringformat:"s" %}selected{% endif %}>
                             {{ dept.name }}
                         </option>
@@ -105,18 +116,18 @@
                 </div>
 
                 <div>
-                    <label for="id_password1" class="block text-sm font-medium text-cream/70 mb-1.5">Password</label>
+                    <label for="id_password1" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Password</label>
                     <input type="password" name="password1" id="id_password1" required
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
                     {% if form.password1.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.password1.errors.0 }}</p>
                     {% endif %}
                 </div>
 
                 <div>
-                    <label for="id_password2" class="block text-sm font-medium text-cream/70 mb-1.5">Confirm Password</label>
+                    <label for="id_password2" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Confirm Password</label>
                     <input type="password" name="password2" id="id_password2" required
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
                     {% if form.password2.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.password2.errors.0 }}</p>
                     {% endif %}
@@ -127,9 +138,9 @@
                 </button>
             </form>
 
-            <p class="text-center text-sm text-cream/50 mt-6">
+            <p class="text-center text-sm text-stage-500 dark:text-cream/50 mt-6">
                 Already have an account?
-                <a href="{% url 'accounts:login' %}" class="text-spotlight-400 hover:text-spotlight-500 font-medium transition-colors">Sign in</a>
+                <a href="{% url 'accounts:login' %}" class="text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-500 font-medium transition-colors">Sign in</a>
             </p>
         </div>
     </div>

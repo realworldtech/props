@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,20 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <script>
+        (function() {
+            var theme = localStorage.getItem('props-theme') || 'dark';
+            if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -26,7 +37,7 @@
         }
     </script>
 </head>
-<body class="bg-stage-900 text-cream min-h-screen font-sans flex items-center justify-center p-4">
+<body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -34,13 +45,13 @@
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
             </div>
-            <h1 class="font-display text-3xl font-bold text-cream">{{ SITE_SHORT_NAME }}</h1>
-            <p class="text-cream/50 mt-2">Sign in to manage assets</p>
+            <h1 class="font-display text-3xl font-bold text-stage-900 dark:text-cream">{{ SITE_SHORT_NAME }}</h1>
+            <p class="text-stage-500 dark:text-cream/50 mt-2">Sign in to manage assets</p>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-white/5 p-8">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8">
             {% if form.errors %}
-            <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+            <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300 text-sm">
                 Invalid email/username or password. Please try again.
             </div>
             {% endif %}
@@ -48,29 +59,29 @@
             <form method="post" class="space-y-5">
                 {% csrf_token %}
                 <div>
-                    <label for="id_username" class="block text-sm font-medium text-cream/70 mb-1.5">Email or username</label>
+                    <label for="id_username" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email or username</label>
                     <input type="text" name="username" id="id_username" autofocus required
                         placeholder="you@example.com or username"
                         autocomplete="username email"
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
                 </div>
                 <div>
-                    <label for="id_password" class="block text-sm font-medium text-cream/70 mb-1.5">Password</label>
+                    <label for="id_password" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Password</label>
                     <input type="password" name="password" id="id_password" required
-                        class="w-full rounded-lg px-4 py-3 bg-white/5 border border-white/10 text-cream placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
                 </div>
                 <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
                     Sign In
                 </button>
             </form>
 
-            <p class="text-center text-sm text-cream/50 mt-4">
-                <a href="{% url 'accounts:password_reset' %}" class="text-cream/40 hover:text-cream/60 transition-colors">Forgot password?</a>
+            <p class="text-center text-sm text-stage-500 dark:text-cream/50 mt-4">
+                <a href="{% url 'accounts:password_reset' %}" class="text-stage-500 dark:text-cream/40 hover:text-stage-700 dark:hover:text-cream/60 transition-colors">Forgot password?</a>
             </p>
 
-            <p class="text-center text-sm text-cream/50 mt-3">
+            <p class="text-center text-sm text-stage-500 dark:text-cream/50 mt-3">
                 Don't have an account?
-                <a href="{% url 'accounts:register' %}" class="text-spotlight-400 hover:text-spotlight-500 font-medium transition-colors">Register</a>
+                <a href="{% url 'accounts:register' %}" class="text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-500 font-medium transition-colors">Register</a>
             </p>
         </div>
     </div>

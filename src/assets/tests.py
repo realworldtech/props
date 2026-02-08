@@ -2668,3 +2668,268 @@ class TestBulkCheckoutCheckinViews:
         asset.refresh_from_db()
         assert asset.checked_out_to is None
         assert asset.current_location == new_loc
+
+
+# ============================================================
+# LOST/STOLEN STATUS TESTS (D1, D2)
+# ============================================================
+
+
+class TestLostStolenStatuses:
+    """Tests for lost and stolen asset statuses."""
+
+    def test_lost_status_exists(self, db):
+        choices = dict(Asset.STATUS_CHOICES)
+        assert "lost" in choices
+        assert "stolen" in choices
+
+    def test_transition_active_to_lost(self, asset):
+        assert asset.can_transition_to("lost")
+        asset.status = "lost"
+        asset.save(update_fields=["status"])
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+    def test_transition_active_to_stolen(self, asset):
+        assert asset.can_transition_to("stolen")
+        asset.status = "stolen"
+        asset.save(update_fields=["status"])
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+
+    def test_transition_lost_to_active(self, asset):
+        asset.status = "lost"
+        asset.save(update_fields=["status"])
+        assert asset.can_transition_to("active")
+
+    def test_transition_stolen_to_active(self, asset):
+        asset.status = "stolen"
+        asset.save(update_fields=["status"])
+        assert asset.can_transition_to("active")
+
+    def test_transition_lost_to_disposed(self, asset):
+        asset.status = "lost"
+        asset.save(update_fields=["status"])
+        assert asset.can_transition_to("disposed")
+
+    def test_cannot_transition_draft_to_lost(self, draft_asset):
+        assert not draft_asset.can_transition_to("lost")
+
+    def test_transition_missing_to_lost(self, asset):
+        asset.status = "missing"
+        asset.save(update_fields=["status"])
+        assert asset.can_transition_to("lost")
+
+    def test_lost_stolen_notes_field(self, asset):
+        asset.lost_stolen_notes = "Last seen in storage room B"
+        asset.save(update_fields=["lost_stolen_notes"])
+        asset.refresh_from_db()
+        assert asset.lost_stolen_notes == "Last seen in storage room B"
+
+    def test_state_service_validates_lost_transition(self, asset):
+        from assets.services.state import validate_transition
+
+        validate_transition(asset, "lost")  # Should not raise
+
+    def test_state_service_blocks_checked_out_to_lost(self, asset, admin_user):
+        from assets.services.state import validate_transition
+
+        asset.checked_out_to = admin_user
+        asset.save(update_fields=["checked_out_to"])
+        with pytest.raises(ValidationError):
+            validate_transition(asset, "lost")
+
+    def test_state_service_blocks_checked_out_to_stolen(
+        self, asset, admin_user
+    ):
+        from assets.services.state import validate_transition
+
+        asset.checked_out_to = admin_user
+        asset.save(update_fields=["checked_out_to"])
+        with pytest.raises(ValidationError):
+            validate_transition(asset, "stolen")
+
+
+# ============================================================
+# DUE DATE TESTS (D4)
+# ============================================================
+
+
+class TestDueDate:
+    """Tests for Transaction due_date field."""
+
+    def test_transaction_due_date_nullable(self, asset, user, location):
+        tx = Transaction(
+            asset=asset,
+            user=user,
+            action="checkout",
+            from_location=location,
+        )
+        tx.save()
+        assert tx.due_date is None
+
+    def test_transaction_due_date_set(self, asset, user, location):
+        from datetime import date
+
+        tx = Transaction(
+            asset=asset,
+            user=user,
+            action="checkout",
+            from_location=location,
+            due_date=date(2026, 3, 15),
+        )
+        tx.save()
+        tx.refresh_from_db()
+        assert tx.due_date == date(2026, 3, 15)
+
+
+# ============================================================
+# RELOCATE TRANSACTION TESTS (C3, D5)
+# ============================================================
+
+
+class TestRelocateTransaction:
+    """Tests for relocate transaction type."""
+
+    def test_relocate_action_choice_exists(self, db):
+        choices = dict(Transaction.ACTION_CHOICES)
+        assert "relocate" in choices
+
+    def test_create_relocate_transaction(self, asset, user, location):
+        second_loc = Location.objects.create(
+            name="New Home", address="456 Theatre Lane"
+        )
+        tx = Transaction(
+            asset=asset,
+            user=user,
+            action="relocate",
+            from_location=location,
+            to_location=second_loc,
+            notes="Moving permanent home",
+        )
+        tx.save()
+        assert tx.action == "relocate"
+
+    def test_relocate_view_get(self, admin_client, asset):
+        response = admin_client.get(
+            reverse("assets:asset_relocate", args=[asset.pk])
+        )
+        assert response.status_code == 200
+
+    def test_relocate_view_post(self, admin_client, asset):
+        new_loc = Location.objects.create(name="New Home")
+        response = admin_client.post(
+            reverse("assets:asset_relocate", args=[asset.pk]),
+            {"location": new_loc.pk, "notes": "Permanent move"},
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.home_location == new_loc
+        tx = Transaction.objects.filter(asset=asset, action="relocate").first()
+        assert tx is not None
+        assert tx.to_location == new_loc
+
+    def test_relocate_viewer_denied(self, viewer_client, asset):
+        response = viewer_client.get(
+            reverse("assets:asset_relocate", args=[asset.pk])
+        )
+        assert response.status_code == 403
+
+    def test_relocate_non_active_denied(self, admin_client, draft_asset):
+        response = admin_client.get(
+            reverse("assets:asset_relocate", args=[draft_asset.pk])
+        )
+        assert response.status_code == 302
+
+
+# ============================================================
+# ASSET LIST SORTING TESTS (C2)
+# ============================================================
+
+
+class TestAssetListSorting:
+    """Tests for user-selectable sorting on asset list."""
+
+    def test_sort_by_name_asc(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=name"
+        )
+        assert response.status_code == 200
+        assert response.context["current_sort"] == "name"
+
+    def test_sort_by_name_desc(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=-name"
+        )
+        assert response.status_code == 200
+        assert response.context["current_sort"] == "-name"
+
+    def test_sort_by_status(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=status"
+        )
+        assert response.status_code == 200
+
+    def test_sort_by_updated(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=-updated"
+        )
+        assert response.status_code == 200
+
+    def test_sort_by_category(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=category"
+        )
+        assert response.status_code == 200
+
+    def test_invalid_sort_defaults(self, client_logged_in, asset):
+        response = client_logged_in.get(
+            reverse("assets:asset_list") + "?sort=invalid"
+        )
+        assert response.status_code == 200
+        assert response.context["current_sort"] == "invalid"
+
+    def test_default_sort(self, client_logged_in, asset):
+        response = client_logged_in.get(reverse("assets:asset_list"))
+        assert response.status_code == 200
+        assert response.context["current_sort"] == "-updated"
+
+
+# ============================================================
+# BARCODE PRE-GENERATION TESTS (C4)
+# ============================================================
+
+
+class TestBarcodePregeneration:
+    """Tests for barcode pre-generation view."""
+
+    def test_pregenerate_get(self, admin_client, db):
+        response = admin_client.get(reverse("assets:barcode_pregenerate"))
+        assert response.status_code == 200
+
+    def test_pregenerate_creates_drafts(self, admin_client, db):
+        before_count = Asset.objects.count()
+        response = admin_client.post(
+            reverse("assets:barcode_pregenerate"),
+            {"quantity": 5},
+        )
+        assert response.status_code == 200
+        assert Asset.objects.count() == before_count + 5
+        new_assets = Asset.objects.filter(name__startswith="Pre-generated")
+        assert new_assets.count() == 5
+        assert all(a.status == "draft" for a in new_assets)
+
+    def test_pregenerate_max_100(self, admin_client, db):
+        response = admin_client.post(
+            reverse("assets:barcode_pregenerate"),
+            {"quantity": 200},
+        )
+        assert response.status_code == 200
+        assert (
+            Asset.objects.filter(name__startswith="Pre-generated").count()
+            == 100
+        )
+
+    def test_pregenerate_viewer_denied(self, viewer_client, db):
+        response = viewer_client.get(reverse("assets:barcode_pregenerate"))
+        assert response.status_code == 403
