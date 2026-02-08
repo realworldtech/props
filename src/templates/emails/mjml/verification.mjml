@@ -1,0 +1,43 @@
+<mjml>
+  <mj-head>
+    <mj-title>Verify your email - {{ site_name }}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+      <mj-body background-color="#f4f4f5" />
+    </mj-attributes>
+    <mj-style>
+      .url-text div { word-break: break-all !important; }
+    </mj-style>
+  </mj-head>
+  <mj-body background-color="#f4f4f5">
+    <mj-include path="./_header.mjml" />
+
+    <mj-section background-color="#ffffff" padding="32px 24px">
+      <mj-column>
+        <mj-text color="#111827" font-size="16px" padding="0 0 16px">
+          Hello {{ display_name }},
+        </mj-text>
+        <mj-text color="#374151" font-size="15px" padding="0 0 16px">
+          Please verify your email address by clicking the button below:
+        </mj-text>
+        <mj-button background-color="{{ brand_primary_color }}" color="#ffffff" font-size="15px" font-weight="600" border-radius="6px" href="{{ verify_url }}" padding="0 0 24px">
+          Verify Email Address
+        </mj-button>
+        <mj-text color="#6b7280" font-size="13px" padding="0 0 8px">
+          Or copy and paste this link into your browser:
+        </mj-text>
+        <mj-text color="#6b7280" font-size="13px" padding="0 0 16px" css-class="url-text">
+          {{ verify_url }}
+        </mj-text>
+        <mj-text color="#374151" font-size="14px" padding="0 0 8px">
+          This link will expire in 48 hours.
+        </mj-text>
+        <mj-text color="#6b7280" font-size="13px" padding="0">
+          If you did not register for an account, you can safely ignore this email.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="./_footer.mjml" />
+  </mj-body>
+</mjml>

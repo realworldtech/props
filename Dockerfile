@@ -1,3 +1,13 @@
+# Stage 1: Compile MJML email templates
+FROM node:22-slim AS email-builder
+WORKDIR /build
+RUN npm install mjml
+COPY src/templates/emails/mjml/ src/templates/emails/mjml/
+RUN for f in src/templates/emails/mjml/[a-z]*.mjml; do \
+      npx mjml "$f" -o "src/templates/emails/$(basename ${f%.mjml}.html)"; \
+    done
+
+# Stage 2: Main application
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -17,6 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
 COPY . .
+
+# Overwrite hand-written HTML emails with MJML-compiled versions
+COPY --from=email-builder /build/src/templates/emails/*.html src/templates/emails/
 
 # Build Tailwind CSS (standalone CLI, no Node.js required)
 RUN ARCH="$(dpkg --print-architecture)" && \

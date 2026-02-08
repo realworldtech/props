@@ -1,0 +1,40 @@
+<mjml>
+  <mj-head>
+    <mj-title>Account Approved - {{ site_name }}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+      <mj-body background-color="#f4f4f5" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f5">
+    <mj-include path="./_header.mjml" />
+
+    <mj-section background-color="#ffffff" padding="32px 24px">
+      <mj-column>
+        <mj-text color="#111827" font-size="16px" padding="0 0 16px">
+          Hello {{ display_name }},
+        </mj-text>
+        <mj-text color="#374151" font-size="15px" padding="0 0 16px">
+          Your account has been approved!
+        </mj-text>
+        <mj-raw>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 0 16px; width: 100%;">
+            <tr>
+              <td style="padding: 16px; background-color: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #111827;">
+                <p style="margin: 0 0 8px;"><strong>Role:</strong> {{ role_name }}</p>
+                {% if dept_names %}
+                <p style="margin: 0;"><strong>Department(s):</strong> {{ dept_names }}</p>
+                {% endif %}
+              </td>
+            </tr>
+          </table>
+        </mj-raw>
+        <mj-text color="#374151" font-size="15px" padding="0">
+          You can now log in to your account.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="./_footer.mjml" />
+  </mj-body>
+</mjml>

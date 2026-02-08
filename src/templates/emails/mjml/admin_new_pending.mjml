@@ -1,0 +1,36 @@
+<mjml>
+  <mj-head>
+    <mj-title>New User Pending Approval - {{ site_name }}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+      <mj-body background-color="#f4f4f5" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f5">
+    <mj-include path="./_header.mjml" />
+
+    <mj-section background-color="#ffffff" padding="32px 24px">
+      <mj-column>
+        <mj-text color="#111827" font-size="16px" padding="0 0 16px">
+          A new user has verified their email and is awaiting approval:
+        </mj-text>
+        <mj-raw>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 0 16px; width: 100%;">
+            <tr>
+              <td style="padding: 16px; background-color: #fefce8; border-radius: 6px; border: 1px solid #fde68a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #111827;">
+                <p style="margin: 0 0 8px;"><strong>Name:</strong> {{ display_name }}</p>
+                <p style="margin: 0 0 8px;"><strong>Email:</strong> {{ user_email }}</p>
+                <p style="margin: 0;"><strong>Requested Department:</strong> {{ department_name }}</p>
+              </td>
+            </tr>
+          </table>
+        </mj-raw>
+        <mj-button background-color="{{ brand_primary_color }}" color="#ffffff" font-size="15px" font-weight="600" border-radius="6px" href="{{ approval_url }}" padding="0">
+          Review Approval Queue
+        </mj-button>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="./_footer.mjml" />
+  </mj-body>
+</mjml>

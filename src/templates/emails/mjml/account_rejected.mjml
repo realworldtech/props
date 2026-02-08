@@ -1,0 +1,28 @@
+<mjml>
+  <mj-head>
+    <mj-title>Account Registration - {{ site_name }}</mj-title>
+    <mj-attributes>
+      <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
+      <mj-body background-color="#f4f4f5" />
+    </mj-attributes>
+  </mj-head>
+  <mj-body background-color="#f4f4f5">
+    <mj-include path="./_header.mjml" />
+
+    <mj-section background-color="#ffffff" padding="32px 24px">
+      <mj-column>
+        <mj-text color="#111827" font-size="16px" padding="0 0 16px">
+          Hello {{ display_name }},
+        </mj-text>
+        <mj-text color="#374151" font-size="15px" padding="0 0 16px">
+          Your registration request has not been approved at this time.
+        </mj-text>
+        <mj-text color="#374151" font-size="15px" padding="0">
+          If you believe this is an error, please contact the administrator.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+
+    <mj-include path="./_footer.mjml" />
+  </mj-body>
+</mjml>

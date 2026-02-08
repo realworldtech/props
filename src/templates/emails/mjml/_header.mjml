@@ -1,0 +1,11 @@
+<mj-section background-color="{{ brand_primary_color }}" padding="24px">
+  <mj-column>
+    <mj-raw>{% if logo_url %}</mj-raw>
+    <mj-image src="{{ logo_url }}" alt="{{ site_name }}" width="150px" height="40px" align="center" padding="0" />
+    <mj-raw>{% else %}</mj-raw>
+    <mj-text align="center" color="#ffffff" font-size="24px" font-weight="700" padding="0">
+      {{ site_name }}
+    </mj-text>
+    <mj-raw>{% endif %}</mj-raw>
+  </mj-column>
+</mj-section>

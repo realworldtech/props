@@ -1,0 +1,7 @@
+<mj-section background-color="#f9fafb" padding="16px 24px" border-top="1px solid #e5e7eb">
+  <mj-column>
+    <mj-text align="center" color="#6b7280" font-size="13px" padding="0">
+      &copy; {{ site_name }}. This is an automated message.
+    </mj-text>
+  </mj-column>
+</mj-section>

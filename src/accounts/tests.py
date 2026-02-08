@@ -1,9 +1,185 @@
 """Tests for the accounts app."""
 
+from unittest.mock import patch
+
+import pytest
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 User = get_user_model()
+
+
+class TestEmailTemplateRendering:
+    """Tests for MJML-compiled email template rendering."""
+
+    BRAND_COLOR = settings.BRAND_PRIMARY_COLOR
+    SITE = settings.SITE_NAME
+
+    TEMPLATES = {
+        "verification": {
+            "context": {
+                "display_name": "Alice",
+                "verify_url": "https://example.com/verify/abc",
+            },
+            "html_contains": ["Verify", "Alice", "verify/abc"],
+        },
+        "account_approved": {
+            "context": {
+                "display_name": "Bob",
+                "role_name": "Member",
+                "dept_names": "Props, Costumes",
+            },
+            "html_contains": ["approved", "Bob", "Member", "Props"],
+        },
+        "account_rejected": {
+            "context": {
+                "display_name": "Charlie",
+            },
+            "html_contains": ["not been approved", "Charlie"],
+        },
+        "admin_new_pending": {
+            "context": {
+                "display_name": "Dana",
+                "user_email": "dana@example.com",
+                "department_name": "Costumes",
+                "approval_url": "https://example.com/admin/approve",
+            },
+            "html_contains": [
+                "Dana",
+                "dana@example.com",
+                "Costumes",
+                "approve",
+            ],
+        },
+        "password_reset": {
+            "context": {
+                "display_name": "Eve",
+                "reset_url": "https://example.com/reset/xyz",
+            },
+            "html_contains": ["Reset", "Eve", "reset/xyz"],
+        },
+    }
+
+    def _render_context(self, extra: dict) -> dict:
+        return {
+            "site_name": self.SITE,
+            "brand_primary_color": self.BRAND_COLOR,
+            "logo_url": "",
+            **extra,
+        }
+
+    @pytest.mark.parametrize("template_name", TEMPLATES.keys())
+    def test_html_renders_without_error(self, db, template_name):
+        info = self.TEMPLATES[template_name]
+        ctx = self._render_context(info["context"])
+        html = render_to_string(f"emails/{template_name}.html", ctx)
+        assert len(html) > 0
+
+    @pytest.mark.parametrize("template_name", TEMPLATES.keys())
+    def test_txt_renders_without_error(self, db, template_name):
+        info = self.TEMPLATES[template_name]
+        ctx = self._render_context(info["context"])
+        txt = render_to_string(f"emails/{template_name}.txt", ctx)
+        assert len(txt) > 0
+
+    @pytest.mark.parametrize("template_name", TEMPLATES.keys())
+    def test_html_contains_site_name(self, db, template_name):
+        info = self.TEMPLATES[template_name]
+        ctx = self._render_context(info["context"])
+        html = render_to_string(f"emails/{template_name}.html", ctx)
+        assert self.SITE in html
+
+    @pytest.mark.parametrize("template_name", TEMPLATES.keys())
+    def test_html_contains_brand_color(self, db, template_name):
+        info = self.TEMPLATES[template_name]
+        ctx = self._render_context(info["context"])
+        html = render_to_string(f"emails/{template_name}.html", ctx)
+        assert self.BRAND_COLOR in html
+
+    @pytest.mark.parametrize("template_name", TEMPLATES.keys())
+    def test_html_contains_expected_content(self, db, template_name):
+        info = self.TEMPLATES[template_name]
+        ctx = self._render_context(info["context"])
+        html = render_to_string(f"emails/{template_name}.html", ctx)
+        for expected in info["html_contains"]:
+            assert (
+                expected in html
+            ), f"Expected '{expected}' in {template_name}.html"
+
+    def test_html_has_inline_css(self, db):
+        ctx = self._render_context(self.TEMPLATES["verification"]["context"])
+        html = render_to_string("emails/verification.html", ctx)
+        assert "style=" in html
+
+    def test_html_is_standalone_no_extends(self, db):
+        ctx = self._render_context(self.TEMPLATES["verification"]["context"])
+        html = render_to_string("emails/verification.html", ctx)
+        assert "{% extends" not in html
+
+    def test_logo_url_conditional_without_logo(self, db):
+        ctx = self._render_context(self.TEMPLATES["verification"]["context"])
+        ctx["logo_url"] = ""
+        html = render_to_string("emails/verification.html", ctx)
+        assert self.SITE in html
+
+    def test_logo_url_conditional_with_logo(self, db):
+        ctx = self._render_context(self.TEMPLATES["verification"]["context"])
+        ctx["logo_url"] = "https://example.com/logo.png"
+        html = render_to_string("emails/verification.html", ctx)
+        assert "https://example.com/logo.png" in html
+
+
+class TestSendBrandedEmail:
+    """Tests for the send_branded_email utility."""
+
+    @patch("accounts.tasks.send_email_task")
+    def test_send_branded_email_dispatches_task(self, mock_task, db, settings):
+        from accounts.email import send_branded_email
+
+        settings.SITE_NAME = "TestSite"
+        settings.BRAND_PRIMARY_COLOR = "#FF0000"
+
+        send_branded_email(
+            template_name="verification",
+            context={
+                "display_name": "Tester",
+                "verify_url": "https://example.com/verify/123",
+            },
+            subject="Verify",
+            recipient="tester@example.com",
+        )
+
+        mock_task.delay.assert_called_once()
+        call_kwargs = mock_task.delay.call_args[1]
+        assert call_kwargs["subject"] == "Verify"
+        assert call_kwargs["recipient_list"] == ["tester@example.com"]
+        assert "TestSite" in call_kwargs["html_body"]
+        assert "TestSite" in call_kwargs["text_body"]
+        assert "#FF0000" in call_kwargs["html_body"]
+
+    @patch("accounts.tasks.send_email_task")
+    def test_send_branded_email_accepts_list_recipients(
+        self, mock_task, db, settings
+    ):
+        from accounts.email import send_branded_email
+
+        settings.SITE_NAME = "TestSite"
+        settings.BRAND_PRIMARY_COLOR = "#FF0000"
+
+        recipients = ["a@example.com", "b@example.com"]
+        send_branded_email(
+            template_name="account_rejected",
+            context={"display_name": "Someone"},
+            subject="Rejected",
+            recipient=recipients,
+        )
+
+        mock_task.delay.assert_called_once()
+        call_kwargs = mock_task.delay.call_args[1]
+        assert call_kwargs["recipient_list"] == recipients
 
 
 class TestCustomUser:
