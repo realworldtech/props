@@ -132,7 +132,7 @@ pathspec==1.0.4
     # via black
 pi-heif==1.2.0
     # via -r requirements.in
-pillow==12.1.0
+pillow==12.1.1
     # via
     #   -r requirements.in
     #   pi-heif
