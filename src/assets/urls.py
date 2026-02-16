@@ -263,6 +263,11 @@ urlpatterns = [
         views.holdlist_remove_item,
         name="holdlist_remove_item",
     ),
+    path(
+        "hold-lists/<int:pk>/pick-sheet/",
+        views.holdlist_pick_sheet,
+        name="holdlist_pick_sheet",
+    ),
     # Projects
     path("projects/", views.project_list, name="project_list"),
     path("projects/create/", views.project_create, name="project_create"),

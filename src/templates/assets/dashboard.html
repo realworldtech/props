@@ -10,6 +10,7 @@
             <h1 class="font-display text-3xl font-bold">Dashboard</h1>
             <p class="text-cream/50 mt-1">Overview of your asset inventory</p>
         </div>
+        {% if show_actions %}
         <div class="flex gap-3">
             <a href="{% url 'assets:quick_capture' %}" class="flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -37,6 +38,7 @@
                 Create Asset
             </a>
         </div>
+        {% endif %}
     </div>
 
     <!-- Pending Approvals Alert -->
@@ -198,8 +200,40 @@
                         <td class="py-2.5 pr-4 text-cream/50 hidden sm:table-cell">{% if asset.checked_out_at %}{{ asset.checked_out_at|timesince }} ago{% else %}-{% endif %}</td>
                         <td class="py-2.5 pr-4 text-cream/50 hidden md:table-cell">{{ asset.category|default:"-" }}</td>
                         <td class="py-2.5 text-right">
+                            {% if show_actions %}
                             <a href="{% url 'assets:asset_checkin' asset.pk %}" class="text-emerald-400 hover:text-emerald-300 text-xs transition-colors">Check In</a>
+                            {% endif %}
                         </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- My Borrowed Items -->
+    {% if my_borrowed %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="font-display text-xl font-semibold">My Borrowed Items</h2>
+            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-cream/50 border-b border-white/5">
+                        <th class="text-left py-2 pr-4">Asset</th>
+                        <th class="text-left py-2 pr-4">Category</th>
+                        <th class="text-left py-2 pr-4">Location</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5">
+                    {% for item in my_borrowed %}
+                    <tr class="hover:bg-white/[0.02] transition-colors">
+                        <td class="py-2.5 pr-4"><a href="{{ item.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ item.name }}</a></td>
+                        <td class="py-2.5 pr-4 text-cream/70">{{ item.category|default:"-" }}</td>
+                        <td class="py-2.5 pr-4 text-cream/70">{{ item.current_location|default:"-" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

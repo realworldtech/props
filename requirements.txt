@@ -28,6 +28,8 @@ botocore==1.42.43
     # via
     #   boto3
     #   s3transfer
+brotli==1.2.0
+    # via fonttools
 build==1.4.0
     # via pip-tools
 celery[redis]==5.6.2
@@ -38,6 +40,8 @@ certifi==2026.1.4
     # via
     #   httpcore
     #   httpx
+cffi==2.0.0
+    # via weasyprint
 click==8.3.1
     # via
     #   black
@@ -58,6 +62,8 @@ coverage==7.13.3
     # via -r requirements.in
 cron-descriptor==2.0.6
     # via django-celery-beat
+cssselect2==0.9.0
+    # via weasyprint
 distro==1.9.0
     # via anthropic
 django==5.2.11
@@ -92,6 +98,8 @@ faker==40.1.2
     # via factory-boy
 flake8==7.3.0
     # via -r requirements.in
+fonttools[woff]==4.61.1
+    # via weasyprint
 gunicorn==25.0.2
     # via -r requirements.in
 h11==0.16.0
@@ -140,6 +148,7 @@ pillow==12.1.1
     #   pi-heif
     #   python-barcode
     #   qrcode
+    #   weasyprint
 pip-tools==7.5.2
     # via -r requirements.in
 platformdirs==4.5.1
@@ -154,14 +163,20 @@ psycopg-binary==3.3.2
     # via psycopg
 pycodestyle==2.14.0
     # via flake8
+pycparser==3.0
+    # via cffi
 pydantic==2.12.5
     # via anthropic
 pydantic-core==2.41.5
     # via pydantic
+pydyf==0.12.1
+    # via weasyprint
 pyflakes==3.4.0
     # via flake8
 pygments==2.19.2
     # via pytest
+pyphen==0.17.2
+    # via weasyprint
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -194,6 +209,12 @@ sniffio==1.3.1
     # via anthropic
 sqlparse==0.5.5
     # via django
+tinycss2==1.5.1
+    # via
+    #   cssselect2
+    #   weasyprint
+tinyhtml5==2.0.0
+    # via weasyprint
 typing-extensions==4.15.0
     # via
     #   anthropic
@@ -218,10 +239,19 @@ vine==5.1.0
     #   kombu
 wcwidth==0.5.3
     # via prompt-toolkit
+weasyprint==68.1
+    # via -r requirements.in
+webencodings==0.5.1
+    # via
+    #   cssselect2
+    #   tinycss2
+    #   tinyhtml5
 wheel==0.46.3
     # via pip-tools
 whitenoise==6.11.0
     # via -r requirements.in
+zopfli==0.4.1
+    # via fonttools
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip

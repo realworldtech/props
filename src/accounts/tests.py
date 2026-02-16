@@ -474,6 +474,16 @@ class TestPasswordReset:
             or b"expired" in response.content.lower()
         )
 
+    @patch("accounts.views.PasswordResetForm.save")
+    def test_password_reset_rate_limit(self, mock_save, client, user):
+        """V12: 4th POST with same email is silently absorbed."""
+        url = reverse("accounts:password_reset")
+        for i in range(4):
+            response = client.post(url, {"email": user.email})
+            assert response.status_code == 302
+        # First 3 should call save, 4th should be absorbed
+        assert mock_save.call_count <= 3
+
 
 # ============================================================
 # REGISTRATION & APPROVAL WORKFLOW TESTS (G1 / S2.15)

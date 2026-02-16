@@ -121,17 +121,11 @@ services:
         condition: service_healthy
       garage-init:
         condition: service_completed_successfully
+    env_file: .env
     environment:
-      DEBUG: "True"
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      ALLOWED_HOSTS: localhost,127.0.0.1
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
-      AWS_S3_REGION_NAME: garage
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
 
   # Celery worker
   celery-worker:
@@ -146,7 +140,7 @@ services:
         set -a; . /var/lib/garage/credentials.env; set +a;
       fi &&
       cd /app/src &&
-      celery -A props worker --loglevel=info
+      celery -A props worker --loglevel=info --concurrency=1 --prefetch-multiplier=1
       "
     volumes:
       - .:/app
@@ -158,22 +152,11 @@ services:
         condition: service_healthy
       garage-init:
         condition: service_completed_successfully
+    env_file: .env
     environment:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
       USE_S3: "True"
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-assets}
       AWS_S3_ENDPOINT_URL: http://garage:3900
-      AWS_S3_REGION_NAME: garage
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      EMAIL_HOST: host.docker.internal
-      EMAIL_PORT: "25"
-      EMAIL_USE_TLS: "False"
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.example.org}
 
   # Celery beat scheduler
   celery-beat:
@@ -196,11 +179,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file: .env
     environment:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
 
   # Prod profile - behind Traefik
   web-prod:
@@ -229,24 +210,11 @@ services:
         condition: service_healthy
       garage-init:
         condition: service_completed_successfully
+    env_file: .env
     environment:
-      DEBUG: "False"
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
-      SECRET_KEY: ${SECRET_KEY}
-      ALLOWED_HOSTS: ${DOMAIN}
       USE_S3: "True"
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-assets}
       AWS_S3_ENDPOINT_URL: http://garage:3900
-      AWS_S3_REGION_NAME: garage
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      EMAIL_HOST: host.docker.internal
-      EMAIL_PORT: "25"
-      EMAIL_USE_TLS: "False"
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@props.example.org}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.props.rule=Host(`${DOMAIN}`)"

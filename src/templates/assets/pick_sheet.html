@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Pick Sheet - {{ hold_list.name }}</title>
+    <style>
+        body { font-family: sans-serif; font-size: 12px; color: #333; margin: 20px; }
+        h1 { font-size: 20px; margin: 0 0 5px; }
+        .meta { color: #666; font-size: 11px; margin-bottom: 15px; }
+        .meta span { margin-right: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #f5f5f5; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+        td { font-size: 11px; }
+        .checkbox { width: 30px; text-align: center; }
+        .checkbox-box { display: inline-block; width: 14px; height: 14px; border: 1.5px solid #999; }
+        .footer { margin-top: 20px; font-size: 10px; color: #999; text-align: center; }
+        .notes { color: #666; }
+    </style>
+</head>
+<body>
+    <h1>Pick Sheet: {{ hold_list.name }}</h1>
+    <div class="meta">
+        {% if hold_list.project %}<span><strong>Project:</strong> {{ hold_list.project.name }}</span>{% endif %}
+        {% if hold_list.department %}<span><strong>Department:</strong> {{ hold_list.department.name }}</span>{% endif %}
+        {% if hold_list.start_date %}<span><strong>Dates:</strong> {{ hold_list.start_date }} – {{ hold_list.end_date }}</span>{% endif %}
+        <span><strong>Status:</strong> {{ hold_list.status.name }}</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th class="checkbox"></th>
+                <th>Asset</th>
+                <th>Barcode</th>
+                <th>Category</th>
+                <th>Location</th>
+                <th>Qty</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="checkbox"><span class="checkbox-box"></span></td>
+                <td>{{ item.asset.name }}</td>
+                <td>{{ item.asset.barcode }}</td>
+                <td>{{ item.asset.category|default:"-" }}</td>
+                <td>{{ item.asset.current_location|default:"-" }}</td>
+                <td>{{ item.quantity }}</td>
+                <td class="notes">{{ item.notes|default:"" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" style="text-align:center; color:#999;">No items</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div class="footer">
+        Generated {% now "Y-m-d H:i" %} &bull; {{ hold_list.name }}
+    </div>
+</body>
+</html>

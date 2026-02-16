@@ -109,6 +109,26 @@ def viewer_client(client, viewer_user, password):
     return client
 
 
+@pytest.fixture
+def dept_manager_user(db, password, department):
+    group, _ = Group.objects.get_or_create(name="Department Manager")
+    u = User.objects.create_user(
+        username="deptmanager",
+        email="deptmanager@example.com",
+        password=password,
+        display_name="Dept Manager",
+    )
+    u.groups.add(group)
+    department.managers.add(u)
+    return u
+
+
+@pytest.fixture
+def dept_manager_client(client, dept_manager_user, password):
+    client.login(username=dept_manager_user.username, password=password)
+    return client
+
+
 # --- Core model fixtures ---
 
 

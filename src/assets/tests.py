@@ -27,6 +27,39 @@ User = get_user_model()
 
 
 # ============================================================
+# DASHBOARD ROLE SCOPING TESTS (V16)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestDashboardRoleScoping:
+    """V16: Dashboard role-based scoping."""
+
+    def test_admin_sees_all_stats(self, admin_client, asset):
+        response = admin_client.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+        assert response.context["show_actions"] is True
+
+    def test_dept_manager_sees_scoped_data(self, dept_manager_client, asset):
+        response = dept_manager_client.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+        assert response.context["show_actions"] is True
+
+    def test_member_sees_borrowed_items(self, client_logged_in, asset, user):
+        asset.checked_out_to = user
+        asset.save()
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+        assert list(response.context["my_borrowed"]) == [asset]
+
+    def test_viewer_no_action_buttons(self, viewer_client, asset):
+        response = viewer_client.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+        assert response.context["show_actions"] is False
+        assert b"Quick Capture" not in response.content
+
+
+# ============================================================
 # MODEL TESTS
 # ============================================================
 
@@ -3064,7 +3097,7 @@ class TestQueryCounts:
     ):
         """Dashboard should use a fixed number of queries."""
         asset.tags.add(tag)
-        with django_assert_num_queries(20):
+        with django_assert_num_queries(21):
             response = client_logged_in.get(reverse("assets:dashboard"))
         assert response.status_code == 200
 
@@ -4837,6 +4870,41 @@ class TestHoldListServices:
         )
         add_item(hl, asset, user)
         assert check_asset_held(asset)
+
+
+class TestHoldlistPickSheet:
+    """V15/H4: Pick sheet PDF generation."""
+
+    def test_holdlist_pick_sheet_returns_pdf(self, client_logged_in, asset):
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.create(name="Draft")
+        hold_list = HoldList.objects.create(
+            name="Test List",
+            status=status,
+            start_date="2026-01-01",
+            end_date="2026-02-01",
+        )
+        response = client_logged_in.get(
+            reverse("assets:holdlist_pick_sheet", args=[hold_list.pk])
+        )
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/pdf"
+
+    def test_holdlist_pick_sheet_requires_login(self, client, db):
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.create(name="Draft")
+        hold_list = HoldList.objects.create(
+            name="Test List",
+            status=status,
+            start_date="2026-01-01",
+            end_date="2026-02-01",
+        )
+        response = client.get(
+            reverse("assets:holdlist_pick_sheet", args=[hold_list.pk])
+        )
+        assert response.status_code == 302  # Redirect to login
 
 
 class TestHoldListViews:

@@ -7,6 +7,9 @@
     <div class="flex justify-between items-center">
         <h1 class="font-display text-3xl font-bold">{{ hold_list.name }}</h1>
         <div class="flex gap-2">
+            <a href="{% url 'assets:holdlist_pick_sheet' hold_list.pk %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+                Pick Sheet PDF
+            </a>
             <a href="{% url 'assets:holdlist_edit' hold_list.pk %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
                 Edit
             </a>

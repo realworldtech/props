@@ -128,7 +128,7 @@
                                 <button type="submit" class="text-xs bg-red-600 text-white px-2 py-1 rounded">Delete</button>
                             </form>
                             {% if AI_ANALYSIS_ENABLED %}
-                            <a href="{% url 'assets:ai_analyse' asset.pk img.pk %}" class="text-xs bg-purple-600 text-white px-2 py-1 rounded">AI Analyse</a>
+                            <a href="{% url 'assets:ai_analyse' asset.pk img.pk %}" class="text-xs bg-purple-600 text-white px-2 py-1 rounded">{% if img.ai_processing_status == 'completed' %}Re-analyse{% else %}AI Analyse{% endif %}</a>
                             {% endif %}
                         </div>
                         {% if img.ai_processing_status == 'completed' %}

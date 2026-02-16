@@ -32,6 +32,7 @@ qrcode[pil]
 
 # Export
 openpyxl
+weasyprint
 
 # AI (optional at runtime, required at build)
 anthropic

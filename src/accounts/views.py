@@ -102,7 +102,6 @@ def login_view(request):
     return render(request, "registration/login.html", {"form": form})
 
 
-@ratelimit(key="ip", rate="10/m", method="POST", block=True)
 def logout_view(request):
     """Handle user logout."""
     logout(request)
@@ -547,20 +546,26 @@ def password_change_view(request):
     return render(request, "accounts/password_change.html", {"form": form})
 
 
-@ratelimit(key="ip", rate="5/h", method="POST", block=True)
+@ratelimit(key="post:email", rate="3/h", method="POST", block=False)
 def password_reset_view(request):
     """Request a password reset email."""
+    was_limited = getattr(request, "limited", False)
+
     if request.method == "POST":
         form = PasswordResetForm(request.POST)
         if form.is_valid():
-            form.save(
-                request=request,
-                use_https=request.is_secure(),
-                token_generator=default_token_generator,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                email_template_name="accounts/password_reset_email.txt",
-                html_email_template_name="accounts/password_reset_email.html",
-            )
+            if not was_limited:
+                form.save(
+                    request=request,
+                    use_https=request.is_secure(),
+                    token_generator=default_token_generator,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    email_template_name=("accounts/password_reset_email.txt"),
+                    html_email_template_name=(
+                        "accounts/password_reset_email.html"
+                    ),
+                )
+            # Always redirect so user can't tell if rate-limited
             return redirect("accounts:password_reset_done")
     else:
         form = PasswordResetForm()

@@ -52,61 +52,118 @@ BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$")
 @login_required
 def dashboard(request):
     """Display the dashboard with summary metrics."""
-    total_active = Asset.objects.filter(status="active").count()
-    total_draft = Asset.objects.filter(status="draft").count()
-    total_checked_out = Asset.objects.filter(
-        checked_out_to__isnull=False
-    ).count()
-    total_missing = Asset.objects.filter(status="missing").count()
+    role = get_user_role(request.user)
+    show_actions = role != "viewer"
+
+    # Department managers only see their departments
+    if role == "department_manager":
+        user_depts = Department.objects.filter(managers=request.user)
+        dept_filter = Q(category__department__in=user_depts)
+    else:
+        user_depts = None
+        dept_filter = Q()  # No filter for admin/member/viewer
+
+    total_active = (
+        Asset.objects.filter(status="active").filter(dept_filter).count()
+    )
+    total_draft = (
+        Asset.objects.filter(status="draft").filter(dept_filter).count()
+    )
+    total_checked_out = (
+        Asset.objects.filter(checked_out_to__isnull=False)
+        .filter(dept_filter)
+        .count()
+    )
+    total_missing = (
+        Asset.objects.filter(status="missing").filter(dept_filter).count()
+    )
 
     recent_transactions = Transaction.objects.select_related(
         "asset", "user", "borrower", "from_location", "to_location"
-    )[:10]
+    )
+    if role == "department_manager":
+        recent_transactions = recent_transactions.filter(
+            Q(asset__category__department__in=user_depts)
+        )
+    recent_transactions = recent_transactions[:10]
 
     recent_drafts = Asset.objects.filter(status="draft").select_related(
         "category", "created_by"
-    )[:5]
+    )
+    if role == "department_manager":
+        recent_drafts = recent_drafts.filter(dept_filter)
+    recent_drafts = recent_drafts[:5]
 
     checked_out_assets = (
         Asset.objects.filter(checked_out_to__isnull=False)
         .select_related("checked_out_to", "category", "current_location")
-        .prefetch_related("transactions")[:10]
+        .prefetch_related("transactions")
     )
+    if role == "department_manager":
+        checked_out_assets = checked_out_assets.filter(dept_filter)
+    checked_out_assets = checked_out_assets[:10]
 
     # Per-department counts
-    dept_counts = (
-        Department.objects.filter(is_active=True)
-        .annotate(
-            asset_count=Count(
-                "categories__assets",
-                filter=Q(categories__assets__status="active"),
-            )
+    dept_qs = Department.objects.filter(is_active=True)
+    if role == "department_manager":
+        dept_qs = dept_qs.filter(pk__in=user_depts)
+    dept_counts = dept_qs.annotate(
+        asset_count=Count(
+            "categories__assets",
+            filter=Q(categories__assets__status="active"),
         )
-        .order_by("-asset_count")[:10]
-    )
+    ).order_by("-asset_count")[:10]
 
     # Per-category counts
-    cat_counts = Category.objects.annotate(
+    cat_qs = Category.objects.all()
+    if role == "department_manager":
+        cat_qs = cat_qs.filter(department__in=user_depts)
+    cat_counts = cat_qs.annotate(
         asset_count=Count("assets", filter=Q(assets__status="active"))
     ).order_by("-asset_count")[:10]
 
     # Per-location counts
-    loc_counts = (
-        Location.objects.filter(is_active=True)
-        .annotate(
-            asset_count=Count("assets", filter=Q(assets__status="active"))
+    loc_qs = Location.objects.filter(is_active=True)
+    if role == "department_manager":
+        loc_qs = loc_qs.annotate(
+            asset_count=Count(
+                "assets",
+                filter=Q(assets__status="active")
+                & Q(assets__category__department__in=user_depts),
+            )
         )
-        .order_by("-asset_count")[:10]
-    )
+    else:
+        loc_qs = loc_qs.annotate(
+            asset_count=Count(
+                "assets",
+                filter=Q(assets__status="active"),
+            )
+        )
+    loc_counts = loc_qs.order_by("-asset_count")[:10]
 
     # Top 10 tags
-    top_tags = Tag.objects.annotate(asset_count=Count("assets")).order_by(
-        "-asset_count"
-    )[:10]
+    if role == "department_manager":
+        top_tags = (
+            Tag.objects.filter(assets__category__department__in=user_depts)
+            .annotate(asset_count=Count("assets"))
+            .order_by("-asset_count")[:10]
+        )
+    else:
+        top_tags = Tag.objects.annotate(asset_count=Count("assets")).order_by(
+            "-asset_count"
+        )[:10]
+
+    # My borrowed items for members
+    if role == "member":
+        my_borrowed = Asset.objects.filter(
+            checked_out_to=request.user
+        ).select_related("category", "current_location")
+    else:
+        my_borrowed = Asset.objects.none()
 
     # Pending approvals count for admins (S2.15.4-09)
     pending_approvals_count = 0
-    if get_user_role(request.user) == "system_admin":
+    if role == "system_admin":
         from accounts.models import CustomUser as User
 
         pending_approvals_count = User.objects.filter(
@@ -131,6 +188,8 @@ def dashboard(request):
             "loc_counts": loc_counts,
             "top_tags": top_tags,
             "pending_approvals_count": pending_approvals_count,
+            "show_actions": show_actions,
+            "my_borrowed": my_borrowed,
         },
     )
 
@@ -3136,6 +3195,27 @@ def holdlist_remove_item(request, pk, item_pk):
         except Exception as e:
             messages.error(request, str(e))
     return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def holdlist_pick_sheet(request, pk):
+    """Download pick sheet PDF for a hold list."""
+    from assets.models import HoldList
+    from assets.services.pdf import generate_pick_sheet_pdf
+
+    hold_list = get_object_or_404(
+        HoldList.objects.select_related("project", "department", "status"),
+        pk=pk,
+    )
+    items = hold_list.items.select_related(
+        "asset", "asset__category", "asset__current_location"
+    )
+    pdf_bytes = generate_pick_sheet_pdf(hold_list, items)
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="pick-sheet-{hold_list.pk}.pdf"'
+    )
+    return response
 
 
 @login_required
