@@ -576,9 +576,12 @@ class AssetImage(models.Model):
         if is_new and self.image and not self.thumbnail:
             self._generate_thumbnail()
         if is_new and self.image:
-            from .tasks import generate_detail_thumbnail
+            try:
+                from .tasks import generate_detail_thumbnail
 
-            generate_detail_thumbnail.delay(self.pk)
+                generate_detail_thumbnail.delay(self.pk)
+            except Exception:
+                pass  # Celery/Redis unavailable; task skipped
 
     def _generate_thumbnail(self):
         """Generate a 300x300 max thumbnail and cap original at 3264px."""
