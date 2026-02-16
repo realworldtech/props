@@ -33,6 +33,14 @@ def validate_transition(asset: Asset, new_status: str) -> None:
             f"is checked out. Check it in first."
         )
 
+    # Mandatory notes for lost/stolen transitions
+    if new_status in ("lost", "stolen") and not asset.lost_stolen_notes:
+        raise ValidationError(
+            f"Notes are required when marking an asset as "
+            f"'{new_status}'. Please provide details about "
+            f"the circumstances."
+        )
+
 
 def transition_asset(asset: Asset, new_status: str) -> Asset:
     """Validate and perform a status transition.

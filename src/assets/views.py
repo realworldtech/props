@@ -900,12 +900,22 @@ def asset_checkout(request, pk):
     if request.method == "POST":
         borrower_id = request.POST.get("borrower")
         notes = request.POST.get("notes", "")
+        destination_id = request.POST.get("destination_location", "")
 
         try:
             borrower = User.objects.get(pk=borrower_id)
         except User.DoesNotExist:
             messages.error(request, "Invalid borrower selected.")
             return redirect("assets:asset_checkout", pk=pk)
+
+        destination = None
+        if destination_id:
+            try:
+                destination = Location.objects.get(
+                    pk=destination_id, is_active=True
+                )
+            except Location.DoesNotExist:
+                pass
 
         # Parse optional backdating
         action_date_str = request.POST.get("action_date", "").strip()
@@ -938,18 +948,28 @@ def asset_checkout(request, pk):
             if not locked_asset.home_location:
                 locked_asset.home_location = locked_asset.current_location
 
-            Transaction.objects.create(
-                asset=locked_asset,
-                user=request.user,
-                action="checkout",
-                from_location=locked_asset.current_location,
-                borrower=borrower,
-                notes=notes,
+            tx_kwargs = {
+                "asset": locked_asset,
+                "user": request.user,
+                "action": "checkout",
+                "from_location": locked_asset.current_location,
+                "borrower": borrower,
+                "notes": notes,
                 **extra_kwargs,
-            )
+            }
+            if destination:
+                tx_kwargs["to_location"] = destination
+
+            Transaction.objects.create(**tx_kwargs)
             locked_asset.checked_out_to = borrower
+            if destination:
+                locked_asset.current_location = destination
             locked_asset.save(
-                update_fields=["checked_out_to", "home_location"]
+                update_fields=[
+                    "checked_out_to",
+                    "home_location",
+                    "current_location",
+                ]
             )
 
         messages.success(
@@ -1145,22 +1165,22 @@ def asset_relocate(request, pk):
                         "is_backdated": True,
                     }
 
-        old_home = asset.home_location
+        old_location = asset.current_location
         Transaction.objects.create(
             asset=asset,
             user=request.user,
             action="relocate",
-            from_location=old_home,
+            from_location=old_location,
             to_location=to_location,
             notes=notes,
             **extra_kwargs,
         )
-        asset.home_location = to_location
-        asset.save(update_fields=["home_location"])
+        asset.current_location = to_location
+        asset.save(update_fields=["current_location"])
 
         messages.success(
             request,
-            f"'{asset.name}' home location changed" f" to {to_location.name}.",
+            f"'{asset.name}' relocated to {to_location.name}.",
         )
         return redirect("assets:asset_detail", pk=pk)
 
@@ -2039,9 +2059,10 @@ def stocktake_summary(request, pk):
 @login_required
 def export_assets(request):
     """Export assets to Excel."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        return HttpResponseForbidden("Permission denied")
+    if not request.user.has_perm("assets.can_export_assets"):
+        role = get_user_role(request.user)
+        if role not in ("system_admin", "department_manager", "member"):
+            return HttpResponseForbidden("Permission denied")
     from .services.export import export_assets_xlsx
 
     queryset = Asset.objects.with_related().select_related("created_by")

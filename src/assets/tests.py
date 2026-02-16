@@ -2736,6 +2736,7 @@ class TestLostStolenStatuses:
     def test_state_service_validates_lost_transition(self, asset):
         from assets.services.state import validate_transition
 
+        asset.lost_stolen_notes = "Test notes"
         validate_transition(asset, "lost")  # Should not raise
 
     def test_state_service_allows_checked_out_to_lost(self, asset, admin_user):
@@ -2743,6 +2744,7 @@ class TestLostStolenStatuses:
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
+        asset.lost_stolen_notes = "Lost while checked out"
         asset.save(update_fields=["checked_out_to"])
         validate_transition(asset, "lost")  # Should not raise
 
@@ -2753,6 +2755,7 @@ class TestLostStolenStatuses:
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
+        asset.lost_stolen_notes = "Stolen while checked out"
         asset.save(update_fields=["checked_out_to"])
         validate_transition(asset, "stolen")  # Should not raise
 
@@ -2842,7 +2845,7 @@ class TestRelocateTransaction:
         )
         assert response.status_code == 302
         asset.refresh_from_db()
-        assert asset.home_location == new_loc
+        assert asset.current_location == new_loc
         tx = Transaction.objects.filter(asset=asset, action="relocate").first()
         assert tx is not None
         assert tx.to_location == new_loc
@@ -3778,3 +3781,122 @@ class TestSerialAdmin:
             f"/admin/assets/asset/{serialised_asset.pk}/change/"
         )
         assert response.status_code == 200
+
+
+# ============================================================
+# BATCH B: CRITICAL VIEW/LOGIC FIXES
+# ============================================================
+
+
+class TestCheckoutDestinationLocation:
+    """V9: Checkout can include optional destination location."""
+
+    def test_checkout_with_destination_updates_current_location(
+        self, admin_client, asset, second_user, location
+    ):
+        dest = Location.objects.create(name="Destination Venue")
+        response = admin_client.post(
+            reverse("assets:asset_checkout", args=[asset.pk]),
+            {
+                "borrower": second_user.pk,
+                "notes": "For the show",
+                "destination_location": dest.pk,
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.checked_out_to == second_user
+        assert asset.current_location == dest
+        tx = asset.transactions.filter(action="checkout").first()
+        assert tx.to_location == dest
+
+    def test_checkout_without_destination_preserves_location(
+        self, admin_client, asset, second_user, location
+    ):
+        original_loc = asset.current_location
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[asset.pk]),
+            {"borrower": second_user.pk, "notes": ""},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == original_loc
+
+
+class TestMandatoryLostStolenNotes:
+    """V22: Notes required when transitioning to lost/stolen."""
+
+    def test_transition_to_lost_without_notes_raises(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = ""
+        with pytest.raises(ValidationError, match="(?i)notes"):
+            validate_transition(asset, "lost")
+
+    def test_transition_to_stolen_without_notes_raises(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = ""
+        with pytest.raises(ValidationError, match="(?i)notes"):
+            validate_transition(asset, "stolen")
+
+    def test_transition_to_lost_with_notes_succeeds(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = "Left at venue"
+        validate_transition(asset, "lost")  # Should not raise
+
+    def test_transition_to_stolen_with_notes_succeeds(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = "Taken from storage"
+        validate_transition(asset, "stolen")  # Should not raise
+
+
+class TestRelocateFixesCurrentLocation:
+    """V23: Relocate updates current_location, not home_location."""
+
+    def test_relocate_updates_current_location(
+        self, admin_client, asset, location
+    ):
+        new_loc = Location.objects.create(name="New Warehouse")
+        original_home = asset.home_location
+        admin_client.post(
+            reverse("assets:asset_relocate", args=[asset.pk]),
+            {"location": new_loc.pk, "notes": "Moving storage"},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == new_loc
+        assert asset.home_location == original_home
+
+    def test_relocate_checked_out_asset_keeps_borrower(
+        self, admin_client, asset, second_user, location
+    ):
+        asset.checked_out_to = second_user
+        asset.save(update_fields=["checked_out_to"])
+        new_loc = Location.objects.create(name="New Venue")
+        admin_client.post(
+            reverse("assets:asset_relocate", args=[asset.pk]),
+            {"location": new_loc.pk, "notes": "Venue change"},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == new_loc
+        assert asset.checked_out_to == second_user
+
+
+class TestViewerExportPermission:
+    """V35: Viewer with can_export_assets can access export."""
+
+    def test_viewer_can_export(self, viewer_client, viewer_user, asset):
+        from django.contrib.auth.models import Permission
+
+        perm = Permission.objects.get(codename="can_export_assets")
+        viewer_user.user_permissions.add(perm)
+        # Clear cached permissions
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        viewer_user = User.objects.get(pk=viewer_user.pk)
+
+        response = viewer_client.get(reverse("assets:export_assets"))
+        assert response.status_code == 200
+        assert "spreadsheet" in response["Content-Type"]
