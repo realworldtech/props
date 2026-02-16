@@ -1,6 +1,6 @@
 """Asset merge service for combining duplicate records."""
 
-from ..models import Asset, AssetImage, NFCTag, Transaction
+from ..models import Asset, AssetImage, AssetSerial, NFCTag, Transaction
 from .permissions import get_user_role
 
 
@@ -90,19 +90,36 @@ def merge_assets(primary: Asset, duplicates: list[Asset], user) -> Asset:
         for tag in dup.tags.all():
             primary.tags.add(tag)
 
+        # Concatenate descriptions
+        if dup.description:
+            if primary.description:
+                primary.description += f"\n---\n{dup.description}"
+            else:
+                primary.description = dup.description
+
+        # Concatenate notes
+        if dup.notes:
+            if primary.notes:
+                primary.notes += f"\n---\n{dup.notes}"
+            else:
+                primary.notes = dup.notes
+
         # Fill in missing fields from duplicate
-        if not primary.description and dup.description:
-            primary.description = dup.description
         if not primary.category and dup.category:
             primary.category = dup.category
         if not primary.current_location and dup.current_location:
             primary.current_location = dup.current_location
-        if not primary.notes and dup.notes:
-            primary.notes = dup.notes
         if not primary.purchase_price and dup.purchase_price:
             primary.purchase_price = dup.purchase_price
         if not primary.estimated_value and dup.estimated_value:
             primary.estimated_value = dup.estimated_value
+
+        # Sum quantities
+        if dup.quantity and dup.quantity > 0:
+            primary.quantity = (primary.quantity or 1) + dup.quantity
+
+        # Move serials from duplicate to primary
+        AssetSerial.objects.filter(asset=dup).update(asset=primary)
 
         # Dispose the duplicate
         dup.status = "disposed"
@@ -111,6 +128,10 @@ def merge_assets(primary: Asset, duplicates: list[Asset], user) -> Asset:
             f"by {user}".strip()
         )
         dup.save()
+
+        # Clear duplicate barcode after save (using direct DB update to
+        # avoid save() regeneration)
+        Asset.objects.filter(pk=dup.pk).update(barcode="", barcode_image="")
 
     primary.save()
     return primary

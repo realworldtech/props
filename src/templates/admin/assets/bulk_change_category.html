@@ -1,0 +1,20 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <p>Change category for {{ assets.count }} asset(s) to:</p>
+    <select name="category" required>
+        <option value="">-- Select category --</option>
+        {% for cat in categories %}
+        <option value="{{ cat.pk }}">{{ cat.name }}</option>
+        {% endfor %}
+    </select>
+    {% for asset in assets %}
+    <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="{{ action }}">
+    <input type="hidden" name="apply" value="1">
+    <button type="submit" class="button">Change Category</button>
+    <a href="{% url 'admin:assets_asset_changelist' %}" class="button cancel-link">Cancel</a>
+</form>
+{% endblock %}

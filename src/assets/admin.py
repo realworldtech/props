@@ -359,7 +359,105 @@ class AssetAdmin(ModelAdmin):
 
     mark_retired.short_description = "Mark as retired"
 
-    actions = ["export_selected_xlsx", "mark_active", "mark_retired"]
+    @action(description="Mark as lost")
+    def mark_lost(self, request, queryset):
+        updated = queryset.exclude(status__in=["disposed", "lost"]).update(
+            status="lost"
+        )
+        messages.success(request, f"{updated} asset(s) marked as lost.")
+
+    mark_lost.short_description = "Mark as lost"
+
+    @action(description="Mark as stolen")
+    def mark_stolen(self, request, queryset):
+        updated = queryset.exclude(status__in=["disposed", "stolen"]).update(
+            status="stolen"
+        )
+        messages.success(request, f"{updated} asset(s) marked as stolen.")
+
+    mark_stolen.short_description = "Mark as stolen"
+
+    @action(description="Print labels for selected")
+    def print_labels(self, request, queryset):
+        pks = ",".join(str(pk) for pk in queryset.values_list("pk", flat=True))
+        return redirect(
+            f"{reverse_lazy('assets:barcode_pregenerate')}?ids={pks}"
+        )
+
+    print_labels.short_description = "Print labels for selected"
+
+    @action(description="Transfer to location...")
+    def bulk_transfer(self, request, queryset):
+        if "apply" in request.POST:
+            location_id = request.POST.get("location")
+            if location_id:
+                location = Location.objects.get(pk=location_id)
+                count = 0
+                for asset in queryset:
+                    asset.current_location = location
+                    asset.save(update_fields=["current_location"])
+                    count += 1
+                messages.success(
+                    request,
+                    f"{count} asset(s) transferred to {location.name}.",
+                )
+                return None
+        locations = Location.objects.filter(is_active=True).order_by("name")
+        from django.template.response import TemplateResponse
+
+        return TemplateResponse(
+            request,
+            "admin/assets/bulk_transfer.html",
+            {
+                "assets": queryset,
+                "locations": locations,
+                "action": "bulk_transfer",
+                "opts": self.model._meta,
+                "title": "Transfer assets to location",
+            },
+        )
+
+    bulk_transfer.short_description = "Transfer to location..."
+
+    @action(description="Change category...")
+    def bulk_change_category(self, request, queryset):
+        if "apply" in request.POST:
+            cat_id = request.POST.get("category")
+            if cat_id:
+                category = Category.objects.get(pk=cat_id)
+                count = queryset.update(category=category)
+                messages.success(
+                    request,
+                    f"{count} asset(s) category changed to {category.name}.",
+                )
+                return None
+        categories = Category.objects.all().order_by("name")
+        from django.template.response import TemplateResponse
+
+        return TemplateResponse(
+            request,
+            "admin/assets/bulk_change_category.html",
+            {
+                "assets": queryset,
+                "categories": categories,
+                "action": "bulk_change_category",
+                "opts": self.model._meta,
+                "title": "Change category for assets",
+            },
+        )
+
+    bulk_change_category.short_description = "Change category..."
+
+    actions = [
+        "export_selected_xlsx",
+        "mark_active",
+        "mark_retired",
+        "mark_lost",
+        "mark_stolen",
+        "print_labels",
+        "bulk_transfer",
+        "bulk_change_category",
+    ]
 
     @action(
         description="Print Label",

@@ -3993,3 +3993,483 @@ class TestExcludeDisposedFromExport:
             reverse("assets:export_assets") + "?include_disposed=1"
         )
         assert response.status_code == 200
+
+
+class TestMergeFieldRulesV20:
+    """V20: Fix merge field rules."""
+
+    def test_merge_concatenates_descriptions(
+        self, asset, user, category, location
+    ):
+        # Create dup with description
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            description="Dup desc",
+        )
+        dup.save()
+        asset.description = "Primary desc"
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert "Primary desc" in asset.description
+        assert "Dup desc" in asset.description
+        assert "\n---\n" in asset.description
+
+    def test_merge_concatenates_notes(self, asset, user, category, location):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            notes="Dup notes",
+        )
+        dup.save()
+        asset.notes = "Primary notes"
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert "Primary notes" in asset.notes
+        assert "Dup notes" in asset.notes
+
+    def test_merge_sums_quantities(self, asset, user, category, location):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            quantity=3,
+        )
+        dup.save()
+        asset.quantity = 2
+        asset.is_serialised = False
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert asset.quantity == 5
+
+    def test_merge_moves_serials(self, asset, user, category, location):
+        asset.is_serialised = True
+        asset.save()
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=True,
+            created_by=user,
+        )
+        dup.save()
+        from assets.models import AssetSerial
+
+        serial = AssetSerial.objects.create(asset=dup, serial_number="SN-001")
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        serial.refresh_from_db()
+        assert serial.asset == asset
+
+    def test_merge_clears_duplicate_barcodes(
+        self, asset, user, category, location
+    ):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+        )
+        dup.save()
+        dup_barcode = dup.barcode
+        assert dup_barcode  # Has a barcode
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        dup.refresh_from_db()
+        assert not dup.barcode  # Barcode cleared
+
+
+class TestStocktakeWrongLocationV31:
+    """V31: Stocktake prompt on wrong location."""
+
+    def test_wrong_location_does_not_auto_transfer(
+        self, admin_client, admin_user, asset, location
+    ):
+        from assets.models import Location, StocktakeSession
+
+        other_loc = Location.objects.create(name="Other Location")
+        asset.current_location = other_loc
+        asset.save(update_fields=["current_location"])
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        admin_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"code": asset.barcode},
+        )
+        asset.refresh_from_db()
+        # Should NOT auto-transfer
+        assert asset.current_location == other_loc
+
+    def test_transfer_confirmation_updates_location(
+        self, admin_client, admin_user, asset, location
+    ):
+        from assets.models import Location, StocktakeSession
+
+        other_loc = Location.objects.create(name="Other Loc 2")
+        asset.current_location = other_loc
+        asset.save(update_fields=["current_location"])
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        admin_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"transfer_asset_id": asset.pk},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == location
+
+
+# ============================================================
+# BATCH F: SHOULD-IMPLEMENT MEDIUM EFFORT (V25)
+# ============================================================
+
+
+class TestAdminBulkActionsV25:
+    """V25: Admin bulk actions."""
+
+    def test_mark_lost_action(self, admin_client, asset, admin_user):
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/asset/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj.mark_lost(request, qs)
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+    def test_mark_stolen_action(self, admin_client, asset, admin_user):
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/asset/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj.mark_stolen(request, qs)
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+
+    def test_bulk_transfer_action(self, admin_client, asset, admin_user):
+        new_location = Location.objects.create(name="New Warehouse")
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.post(
+            "/admin/assets/asset/", {"location": new_location.pk, "apply": "1"}
+        )
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        admin_obj.bulk_transfer(request, qs)
+        asset.refresh_from_db()
+        assert asset.current_location == new_location
+
+    def test_bulk_change_category_action(
+        self, admin_client, asset, department, admin_user
+    ):
+        new_category = Category.objects.create(
+            name="New Category", department=department
+        )
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.post(
+            "/admin/assets/asset/", {"category": new_category.pk, "apply": "1"}
+        )
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        admin_obj.bulk_change_category(request, qs)
+        asset.refresh_from_db()
+        assert asset.category == new_category
+
+    def test_print_labels_redirects(self, admin_client, asset):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.get("/admin/assets/asset/")
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        response = admin_obj.print_labels(request, qs)
+        assert response.status_code == 302
+        assert "labels/pregenerate" in response.url
+        assert f"ids={asset.pk}" in response.url
+
+
+class TestThreeTierThumbnails:
+    """V19: Three-tier thumbnail system."""
+
+    def test_original_capped_at_3264_on_upload(self, asset, user):
+        """When uploading an image larger than 3264px, it should be capped."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        # Create a 4000x3000 image
+        img = Image.new("RGB", (4000, 3000), color="red")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="large.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Reload the image and check dimensions
+        saved_img = Image.open(asset_image.image)
+        longest = max(saved_img.size)
+        assert longest <= 3264, f"Expected longest edge <= 3264, got {longest}"
+        # Should maintain aspect ratio (4:3)
+        assert saved_img.size == (3264, 2448)
+
+    def test_original_not_resized_if_already_small(self, asset, user):
+        """Images smaller than 3264px should not be resized."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        # Create a 2000x1500 image
+        img = Image.new("RGB", (2000, 1500), color="blue")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="small.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Reload and check dimensions unchanged
+        saved_img = Image.open(asset_image.image)
+        assert saved_img.size == (2000, 1500)
+
+    def test_grid_thumbnail_generated_at_300px(self, asset, user):
+        """The 300px grid thumbnail should be generated synchronously."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        img = Image.new("RGB", (1000, 800), color="green")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        assert asset_image.thumbnail
+        thumb_img = Image.open(asset_image.thumbnail)
+        # Thumbnail uses PIL's thumbnail() which maintains aspect ratio
+        # and fits within 300x300
+        assert max(thumb_img.size) <= 300
+
+    @patch("assets.tasks.generate_detail_thumbnail.delay")
+    def test_detail_thumbnail_task_queued_on_upload(
+        self, mock_delay, asset, user
+    ):
+        """The Celery task for detail thumbnail should be queued."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        img = Image.new("RGB", (3000, 2000), color="yellow")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Celery task should have been queued with the image ID
+        mock_delay.assert_called_once_with(asset_image.pk)
+
+    def test_detail_thumbnail_generation_task(self, asset, user):
+        """The generate_detail_thumbnail task creates a 2000px image."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a 3000x2000 image
+        img = Image.new("RGB", (3000, 2000), color="purple")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Manually call the task (not .delay)
+        generate_detail_thumbnail(asset_image.pk)
+
+        # Reload and check detail_thumbnail
+        asset_image.refresh_from_db()
+        assert asset_image.detail_thumbnail
+        detail_img = Image.open(asset_image.detail_thumbnail)
+        longest = max(detail_img.size)
+        assert longest <= 2000
+        # Should maintain aspect ratio (3:2)
+        assert detail_img.size == (2000, 1333) or detail_img.size == (
+            2000,
+            1334,
+        )
+
+    def test_detail_thumbnail_not_generated_for_small_images(
+        self, asset, user
+    ):
+        """Images <= 2000px should not get a detail thumbnail."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a 1500x1000 image
+        img = Image.new("RGB", (1500, 1000), color="orange")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="small.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Call the task
+        generate_detail_thumbnail(asset_image.pk)
+
+        # Reload and check detail_thumbnail is still empty
+        asset_image.refresh_from_db()
+        assert not asset_image.detail_thumbnail
+
+    def test_detail_thumbnail_not_regenerated_if_exists(self, asset, user):
+        """If detail_thumbnail already exists, task should skip."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a large image
+        img = Image.new("RGB", (3000, 2000), color="cyan")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Generate detail thumbnail
+        generate_detail_thumbnail(asset_image.pk)
+        asset_image.refresh_from_db()
+        original_detail_path = asset_image.detail_thumbnail.name
+
+        # Call task again
+        generate_detail_thumbnail(asset_image.pk)
+        asset_image.refresh_from_db()
+
+        # Should be unchanged
+        assert asset_image.detail_thumbnail.name == original_detail_path

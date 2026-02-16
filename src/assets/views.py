@@ -1400,10 +1400,57 @@ def asset_label_zpl(request, pk):
 
 @login_required
 def barcode_pregenerate(request):
-    """Pre-generate a batch of barcode labels for blank assets."""
+    """Pre-generate barcode labels for blank assets or print existing."""
     role = get_user_role(request.user)
     if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
+
+    # Check if IDs provided (batch print existing assets)
+    ids_param = request.GET.get("ids", "")
+    if ids_param:
+        try:
+            asset_ids = [int(pk) for pk in ids_param.split(",") if pk.strip()]
+            assets = Asset.objects.filter(pk__in=asset_ids)
+
+            # Generate QR codes for labels
+            label_assets = []
+            for asset in assets:
+                qr_data_uri = ""
+                try:
+                    import base64
+                    from io import BytesIO
+
+                    import qrcode
+
+                    qr = qrcode.QRCode(version=1, box_size=4, border=1)
+                    qr.add_data(
+                        request.build_absolute_uri(f"/a/{asset.barcode}/")
+                    )
+                    qr.make(fit=True)
+                    qr_img = qr.make_image(
+                        fill_color="black", back_color="white"
+                    )
+                    buffer = BytesIO()
+                    qr_img.save(buffer, format="PNG")
+                    buffer.seek(0)
+                    qr_data_uri = (
+                        f"data:image/png;base64,"
+                        f"{base64.b64encode(buffer.getvalue()).decode()}"
+                    )
+                except ImportError:
+                    pass
+                label_assets.append(
+                    {"asset": asset, "qr_data_uri": qr_data_uri}
+                )
+
+            return render(
+                request,
+                "assets/bulk_labels.html",
+                {"label_assets": label_assets},
+            )
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid asset IDs provided.")
+            return redirect("assets:dashboard")
 
     if request.method == "POST":
         try:
@@ -1939,6 +1986,39 @@ def stocktake_confirm(request, pk):
     session = get_object_or_404(StocktakeSession, pk=pk, status="in_progress")
 
     if request.method == "POST":
+        # Handle transfer confirmation (V31)
+        transfer_id = request.POST.get("transfer_asset_id")
+        if transfer_id:
+            try:
+                transfer_asset = Asset.objects.get(pk=transfer_id)
+                old_loc = transfer_asset.current_location
+                transfer_asset.current_location = session.location
+                transfer_asset.save(update_fields=["current_location"])
+                Transaction.objects.create(
+                    asset=transfer_asset,
+                    user=request.user,
+                    action="relocate",
+                    from_location=old_loc,
+                    to_location=session.location,
+                    notes=f"Transferred during stocktake #{session.pk}",
+                )
+                messages.success(
+                    request,
+                    f"'{transfer_asset.name}' transferred to "
+                    f"'{session.location.name}'.",
+                )
+            except Asset.DoesNotExist:
+                pass
+            return redirect("assets:stocktake_detail", pk=pk)
+
+        # Handle dismiss discrepancy (V31)
+        dismiss_id = request.POST.get("dismiss_asset_id")
+        if dismiss_id:
+            messages.info(
+                request, "Location discrepancy noted but not transferred."
+            )
+            return redirect("assets:stocktake_detail", pk=pk)
+
         asset_id = request.POST.get("asset_id")
         if asset_id:
             try:
@@ -1952,10 +2032,33 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
-                # Update current_location if asset is at a different location
+                # V31: Show confirmation prompt instead of auto-transfer
                 if asset.current_location != session.location:
-                    asset.current_location = session.location
-                    asset.save(update_fields=["current_location"])
+                    old_location_name = (
+                        asset.current_location.name
+                        if asset.current_location
+                        else "unknown"
+                    )
+                    # Show confirmation instead of auto-transfer
+                    if request.headers.get("HX-Request"):
+                        return render(
+                            request,
+                            "assets/partials/stocktake_transfer_confirm.html",
+                            {
+                                "asset": asset,
+                                "session": session,
+                                "old_location": old_location_name,
+                                "new_location": session.location.name,
+                            },
+                        )
+                    else:
+                        messages.warning(
+                            request,
+                            f"'{asset.name}' is registered at "
+                            f"'{old_location_name}' but scanned here at "
+                            f"'{session.location.name}'. Use the transfer "
+                            f"option to update its location.",
+                        )
             except Asset.DoesNotExist:
                 pass
 
@@ -1978,22 +2081,36 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
-                # Update current_location if asset is at a different location
+                # V31: Show confirmation prompt instead of auto-transfer
                 if found_asset.current_location != session.location:
                     old_location_name = (
                         found_asset.current_location.name
                         if found_asset.current_location
                         else "unknown"
                     )
-                    found_asset.current_location = session.location
-                    found_asset.save(update_fields=["current_location"])
-                    messages.info(
-                        request,
-                        f"'{found_asset.name}' location updated from "
-                        f"'{old_location_name}' to "
-                        f"'{session.location.name}'.",
-                    )
-                    messages.success(request, f"Confirmed: {found_asset.name}")
+                    # Show confirmation instead of auto-transfer
+                    if request.headers.get("HX-Request"):
+                        return render(
+                            request,
+                            "assets/partials/stocktake_transfer_confirm.html",
+                            {
+                                "asset": found_asset,
+                                "session": session,
+                                "old_location": old_location_name,
+                                "new_location": session.location.name,
+                            },
+                        )
+                    else:
+                        messages.warning(
+                            request,
+                            f"'{found_asset.name}' is registered at "
+                            f"'{old_location_name}' but scanned here at "
+                            f"'{session.location.name}'. Use the transfer "
+                            f"option to update its location.",
+                        )
+                        messages.success(
+                            request, f"Confirmed: {found_asset.name}"
+                        )
                 else:
                     messages.success(request, f"Confirmed: {found_asset.name}")
             else:

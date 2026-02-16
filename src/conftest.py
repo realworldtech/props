@@ -15,6 +15,10 @@ settings.STORAGES["staticfiles"] = {
     "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 }
 
+# Run Celery tasks synchronously in tests
+settings.CELERY_TASK_ALWAYS_EAGER = True
+settings.CELERY_TASK_EAGER_PROPAGATES = True
+
 from assets.models import (
     Asset,
     AssetImage,

@@ -502,6 +502,9 @@ class AssetImage(models.Model):
     thumbnail = models.ImageField(
         upload_to="thumbnails/", blank=True, null=True
     )
+    detail_thumbnail = models.ImageField(
+        upload_to="detail_thumbnails/", blank=True, null=True
+    )
     caption = models.CharField(max_length=200, blank=True)
     is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
@@ -572,9 +575,13 @@ class AssetImage(models.Model):
         super().save(*args, **kwargs)
         if is_new and self.image and not self.thumbnail:
             self._generate_thumbnail()
+        if is_new and self.image:
+            from .tasks import generate_detail_thumbnail
+
+            generate_detail_thumbnail.delay(self.pk)
 
     def _generate_thumbnail(self):
-        """Generate a 300x300 max thumbnail."""
+        """Generate a 300x300 max thumbnail and cap original at 3264px."""
         try:
             from io import BytesIO
 
@@ -583,13 +590,36 @@ class AssetImage(models.Model):
             from django.core.files.base import ContentFile
 
             img = Image.open(self.image)
-            img.thumbnail((300, 300), Image.LANCZOS)
 
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            # Cap original at 3264px longest edge
+            longest = max(img.size)
+            if longest > 3264:
+                scale = 3264 / longest
+                new_size = (
+                    int(img.size[0] * scale),
+                    int(img.size[1] * scale),
+                )
+                img = img.resize(new_size, Image.LANCZOS)
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                buf = BytesIO()
+                img.save(buf, format="JPEG", quality=90)
+                buf.seek(0)
+                self.image.save(
+                    self.image.name.split("/")[-1],
+                    ContentFile(buf.getvalue()),
+                    save=False,
+                )
+
+            # Generate 300px grid thumbnail
+            grid_img = Image.open(self.image)
+            grid_img.thumbnail((300, 300), Image.LANCZOS)
+
+            if grid_img.mode in ("RGBA", "P"):
+                grid_img = grid_img.convert("RGB")
 
             thumb_io = BytesIO()
-            img.save(thumb_io, format="JPEG", quality=80)
+            grid_img.save(thumb_io, format="JPEG", quality=80)
             thumb_io.seek(0)
 
             thumb_name = (
