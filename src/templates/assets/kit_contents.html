@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Kit Contents - {{ asset.name }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">{{ asset.name }} - Kit Contents</h1>
+        <a href="{% url 'assets:asset_detail' asset.pk %}" class="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 rounded text-sm">Back to Asset</a>
+    </div>
+    {% if can_manage %}
+    <form method="post" action="{% url 'assets:kit_add_component' asset.pk %}" class="mb-6 flex gap-2 items-end">
+        {% csrf_token %}
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Component Asset ID</label>
+            <input type="number" name="component_id" required class="border rounded px-3 py-1.5 dark:bg-gray-800 dark:border-gray-600 w-32">
+        </div>
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Qty</label>
+            <input type="number" name="quantity" value="1" min="1" class="border rounded px-3 py-1.5 dark:bg-gray-800 dark:border-gray-600 w-20">
+        </div>
+        <label class="flex items-center gap-1">
+            <input type="checkbox" name="is_required" value="1" checked>
+            <span class="text-xs">Required</span>
+        </label>
+        <button type="submit" class="px-3 py-1.5 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">Add Component</button>
+    </form>
+    {% endif %}
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                    <th class="px-4 py-3 text-left">Component</th>
+                    <th class="px-4 py-3 text-left">Serial</th>
+                    <th class="px-4 py-3 text-left">Qty</th>
+                    <th class="px-4 py-3 text-left">Required</th>
+                    <th class="px-4 py-3 text-left">Status</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+                {% for comp in components %}
+                <tr>
+                    <td class="px-4 py-3"><a href="{% url 'assets:asset_detail' comp.component.pk %}" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{ comp.component.name }}</a></td>
+                    <td class="px-4 py-3">{{ comp.serial|default:"-" }}</td>
+                    <td class="px-4 py-3">{{ comp.quantity }}</td>
+                    <td class="px-4 py-3">{{ comp.is_required|yesno:"Yes,No" }}</td>
+                    <td class="px-4 py-3">{{ comp.component.status }}</td>
+                    <td class="px-4 py-3">
+                        {% if can_manage %}
+                        <form method="post" action="{% url 'assets:kit_remove_component' asset.pk comp.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="text-red-600 hover:text-red-800 text-xs">Remove</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="px-4 py-8 text-center text-gray-500">No components in this kit.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

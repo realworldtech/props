@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}{% if editing %}Edit{% else %}New{% endif %} Hold List - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <h1 class="font-display text-3xl font-bold">{% if editing %}Edit{% else %}New{% endif %} Hold List</h1>
+
+    <form method="post" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+        {% csrf_token %}
+
+        <div>
+            <label class="block text-sm font-medium text-cream mb-1">Name *</label>
+            <input type="text" name="name" value="{{ hold_list.name|default:'' }}" required class="form-input w-full rounded-lg px-3 py-2">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-cream mb-1">Project</label>
+            <select name="project" class="form-input w-full rounded-lg px-3 py-2">
+                <option value="">-- None --</option>
+                {% for p in projects %}
+                <option value="{{ p.pk }}" {% if hold_list.project_id == p.pk %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-cream mb-1">Department</label>
+            <select name="department" class="form-input w-full rounded-lg px-3 py-2">
+                <option value="">-- None --</option>
+                {% for d in departments %}
+                <option value="{{ d.pk }}" {% if hold_list.department_id == d.pk %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-cream mb-1">Status</label>
+            <select name="status" class="form-input w-full rounded-lg px-3 py-2">
+                {% for s in statuses %}
+                <option value="{{ s.pk }}" {% if hold_list.status_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-cream mb-1">Start Date</label>
+                <input type="date" name="start_date" value="{{ hold_list.start_date|date:'Y-m-d'|default:'' }}" class="form-input w-full rounded-lg px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-cream mb-1">End Date</label>
+                <input type="date" name="end_date" value="{{ hold_list.end_date|date:'Y-m-d'|default:'' }}" class="form-input w-full rounded-lg px-3 py-2">
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-cream mb-1">Notes</label>
+            <textarea name="notes" rows="3" class="form-input w-full rounded-lg px-3 py-2">{{ hold_list.notes|default:'' }}</textarea>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+            <button type="submit" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg font-medium btn-press transition-all">
+                {% if editing %}Save{% else %}Create{% endif %}
+            </button>
+            <a href="{% url 'assets:holdlist_list' %}" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg font-medium transition-all">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

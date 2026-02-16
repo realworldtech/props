@@ -14,14 +14,27 @@
     <script>
         // Apply theme before render to prevent flash
         (function() {
-            var theme = localStorage.getItem('props-theme') || 'dark';
-            if (theme === 'light') {
-                document.documentElement.classList.remove('dark');
+            var pref = localStorage.getItem('props-theme') || 'system';
+            var isDark;
+            if (pref === 'system') {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             } else {
+                isDark = (pref === 'dark');
+            }
+            if (isDark) {
                 document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
             }
         })();
     </script>
+    {% if brand_css_properties %}
+    <style>
+      :root {
+        {{ brand_css_properties|safe }}
+      }
+    </style>
+    {% endif %}
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     {% block extra_head %}{% endblock %}
@@ -213,13 +226,26 @@
 
     <script>
         function toggleTheme() {
-            var html = document.documentElement;
-            if (html.classList.contains('dark')) {
-                html.classList.remove('dark');
-                localStorage.setItem('props-theme', 'light');
+            // Cycle: system -> light -> dark -> system
+            var current = localStorage.getItem('props-theme') || 'system';
+            var next;
+            if (current === 'system') next = 'light';
+            else if (current === 'light') next = 'dark';
+            else next = 'system';
+
+            localStorage.setItem('props-theme', next);
+
+            var isDark;
+            if (next === 'system') {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             } else {
-                html.classList.add('dark');
-                localStorage.setItem('props-theme', 'dark');
+                isDark = (next === 'dark');
+            }
+
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
             }
         }
         function toggleMobileMenu() {

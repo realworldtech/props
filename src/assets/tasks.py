@@ -163,3 +163,49 @@ def reanalyse_image(self, image_id: int):
     image.save()
 
     analyse_image.delay(image_id)
+
+
+@shared_task
+def generate_detail_thumbnail(image_id: int):
+    """Generate 2000px detail thumbnail for an AssetImage."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from django.core.files.base import ContentFile
+
+    from .models import AssetImage
+
+    try:
+        asset_image = AssetImage.objects.get(pk=image_id)
+    except AssetImage.DoesNotExist:
+        return
+
+    if asset_image.detail_thumbnail:
+        return  # Already exists
+
+    try:
+        img = Image.open(asset_image.image)
+        longest = max(img.size)
+        if longest <= 2000:
+            # Image is small enough, no detail thumbnail needed
+            return
+
+        scale = 2000 / longest
+        new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
+        img = img.resize(new_size, Image.LANCZOS)
+
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        buf.seek(0)
+
+        base_name = asset_image.image.name.split("/")[-1].rsplit(".", 1)[0]
+        name = f"detail_{base_name}.jpg"
+        asset_image.detail_thumbnail.save(
+            name, ContentFile(buf.getvalue()), save=True
+        )
+    except Exception:
+        pass

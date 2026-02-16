@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Hold Lists - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="font-display text-3xl font-bold">Hold Lists</h1>
+            <p class="text-cream/50 mt-1">{{ hold_lists|length }} list{{ hold_lists|length|pluralize }}</p>
+        </div>
+        <a href="{% url 'assets:holdlist_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New Hold List
+        </a>
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+        <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if not current_status %}bg-spotlight-500 text-stage-900{% else %}bg-stage-700 hover:bg-stage-600 text-cream/70 hover:text-cream{% endif %}">
+            All
+        </a>
+        {% for s in statuses %}
+        <a href="?status={{ s.name }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if current_status == s.name %}bg-spotlight-500 text-stage-900{% else %}bg-stage-700 hover:bg-stage-600 text-cream/70 hover:text-cream{% endif %}">
+            {{ s.name }}
+        </a>
+        {% endfor %}
+    </div>
+
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-stage-700/50">
+                <tr class="border-b border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Name</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Project</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Status</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Dates</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Items</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+                {% for hl in hold_lists %}
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-4 py-3">
+                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-300 font-medium">
+                            {{ hl.name }}
+                        </a>
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">{{ hl.project.name|default:"-" }}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ hl.status.name }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">
+                        {% if hl.start_date %}{{ hl.start_date }} - {{ hl.end_date }}{% else %}-{% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">{{ hl.items.count }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="px-4 py-16 text-center">
+                        <div class="text-center">
+                            <svg class="w-12 h-12 mx-auto text-cream/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            <p class="text-cream/50">No hold lists yet.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

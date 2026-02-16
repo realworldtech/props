@@ -18,6 +18,11 @@ urlpatterns = [
     path("assets/<int:pk>/", views.asset_detail, name="asset_detail"),
     path("assets/<int:pk>/edit/", views.asset_edit, name="asset_edit"),
     path("assets/<int:pk>/delete/", views.asset_delete, name="asset_delete"),
+    path(
+        "assets/<int:pk>/convert-serialisation/",
+        views.asset_convert_serialisation,
+        name="asset_convert_serialisation",
+    ),
     # Quick Capture
     path("quick-capture/", views.quick_capture, name="quick_capture"),
     path("drafts/", views.drafts_queue, name="drafts_queue"),
@@ -230,5 +235,52 @@ urlpatterns = [
         "assets/<int:pk>/images/<int:image_pk>/reanalyse/",
         views.ai_reanalyse,
         name="ai_reanalyse",
+    ),
+    # Hold Lists
+    path("hold-lists/", views.holdlist_list, name="holdlist_list"),
+    path(
+        "hold-lists/create/",
+        views.holdlist_create,
+        name="holdlist_create",
+    ),
+    path(
+        "hold-lists/<int:pk>/",
+        views.holdlist_detail,
+        name="holdlist_detail",
+    ),
+    path(
+        "hold-lists/<int:pk>/edit/",
+        views.holdlist_edit,
+        name="holdlist_edit",
+    ),
+    path(
+        "hold-lists/<int:pk>/add-item/",
+        views.holdlist_add_item,
+        name="holdlist_add_item",
+    ),
+    path(
+        "hold-lists/<int:pk>/remove-item/<int:item_pk>/",
+        views.holdlist_remove_item,
+        name="holdlist_remove_item",
+    ),
+    # Projects
+    path("projects/", views.project_list, name="project_list"),
+    path("projects/create/", views.project_create, name="project_create"),
+    path("projects/<int:pk>/edit/", views.project_edit, name="project_edit"),
+    # Kit management
+    path(
+        "assets/<int:pk>/kit/",
+        views.kit_contents,
+        name="kit_contents",
+    ),
+    path(
+        "assets/<int:pk>/kit/add/",
+        views.kit_add_component,
+        name="kit_add_component",
+    ),
+    path(
+        "assets/<int:pk>/kit/remove/<int:component_pk>/",
+        views.kit_remove_component,
+        name="kit_remove_component",
     ),
 ]

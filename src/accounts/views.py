@@ -547,6 +547,7 @@ def password_change_view(request):
     return render(request, "accounts/password_change.html", {"form": form})
 
 
+@ratelimit(key="ip", rate="5/h", method="POST", block=True)
 def password_reset_view(request):
     """Request a password reset email."""
     if request.method == "POST":

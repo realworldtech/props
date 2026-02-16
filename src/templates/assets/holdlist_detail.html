@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}{{ hold_list.name }} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="font-display text-3xl font-bold">{{ hold_list.name }}</h1>
+        <div class="flex gap-2">
+            <a href="{% url 'assets:holdlist_edit' hold_list.pk %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+                Edit
+            </a>
+            <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+                Back
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div>
+            <span class="text-cream/50">Status:</span>
+            <span class="ml-2 px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ hold_list.status.name }}</span>
+        </div>
+        <div>
+            <span class="text-cream/50">Project:</span>
+            <span class="ml-2 text-cream">{{ hold_list.project.name|default:"None" }}</span>
+        </div>
+        <div>
+            <span class="text-cream/50">Department:</span>
+            <span class="ml-2 text-cream">{{ hold_list.department.name|default:"None" }}</span>
+        </div>
+        <div>
+            <span class="text-cream/50">Locked:</span>
+            <span class="ml-2 text-cream">{{ hold_list.is_locked|yesno:"Yes,No" }}</span>
+        </div>
+        {% if hold_list.start_date %}
+        <div class="col-span-2">
+            <span class="text-cream/50">Dates:</span>
+            <span class="ml-2 text-cream">{{ hold_list.start_date }} - {{ hold_list.end_date }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if overlaps %}
+    <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+        <p class="font-medium text-amber-300">Overlap Warnings</p>
+        <ul class="text-sm mt-2 space-y-1">
+            {% for o in overlaps %}
+            <li class="text-amber-200/80">{{ o.asset.name }} is also on "{{ o.hold_list.name }}"</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if not hold_list.is_locked %}
+    <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4">
+        {% csrf_token %}
+        <div class="flex flex-wrap gap-3 items-end">
+            <div>
+                <label class="block text-xs text-cream/50 mb-1">Asset ID</label>
+                <input type="number" name="asset_id" required class="form-input rounded-lg px-3 py-1.5 w-32">
+            </div>
+            <div>
+                <label class="block text-xs text-cream/50 mb-1">Qty</label>
+                <input type="number" name="quantity" value="1" min="1" class="form-input rounded-lg px-3 py-1.5 w-20">
+            </div>
+            <div class="flex-1">
+                <label class="block text-xs text-cream/50 mb-1">Notes</label>
+                <input type="text" name="notes" class="form-input rounded-lg px-3 py-1.5 w-full">
+            </div>
+            <button type="submit" class="px-4 py-1.5 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
+                Add Item
+            </button>
+        </div>
+    </form>
+    {% endif %}
+
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-stage-700/50">
+                <tr class="border-b border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Asset</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Serial</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Qty</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Pull Status</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Notes</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+                {% for item in items %}
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-4 py-3">
+                        <a href="{% url 'assets:asset_detail' item.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-300">
+                            {{ item.asset.name }}
+                        </a>
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">{{ item.serial|default:"-" }}</td>
+                    <td class="px-4 py-3 text-cream/70">{{ item.quantity }}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ item.pull_status }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">{{ item.notes|default:"-" }}</td>
+                    <td class="px-4 py-3">
+                        {% if not hold_list.is_locked %}
+                        <form method="post" action="{% url 'assets:holdlist_remove_item' hold_list.pk item.pk %}">
+                            {% csrf_token %}
+                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs transition-colors">
+                                Remove
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="px-4 py-16 text-center">
+                        <div class="text-center">
+                            <svg class="w-12 h-12 mx-auto text-cream/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                            </svg>
+                            <p class="text-cream/50">No items yet.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if hold_list.notes %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4">
+        <p class="text-sm text-cream/50">
+            <strong class="text-cream">Notes:</strong> {{ hold_list.notes }}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

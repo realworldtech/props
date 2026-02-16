@@ -3,9 +3,11 @@
 import json
 import re
 
+from django_ratelimit.decorators import ratelimit
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
@@ -23,6 +25,7 @@ from .forms import (
 from .models import (
     Asset,
     AssetImage,
+    AssetKit,
     AssetSerial,
     Category,
     Department,
@@ -691,6 +694,7 @@ def scan_lookup(request):
 
 
 @login_required
+@ratelimit(key="user", rate="60/m", method="GET", block=True)
 def asset_by_identifier(request, identifier):
     """Unified lookup endpoint: /a/{identifier}/."""
     # 1. Barcode match
@@ -900,12 +904,22 @@ def asset_checkout(request, pk):
     if request.method == "POST":
         borrower_id = request.POST.get("borrower")
         notes = request.POST.get("notes", "")
+        destination_id = request.POST.get("destination_location", "")
 
         try:
             borrower = User.objects.get(pk=borrower_id)
         except User.DoesNotExist:
             messages.error(request, "Invalid borrower selected.")
             return redirect("assets:asset_checkout", pk=pk)
+
+        destination = None
+        if destination_id:
+            try:
+                destination = Location.objects.get(
+                    pk=destination_id, is_active=True
+                )
+            except Location.DoesNotExist:
+                pass
 
         # Parse optional backdating
         action_date_str = request.POST.get("action_date", "").strip()
@@ -938,18 +952,28 @@ def asset_checkout(request, pk):
             if not locked_asset.home_location:
                 locked_asset.home_location = locked_asset.current_location
 
-            Transaction.objects.create(
-                asset=locked_asset,
-                user=request.user,
-                action="checkout",
-                from_location=locked_asset.current_location,
-                borrower=borrower,
-                notes=notes,
+            tx_kwargs = {
+                "asset": locked_asset,
+                "user": request.user,
+                "action": "checkout",
+                "from_location": locked_asset.current_location,
+                "borrower": borrower,
+                "notes": notes,
                 **extra_kwargs,
-            )
+            }
+            if destination:
+                tx_kwargs["to_location"] = destination
+
+            Transaction.objects.create(**tx_kwargs)
             locked_asset.checked_out_to = borrower
+            if destination:
+                locked_asset.current_location = destination
             locked_asset.save(
-                update_fields=["checked_out_to", "home_location"]
+                update_fields=[
+                    "checked_out_to",
+                    "home_location",
+                    "current_location",
+                ]
             )
 
         messages.success(
@@ -961,15 +985,43 @@ def asset_checkout(request, pk):
 
     from django.contrib.auth.models import Group
 
+    # Filter to users with Borrower+ roles
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
+    users = (
+        User.objects.filter(
+            is_active=True,
+            groups__name__in=borrower_roles,
+        )
+        .distinct()
+        .order_by("username")
+    )
+    # Also include superusers
+    from django.db.models import Q
+
+    users = (
+        User.objects.filter(
+            Q(is_active=True, groups__name__in=borrower_roles)
+            | Q(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("username")
+    )
+
     borrower_group = Group.objects.filter(name="Borrower").first()
-    users = User.objects.filter(is_active=True).order_by("username")
     return render(
         request,
         "assets/asset_checkout.html",
         {
             "asset": asset,
             "users": users,
-            "borrower_group_id": borrower_group.pk if borrower_group else None,
+            "borrower_group_id": (
+                borrower_group.pk if borrower_group else None
+            ),
         },
     )
 
@@ -1145,22 +1197,22 @@ def asset_relocate(request, pk):
                         "is_backdated": True,
                     }
 
-        old_home = asset.home_location
+        old_location = asset.current_location
         Transaction.objects.create(
             asset=asset,
             user=request.user,
             action="relocate",
-            from_location=old_home,
+            from_location=old_location,
             to_location=to_location,
             notes=notes,
             **extra_kwargs,
         )
-        asset.home_location = to_location
-        asset.save(update_fields=["home_location"])
+        asset.current_location = to_location
+        asset.save(update_fields=["current_location"])
 
         messages.success(
             request,
-            f"'{asset.name}' home location changed" f" to {to_location.name}.",
+            f"'{asset.name}' relocated to {to_location.name}.",
         )
         return redirect("assets:asset_detail", pk=pk)
 
@@ -1349,10 +1401,57 @@ def asset_label_zpl(request, pk):
 
 @login_required
 def barcode_pregenerate(request):
-    """Pre-generate a batch of barcode labels for blank assets."""
+    """Pre-generate barcode labels for blank assets or print existing."""
     role = get_user_role(request.user)
     if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
+
+    # Check if IDs provided (batch print existing assets)
+    ids_param = request.GET.get("ids", "")
+    if ids_param:
+        try:
+            asset_ids = [int(pk) for pk in ids_param.split(",") if pk.strip()]
+            assets = Asset.objects.filter(pk__in=asset_ids)
+
+            # Generate QR codes for labels
+            label_assets = []
+            for asset in assets:
+                qr_data_uri = ""
+                try:
+                    import base64
+                    from io import BytesIO
+
+                    import qrcode
+
+                    qr = qrcode.QRCode(version=1, box_size=4, border=1)
+                    qr.add_data(
+                        request.build_absolute_uri(f"/a/{asset.barcode}/")
+                    )
+                    qr.make(fit=True)
+                    qr_img = qr.make_image(
+                        fill_color="black", back_color="white"
+                    )
+                    buffer = BytesIO()
+                    qr_img.save(buffer, format="PNG")
+                    buffer.seek(0)
+                    qr_data_uri = (
+                        f"data:image/png;base64,"
+                        f"{base64.b64encode(buffer.getvalue()).decode()}"
+                    )
+                except ImportError:
+                    pass
+                label_assets.append(
+                    {"asset": asset, "qr_data_uri": qr_data_uri}
+                )
+
+            return render(
+                request,
+                "assets/bulk_labels.html",
+                {"label_assets": label_assets},
+            )
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid asset IDs provided.")
+            return redirect("assets:dashboard")
 
     if request.method == "POST":
         try:
@@ -1888,6 +1987,39 @@ def stocktake_confirm(request, pk):
     session = get_object_or_404(StocktakeSession, pk=pk, status="in_progress")
 
     if request.method == "POST":
+        # Handle transfer confirmation (V31)
+        transfer_id = request.POST.get("transfer_asset_id")
+        if transfer_id:
+            try:
+                transfer_asset = Asset.objects.get(pk=transfer_id)
+                old_loc = transfer_asset.current_location
+                transfer_asset.current_location = session.location
+                transfer_asset.save(update_fields=["current_location"])
+                Transaction.objects.create(
+                    asset=transfer_asset,
+                    user=request.user,
+                    action="relocate",
+                    from_location=old_loc,
+                    to_location=session.location,
+                    notes=f"Transferred during stocktake #{session.pk}",
+                )
+                messages.success(
+                    request,
+                    f"'{transfer_asset.name}' transferred to "
+                    f"'{session.location.name}'.",
+                )
+            except Asset.DoesNotExist:
+                pass
+            return redirect("assets:stocktake_detail", pk=pk)
+
+        # Handle dismiss discrepancy (V31)
+        dismiss_id = request.POST.get("dismiss_asset_id")
+        if dismiss_id:
+            messages.info(
+                request, "Location discrepancy noted but not transferred."
+            )
+            return redirect("assets:stocktake_detail", pk=pk)
+
         asset_id = request.POST.get("asset_id")
         if asset_id:
             try:
@@ -1901,10 +2033,33 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
-                # Update current_location if asset is at a different location
+                # V31: Show confirmation prompt instead of auto-transfer
                 if asset.current_location != session.location:
-                    asset.current_location = session.location
-                    asset.save(update_fields=["current_location"])
+                    old_location_name = (
+                        asset.current_location.name
+                        if asset.current_location
+                        else "unknown"
+                    )
+                    # Show confirmation instead of auto-transfer
+                    if request.headers.get("HX-Request"):
+                        return render(
+                            request,
+                            "assets/partials/stocktake_transfer_confirm.html",
+                            {
+                                "asset": asset,
+                                "session": session,
+                                "old_location": old_location_name,
+                                "new_location": session.location.name,
+                            },
+                        )
+                    else:
+                        messages.warning(
+                            request,
+                            f"'{asset.name}' is registered at "
+                            f"'{old_location_name}' but scanned here at "
+                            f"'{session.location.name}'. Use the transfer "
+                            f"option to update its location.",
+                        )
             except Asset.DoesNotExist:
                 pass
 
@@ -1927,22 +2082,36 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
-                # Update current_location if asset is at a different location
+                # V31: Show confirmation prompt instead of auto-transfer
                 if found_asset.current_location != session.location:
                     old_location_name = (
                         found_asset.current_location.name
                         if found_asset.current_location
                         else "unknown"
                     )
-                    found_asset.current_location = session.location
-                    found_asset.save(update_fields=["current_location"])
-                    messages.info(
-                        request,
-                        f"'{found_asset.name}' location updated from "
-                        f"'{old_location_name}' to "
-                        f"'{session.location.name}'.",
-                    )
-                    messages.success(request, f"Confirmed: {found_asset.name}")
+                    # Show confirmation instead of auto-transfer
+                    if request.headers.get("HX-Request"):
+                        return render(
+                            request,
+                            "assets/partials/stocktake_transfer_confirm.html",
+                            {
+                                "asset": found_asset,
+                                "session": session,
+                                "old_location": old_location_name,
+                                "new_location": session.location.name,
+                            },
+                        )
+                    else:
+                        messages.warning(
+                            request,
+                            f"'{found_asset.name}' is registered at "
+                            f"'{old_location_name}' but scanned here at "
+                            f"'{session.location.name}'. Use the transfer "
+                            f"option to update its location.",
+                        )
+                        messages.success(
+                            request, f"Confirmed: {found_asset.name}"
+                        )
                 else:
                     messages.success(request, f"Confirmed: {found_asset.name}")
             else:
@@ -2039,12 +2208,18 @@ def stocktake_summary(request, pk):
 @login_required
 def export_assets(request):
     """Export assets to Excel."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        return HttpResponseForbidden("Permission denied")
+    if not request.user.has_perm("assets.can_export_assets"):
+        role = get_user_role(request.user)
+        if role not in ("system_admin", "department_manager", "member"):
+            return HttpResponseForbidden("Permission denied")
     from .services.export import export_assets_xlsx
 
     queryset = Asset.objects.with_related().select_related("created_by")
+
+    # Exclude disposed by default unless explicitly included
+    include_disposed = request.GET.get("include_disposed")
+    if not include_disposed:
+        queryset = queryset.exclude(status="disposed")
 
     # Apply same filters as asset_list
     status = request.GET.get("status")
@@ -2632,9 +2807,23 @@ def asset_handover(request, pk):
         return redirect("assets:asset_detail", pk=pk)
 
     from django.contrib.auth.models import Group
+    from django.db.models import Q as HQ
 
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
     borrower_group = Group.objects.filter(name="Borrower").first()
-    users = User.objects.filter(is_active=True).order_by("username")
+    users = (
+        User.objects.filter(
+            HQ(is_active=True, groups__name__in=borrower_roles)
+            | HQ(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("username")
+    )
     locations = Location.objects.filter(is_active=True)
     return render(
         request,
@@ -2646,3 +2835,428 @@ def asset_handover(request, pk):
             "borrower_group_id": borrower_group.pk if borrower_group else None,
         },
     )
+
+
+# --- Serialisation Conversion ---
+
+
+@login_required
+def asset_convert_serialisation(request, pk):
+    """Show conversion impact and handle confirmation."""
+    asset = get_object_or_404(Asset, pk=pk)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        confirm = request.POST.get("confirm")
+        if not confirm:
+            messages.error(request, "You must confirm the conversion.")
+            return redirect("assets:asset_detail", pk=pk)
+
+        if asset.is_serialised:
+            override = request.POST.get("override_checkout") == "1"
+            adjusted_qty = request.POST.get("adjusted_quantity")
+            qty = int(adjusted_qty) if adjusted_qty else None
+            try:
+                from assets.services.serial import (
+                    apply_convert_to_non_serialised,
+                )
+
+                apply_convert_to_non_serialised(
+                    asset,
+                    request.user,
+                    adjusted_quantity=qty,
+                    override_checkout=override,
+                )
+                messages.success(
+                    request,
+                    f"'{asset.name}' converted to non-serialised. "
+                    f"Serials archived.",
+                )
+            except ValidationError as e:
+                messages.error(request, str(e.message))
+        else:
+            try:
+                from assets.services.serial import (
+                    apply_convert_to_serialised,
+                    restore_archived_serials,
+                )
+
+                apply_convert_to_serialised(asset, request.user)
+
+                restore = request.POST.get("restore_serials") == "1"
+                if restore:
+                    result = restore_archived_serials(asset, request.user)
+                    if result["conflicts"]:
+                        messages.warning(
+                            request,
+                            f"Restored {result['restored']} serial(s)"
+                            f". {len(result['conflicts'])} barcode "
+                            f"conflict(s) were cleared.",
+                        )
+                    elif result["restored"]:
+                        messages.success(
+                            request,
+                            f"Restored {result['restored']} archived"
+                            f" serial(s).",
+                        )
+
+                messages.success(
+                    request,
+                    f"'{asset.name}' converted to serialised.",
+                )
+            except ValidationError as e:
+                messages.error(request, str(e.message))
+
+        return redirect("assets:asset_detail", pk=pk)
+
+    # GET: show impact summary
+    if asset.is_serialised:
+        from assets.services.serial import (
+            convert_to_non_serialised,
+        )
+
+        impact = convert_to_non_serialised(asset, request.user)
+        converting_to = "non_serialised"
+    else:
+        from assets.services.serial import (
+            convert_to_serialised,
+            get_archived_serials,
+        )
+
+        impact = convert_to_serialised(asset, request.user)
+        archived = get_archived_serials(asset)
+        impact["archived_serials"] = archived.count()
+        converting_to = "serialised"
+
+    return render(
+        request,
+        "assets/convert_serialisation.html",
+        {
+            "asset": asset,
+            "impact": impact,
+            "converting_to": converting_to,
+        },
+    )
+
+
+# --- Hold Lists ---
+
+
+@login_required
+def holdlist_list(request):
+    """List all hold lists."""
+    from assets.models import HoldList, HoldListStatus
+
+    status_filter = request.GET.get("status")
+    project_filter = request.GET.get("project")
+    qs = HoldList.objects.select_related(
+        "project", "department", "status", "created_by"
+    )
+    if status_filter:
+        qs = qs.filter(status__name=status_filter)
+    if project_filter:
+        qs = qs.filter(project_id=project_filter)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_list.html",
+        {
+            "hold_lists": qs,
+            "statuses": statuses,
+            "current_status": status_filter,
+        },
+    )
+
+
+@login_required
+def holdlist_detail(request, pk):
+    """Show hold list with items."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(
+        HoldList.objects.select_related("project", "department", "status"),
+        pk=pk,
+    )
+    items = hold_list.items.select_related("asset", "serial", "pulled_by")
+    from assets.services.holdlists import detect_overlaps
+
+    overlaps = detect_overlaps(hold_list)
+    return render(
+        request,
+        "assets/holdlist_detail.html",
+        {
+            "hold_list": hold_list,
+            "items": items,
+            "overlaps": overlaps,
+        },
+    )
+
+
+@login_required
+def holdlist_create(request):
+    """Create a new hold list."""
+    from assets.models import Department, HoldListStatus, Project
+
+    if request.method == "POST":
+        from assets.services.holdlists import create_hold_list
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Name is required.")
+            return redirect("assets:holdlist_create")
+        kwargs = {}
+        project_id = request.POST.get("project")
+        if project_id:
+            kwargs["project_id"] = project_id
+        dept_id = request.POST.get("department")
+        if dept_id:
+            kwargs["department_id"] = dept_id
+        status_id = request.POST.get("status")
+        if status_id:
+            kwargs["status"] = HoldListStatus.objects.get(pk=status_id)
+        start = request.POST.get("start_date")
+        end = request.POST.get("end_date")
+        if start:
+            kwargs["start_date"] = start
+        if end:
+            kwargs["end_date"] = end
+        kwargs["notes"] = request.POST.get("notes", "")
+        try:
+            hold_list = create_hold_list(name, request.user, **kwargs)
+            messages.success(request, f"Hold list '{name}' created.")
+            return redirect("assets:holdlist_detail", pk=hold_list.pk)
+        except Exception as e:
+            messages.error(request, str(e))
+
+    projects = Project.objects.filter(is_active=True)
+    departments = Department.objects.filter(is_active=True)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_form.html",
+        {
+            "projects": projects,
+            "departments": departments,
+            "statuses": statuses,
+            "editing": False,
+        },
+    )
+
+
+@login_required
+def holdlist_edit(request, pk):
+    """Edit an existing hold list."""
+    from assets.models import Department, HoldList, HoldListStatus, Project
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    role = get_user_role(request.user)
+    if hold_list.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        hold_list.name = request.POST.get("name", hold_list.name)
+        project_id = request.POST.get("project")
+        hold_list.project_id = project_id if project_id else None
+        dept_id = request.POST.get("department")
+        hold_list.department_id = dept_id if dept_id else None
+        status_id = request.POST.get("status")
+        if status_id:
+            hold_list.status_id = status_id
+        hold_list.start_date = request.POST.get("start_date") or None
+        hold_list.end_date = request.POST.get("end_date") or None
+        hold_list.notes = request.POST.get("notes", "")
+        try:
+            hold_list.full_clean()
+            hold_list.save()
+            messages.success(request, "Hold list updated.")
+            return redirect("assets:holdlist_detail", pk=pk)
+        except Exception as e:
+            messages.error(request, str(e))
+
+    projects = Project.objects.filter(is_active=True)
+    departments = Department.objects.filter(is_active=True)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_form.html",
+        {
+            "hold_list": hold_list,
+            "projects": projects,
+            "departments": departments,
+            "statuses": statuses,
+            "editing": True,
+        },
+    )
+
+
+@login_required
+def holdlist_add_item(request, pk):
+    """Add an item to a hold list."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        asset_id = request.POST.get("asset_id")
+        if asset_id:
+            from assets.services.holdlists import add_item
+
+            asset = get_object_or_404(Asset, pk=asset_id)
+            qty = int(request.POST.get("quantity", 1))
+            notes = request.POST.get("notes", "")
+            try:
+                add_item(
+                    hold_list, asset, request.user, quantity=qty, notes=notes
+                )
+                messages.success(
+                    request, f"Added '{asset.name}' to hold list."
+                )
+            except Exception as e:
+                messages.error(request, str(e))
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def holdlist_remove_item(request, pk, item_pk):
+    """Remove an item from a hold list."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        from assets.services.holdlists import remove_item
+
+        try:
+            remove_item(hold_list, item_pk, request.user)
+            messages.success(request, "Item removed.")
+        except Exception as e:
+            messages.error(request, str(e))
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def project_list(request):
+    """List all projects."""
+    from assets.models import Project
+
+    projects = Project.objects.select_related("created_by").all()
+    return render(request, "assets/project_list.html", {"projects": projects})
+
+
+@login_required
+def project_create(request):
+    """Create a project."""
+    from assets.models import Project
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Name is required.")
+            return redirect("assets:project_create")
+        Project.objects.create(
+            name=name,
+            description=request.POST.get("description", ""),
+            created_by=request.user,
+        )
+        messages.success(request, f"Project '{name}' created.")
+        return redirect("assets:project_list")
+    return render(request, "assets/project_form.html", {"editing": False})
+
+
+@login_required
+def project_edit(request, pk):
+    """Edit a project."""
+    from assets.models import Project
+
+    project = get_object_or_404(Project, pk=pk)
+    if request.method == "POST":
+        project.name = request.POST.get("name", project.name)
+        project.description = request.POST.get("description", "")
+        project.is_active = request.POST.get("is_active") == "1"
+        project.save()
+        messages.success(request, "Project updated.")
+        return redirect("assets:project_list")
+    return render(
+        request,
+        "assets/project_form.html",
+        {
+            "project": project,
+            "editing": True,
+        },
+    )
+
+
+# --- Kit Management ---
+
+
+@login_required
+def kit_contents(request, pk):
+    """View kit contents (components)."""
+    asset = get_object_or_404(Asset, pk=pk)
+    if not asset.is_kit:
+        messages.error(request, "This asset is not a kit.")
+        return redirect("assets:asset_detail", pk=pk)
+    components = AssetKit.objects.filter(kit=asset).select_related(
+        "component", "serial"
+    )
+    role = get_user_role(request.user)
+    can_manage = role in ("system_admin", "department_manager")
+    return render(
+        request,
+        "assets/kit_contents.html",
+        {
+            "asset": asset,
+            "components": components,
+            "can_manage": can_manage,
+        },
+    )
+
+
+@login_required
+def kit_add_component(request, pk):
+    """Add a component to a kit."""
+    asset = get_object_or_404(Asset, pk=pk)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    if not asset.is_kit:
+        messages.error(request, "This asset is not a kit.")
+        return redirect("assets:asset_detail", pk=pk)
+
+    if request.method == "POST":
+        component_id = request.POST.get("component_id")
+        if component_id:
+            component = get_object_or_404(Asset, pk=component_id)
+            is_required = request.POST.get("is_required") == "1"
+            qty = int(request.POST.get("quantity", 1))
+            try:
+                ak = AssetKit(
+                    kit=asset,
+                    component=component,
+                    is_required=is_required,
+                    quantity=qty,
+                )
+                ak.full_clean()
+                ak.save()
+                messages.success(
+                    request,
+                    f"Added '{component.name}' to kit.",
+                )
+            except Exception as e:
+                messages.error(request, str(e))
+    return redirect("assets:kit_contents", pk=pk)
+
+
+@login_required
+def kit_remove_component(request, pk, component_pk):
+    """Remove a component from a kit."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    if request.method == "POST":
+        AssetKit.objects.filter(kit_id=pk, pk=component_pk).delete()
+        messages.success(request, "Component removed from kit.")
+    return redirect("assets:kit_contents", pk=pk)

@@ -14,12 +14,18 @@ def is_ai_enabled() -> bool:
 
 
 def resize_image_for_ai(
-    image_bytes: bytes, max_pixels: int = 3000000
+    image_bytes: bytes,
+    max_dimension: int = None,
+    max_pixels: int = 3000000,
 ) -> tuple[bytes, str]:
-    """Resize image to max_pixels (default 3MP) and return JPEG bytes.
+    """Resize image by longest edge and return JPEG bytes.
 
+    If max_dimension is set, scales so longest edge <= max_dimension.
+    Falls back to max_pixels for backward compatibility.
     Returns (resized_bytes, media_type).
     """
+    if max_dimension is None:
+        max_dimension = getattr(settings, "AI_MAX_IMAGE_DIMENSION", 1568)
     try:
         from io import BytesIO
 
@@ -27,12 +33,11 @@ def resize_image_for_ai(
 
         img = Image.open(BytesIO(image_bytes))
 
-        # Calculate current pixels
         width, height = img.size
-        current_pixels = width * height
+        longest = max(width, height)
 
-        if current_pixels > max_pixels:
-            scale = (max_pixels / current_pixels) ** 0.5
+        if longest > max_dimension:
+            scale = max_dimension / longest
             new_width = int(width * scale)
             new_height = int(height * scale)
             img = img.resize((new_width, new_height), Image.LANCZOS)

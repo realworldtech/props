@@ -6,7 +6,11 @@ import pytest
 
 from django.core.cache import cache
 
-from props.colors import generate_oklch_palette, hex_to_oklch
+from props.colors import (
+    generate_brand_css_properties,
+    generate_oklch_palette,
+    hex_to_oklch,
+)
 
 
 class TestHexToOklch:
@@ -58,49 +62,52 @@ class TestGenerateOklchPalette:
         }
         assert set(palette.keys()) == expected_keys
 
-    def test_values_are_oklch_strings(self):
+    def test_values_are_hex(self):
         palette = generate_oklch_palette("#4F46E5")
         for shade, value in palette.items():
-            assert value.startswith("oklch("), f"{shade}: {value}"
-            assert value.endswith(")"), f"{shade}: {value}"
-
-    def test_lightness_descends(self):
-        palette = generate_oklch_palette("#4F46E5")
-        # Extract lightness from oklch strings
-        shades_ordered = [
-            "50",
-            "100",
-            "200",
-            "300",
-            "400",
-            "500",
-            "600",
-            "700",
-            "800",
-            "900",
-            "950",
-        ]
-        lightnesses = []
-        for shade in shades_ordered:
-            val = palette[shade]
-            # "oklch(97.7% .014 308.3)" -> extract 97.7
-            pct = float(val.split("(")[1].split("%")[0])
-            lightnesses.append(pct)
-        # Each shade should be darker than the previous
-        for i in range(1, len(lightnesses)):
-            assert lightnesses[i] < lightnesses[i - 1]
-
-    def test_different_colors_have_different_hue(self):
-        palette_blue = generate_oklch_palette("#0000FF")
-        palette_green = generate_oklch_palette("#00FF00")
-        # The hue should be different between green and blue
-        hue_blue = float(palette_blue["600"].rstrip(")").split()[-1])
-        hue_green = float(palette_green["600"].rstrip(")").split()[-1])
-        assert abs(hue_blue - hue_green) > 30
+            assert value.startswith("#"), f"Shade {shade}: {value}"
 
     def test_achromatic_input_does_not_crash(self):
         palette = generate_oklch_palette("#808080")
         assert len(palette) == 11
+
+    def test_empty_hex_returns_empty(self):
+        assert generate_oklch_palette("") == {}
+        assert generate_oklch_palette(None) == {}
+
+    def test_invalid_hex_returns_empty(self):
+        assert generate_oklch_palette("not-a-color") == {}
+
+
+class TestGenerateBrandCssProperties:
+    """Test CSS custom property generation."""
+
+    def test_generate_css_properties(self):
+        css = generate_brand_css_properties(primary_hex="#4F46E5")
+        assert "--brand-primary-500:" in css
+        assert "--brand-primary-50:" in css
+
+    def test_css_properties_multiple_colors(self):
+        css = generate_brand_css_properties(
+            primary_hex="#4F46E5",
+            secondary_hex="#10B981",
+        )
+        assert "--brand-primary-500:" in css
+        assert "--brand-secondary-500:" in css
+
+    def test_empty_input_returns_empty(self):
+        css = generate_brand_css_properties()
+        assert css == ""
+
+    def test_context_processor_includes_brand_css(self, client, db):
+        from django.test import RequestFactory
+
+        from props.context_processors import site_settings
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        ctx = site_settings(request)
+        assert "brand_css_properties" in ctx
 
 
 class TestSiteBranding:
@@ -188,6 +195,25 @@ class TestSiteBranding:
         branding.logo_light = mock_file
         with pytest.raises(ValidationError, match="logo_light"):
             branding.clean()
+
+
+class TestHealthEndpoint:
+    """C1: Health check endpoint at /health/."""
+
+    def test_health_returns_200(self, client, db):
+        response = client.get("/health/")
+        assert response.status_code == 200
+
+    def test_health_returns_json(self, client, db):
+        response = client.get("/health/")
+        assert response["Content-Type"] == "application/json"
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["db"] is True
+
+    def test_health_no_auth_required(self, client, db):
+        response = client.get("/health/")
+        assert response.status_code == 200
 
 
 class TestSendBrandedEmail:

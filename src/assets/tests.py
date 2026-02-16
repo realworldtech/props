@@ -6,6 +6,7 @@ import pytest
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.urls import reverse
 
 from assets.models import (
@@ -1317,6 +1318,7 @@ class TestEdgeCaseMerge:
             category=category,
             current_location=location,
             status="active",
+            is_serialised=False,
             created_by=user,
         )
         dup.save()
@@ -1897,7 +1899,7 @@ class TestAICostControls:
 
 
 class TestAIImageResize:
-    """Test AI image resizing (Batch C)."""
+    """V21: Test AI image resize to longest-edge (1568px)."""
 
     def test_resize_large_image(self):
         from io import BytesIO
@@ -1906,18 +1908,18 @@ class TestAIImageResize:
 
         from assets.services.ai import resize_image_for_ai
 
-        # Create a 4000x4000 image (16MP) which exceeds 3MP default
+        # Create a 3000x2000 image exceeding 1568 longest edge
         buf = BytesIO()
-        PILImage.new("RGB", (4000, 4000), "red").save(buf, "JPEG")
+        PILImage.new("RGB", (3000, 2000), "red").save(buf, "JPEG")
         buf.seek(0)
 
         result_bytes, media_type = resize_image_for_ai(buf.getvalue())
         assert media_type == "image/jpeg"
 
-        # Verify the result image is smaller
         result_img = PILImage.open(BytesIO(result_bytes))
-        w, h = result_img.size
-        assert w * h <= 3000000 + 10000  # Allow small rounding tolerance
+        # Longest edge should be ~1568 (allow +-1 rounding)
+        assert abs(result_img.width - 1568) <= 1
+        assert abs(result_img.height - 1045) <= 1
 
     def test_small_image_unchanged_dimensions(self):
         from io import BytesIO
@@ -1926,7 +1928,7 @@ class TestAIImageResize:
 
         from assets.services.ai import resize_image_for_ai
 
-        # Create a small 100x100 image
+        # Create a small 100x100 image (under 1568 threshold)
         buf = BytesIO()
         PILImage.new("RGB", (100, 100), "blue").save(buf, "JPEG")
         buf.seek(0)
@@ -2735,25 +2737,39 @@ class TestLostStolenStatuses:
     def test_state_service_validates_lost_transition(self, asset):
         from assets.services.state import validate_transition
 
+        asset.lost_stolen_notes = "Test notes"
         validate_transition(asset, "lost")  # Should not raise
 
-    def test_state_service_blocks_checked_out_to_lost(self, asset, admin_user):
+    def test_state_service_allows_checked_out_to_lost(self, asset, admin_user):
+        """V1: lost/stolen MUST be allowed on checked-out assets."""
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
+        asset.lost_stolen_notes = "Lost while checked out"
         asset.save(update_fields=["checked_out_to"])
-        with pytest.raises(ValidationError):
-            validate_transition(asset, "lost")
+        validate_transition(asset, "lost")  # Should not raise
 
-    def test_state_service_blocks_checked_out_to_stolen(
+    def test_state_service_allows_checked_out_to_stolen(
         self, asset, admin_user
     ):
+        """V1: lost/stolen MUST be allowed on checked-out assets."""
+        from assets.services.state import validate_transition
+
+        asset.checked_out_to = admin_user
+        asset.lost_stolen_notes = "Stolen while checked out"
+        asset.save(update_fields=["checked_out_to"])
+        validate_transition(asset, "stolen")  # Should not raise
+
+    def test_state_service_still_blocks_checked_out_to_retired(
+        self, asset, admin_user
+    ):
+        """V1: retired/disposed still blocked on checked-out."""
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
         asset.save(update_fields=["checked_out_to"])
-        with pytest.raises(ValidationError):
-            validate_transition(asset, "stolen")
+        with pytest.raises(ValidationError, match="Check it in"):
+            validate_transition(asset, "retired")
 
 
 # ============================================================
@@ -2830,7 +2846,7 @@ class TestRelocateTransaction:
         )
         assert response.status_code == 302
         asset.refresh_from_db()
-        assert asset.home_location == new_loc
+        assert asset.current_location == new_loc
         tx = Transaction.objects.filter(asset=asset, action="relocate").first()
         assert tx is not None
         assert tx.to_location == new_loc
@@ -3169,8 +3185,17 @@ class TestAssetImageAdmin:
 class TestAssetNewFields:
     """Test is_serialised and is_kit defaults on Asset."""
 
-    def test_is_serialised_default_false(self, asset):
-        assert asset.is_serialised is False
+    def test_is_serialised_default_true(self, category, location, user):
+        """V3: new assets default to is_serialised=True."""
+        a = Asset(
+            name="Default Check",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        a.save()
+        assert a.is_serialised is True
 
     def test_is_kit_default_false(self, asset):
         assert asset.is_kit is False
@@ -3757,3 +3782,1381 @@ class TestSerialAdmin:
             f"/admin/assets/asset/{serialised_asset.pk}/change/"
         )
         assert response.status_code == 200
+
+
+# ============================================================
+# BATCH B: CRITICAL VIEW/LOGIC FIXES
+# ============================================================
+
+
+class TestCheckoutDestinationLocation:
+    """V9: Checkout can include optional destination location."""
+
+    def test_checkout_with_destination_updates_current_location(
+        self, admin_client, asset, second_user, location
+    ):
+        dest = Location.objects.create(name="Destination Venue")
+        response = admin_client.post(
+            reverse("assets:asset_checkout", args=[asset.pk]),
+            {
+                "borrower": second_user.pk,
+                "notes": "For the show",
+                "destination_location": dest.pk,
+            },
+        )
+        assert response.status_code == 302
+        asset.refresh_from_db()
+        assert asset.checked_out_to == second_user
+        assert asset.current_location == dest
+        tx = asset.transactions.filter(action="checkout").first()
+        assert tx.to_location == dest
+
+    def test_checkout_without_destination_preserves_location(
+        self, admin_client, asset, second_user, location
+    ):
+        original_loc = asset.current_location
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[asset.pk]),
+            {"borrower": second_user.pk, "notes": ""},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == original_loc
+
+
+class TestMandatoryLostStolenNotes:
+    """V22: Notes required when transitioning to lost/stolen."""
+
+    def test_transition_to_lost_without_notes_raises(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = ""
+        with pytest.raises(ValidationError, match="(?i)notes"):
+            validate_transition(asset, "lost")
+
+    def test_transition_to_stolen_without_notes_raises(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = ""
+        with pytest.raises(ValidationError, match="(?i)notes"):
+            validate_transition(asset, "stolen")
+
+    def test_transition_to_lost_with_notes_succeeds(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = "Left at venue"
+        validate_transition(asset, "lost")  # Should not raise
+
+    def test_transition_to_stolen_with_notes_succeeds(self, asset):
+        from assets.services.state import validate_transition
+
+        asset.lost_stolen_notes = "Taken from storage"
+        validate_transition(asset, "stolen")  # Should not raise
+
+
+class TestRelocateFixesCurrentLocation:
+    """V23: Relocate updates current_location, not home_location."""
+
+    def test_relocate_updates_current_location(
+        self, admin_client, asset, location
+    ):
+        new_loc = Location.objects.create(name="New Warehouse")
+        original_home = asset.home_location
+        admin_client.post(
+            reverse("assets:asset_relocate", args=[asset.pk]),
+            {"location": new_loc.pk, "notes": "Moving storage"},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == new_loc
+        assert asset.home_location == original_home
+
+    def test_relocate_checked_out_asset_keeps_borrower(
+        self, admin_client, asset, second_user, location
+    ):
+        asset.checked_out_to = second_user
+        asset.save(update_fields=["checked_out_to"])
+        new_loc = Location.objects.create(name="New Venue")
+        admin_client.post(
+            reverse("assets:asset_relocate", args=[asset.pk]),
+            {"location": new_loc.pk, "notes": "Venue change"},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == new_loc
+        assert asset.checked_out_to == second_user
+
+
+class TestViewerExportPermission:
+    """V35: Viewer with can_export_assets can access export."""
+
+    def test_viewer_can_export(self, viewer_client, viewer_user, asset):
+        from django.contrib.auth.models import Permission
+
+        perm = Permission.objects.get(codename="can_export_assets")
+        viewer_user.user_permissions.add(perm)
+        # Clear cached permissions
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        viewer_user = User.objects.get(pk=viewer_user.pk)
+
+        response = viewer_client.get(reverse("assets:export_assets"))
+        assert response.status_code == 200
+        assert "spreadsheet" in response["Content-Type"]
+
+
+# ============================================================
+# BATCH E: SHOULD-IMPLEMENT QUICK WINS
+# ============================================================
+
+
+class TestDepartmentBarcodePrefix:
+    """V10: Department barcode prefix on asset generation."""
+
+    def test_department_has_barcode_prefix_field(self, department):
+        assert hasattr(department, "barcode_prefix")
+
+    def test_asset_uses_department_prefix(self, user, location, db):
+        dept = Department.objects.create(name="Sound", barcode_prefix="SND")
+        cat = Category.objects.create(name="Microphones", department=dept)
+        a = Asset(
+            name="SM58",
+            category=cat,
+            current_location=location,
+            status="active",
+            is_serialised=False,
+            created_by=user,
+        )
+        a.save()
+        assert a.barcode.startswith("SND-")
+
+    def test_asset_falls_back_to_global_prefix(self, asset):
+        # asset fixture has department without barcode_prefix
+        assert asset.barcode.startswith("ASSET-")
+
+
+class TestFilterBorrowerDropdown:
+    """V30: Borrower dropdown filtered to Borrower+ roles."""
+
+    def test_viewer_excluded_from_checkout_dropdown(
+        self, admin_client, asset, viewer_user
+    ):
+        response = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        assert response.status_code == 200
+        users_in_ctx = response.context["users"]
+        user_pks = list(users_in_ctx.values_list("pk", flat=True))
+        assert viewer_user.pk not in user_pks
+
+    def test_member_included_in_checkout_dropdown(
+        self, admin_client, asset, member_user
+    ):
+        response = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        users_in_ctx = response.context["users"]
+        user_pks = list(users_in_ctx.values_list("pk", flat=True))
+        assert member_user.pk in user_pks
+
+
+class TestExcludeDisposedFromExport:
+    """V32: Default export excludes disposed assets."""
+
+    def test_default_export_excludes_disposed(
+        self, admin_client, asset, category, location, user
+    ):
+        disposed = Asset(
+            name="Disposed Thing",
+            category=category,
+            current_location=location,
+            status="disposed",
+            is_serialised=False,
+            created_by=user,
+        )
+        disposed.save()
+        response = admin_client.get(reverse("assets:export_assets"))
+        assert response.status_code == 200
+        # The disposed asset should not appear in the exported data
+        assert b"Disposed Thing" not in response.content
+
+    def test_export_with_include_disposed(
+        self, admin_client, asset, category, location, user
+    ):
+        disposed = Asset(
+            name="Disposed Included",
+            category=category,
+            current_location=location,
+            status="disposed",
+            is_serialised=False,
+            created_by=user,
+        )
+        disposed.save()
+        response = admin_client.get(
+            reverse("assets:export_assets") + "?include_disposed=1"
+        )
+        assert response.status_code == 200
+
+
+class TestMergeFieldRulesV20:
+    """V20: Fix merge field rules."""
+
+    def test_merge_concatenates_descriptions(
+        self, asset, user, category, location
+    ):
+        # Create dup with description
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            description="Dup desc",
+        )
+        dup.save()
+        asset.description = "Primary desc"
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert "Primary desc" in asset.description
+        assert "Dup desc" in asset.description
+        assert "\n---\n" in asset.description
+
+    def test_merge_concatenates_notes(self, asset, user, category, location):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            notes="Dup notes",
+        )
+        dup.save()
+        asset.notes = "Primary notes"
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert "Primary notes" in asset.notes
+        assert "Dup notes" in asset.notes
+
+    def test_merge_sums_quantities(self, asset, user, category, location):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+            quantity=3,
+        )
+        dup.save()
+        asset.quantity = 2
+        asset.is_serialised = False
+        asset.save()
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        asset.refresh_from_db()
+        assert asset.quantity == 5
+
+    def test_merge_moves_serials(self, asset, user, category, location):
+        asset.is_serialised = True
+        asset.save()
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=True,
+            created_by=user,
+        )
+        dup.save()
+        from assets.models import AssetSerial
+
+        serial = AssetSerial.objects.create(asset=dup, serial_number="SN-001")
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        serial.refresh_from_db()
+        assert serial.asset == asset
+
+    def test_merge_clears_duplicate_barcodes(
+        self, asset, user, category, location
+    ):
+        dup = Asset(
+            name="Dup",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=user,
+        )
+        dup.save()
+        dup_barcode = dup.barcode
+        assert dup_barcode  # Has a barcode
+        from assets.services.merge import merge_assets
+
+        merge_assets(asset, [dup], user)
+        dup.refresh_from_db()
+        assert not dup.barcode  # Barcode cleared
+
+
+class TestStocktakeWrongLocationV31:
+    """V31: Stocktake prompt on wrong location."""
+
+    def test_wrong_location_does_not_auto_transfer(
+        self, admin_client, admin_user, asset, location
+    ):
+        from assets.models import Location, StocktakeSession
+
+        other_loc = Location.objects.create(name="Other Location")
+        asset.current_location = other_loc
+        asset.save(update_fields=["current_location"])
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        admin_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"code": asset.barcode},
+        )
+        asset.refresh_from_db()
+        # Should NOT auto-transfer
+        assert asset.current_location == other_loc
+
+    def test_transfer_confirmation_updates_location(
+        self, admin_client, admin_user, asset, location
+    ):
+        from assets.models import Location, StocktakeSession
+
+        other_loc = Location.objects.create(name="Other Loc 2")
+        asset.current_location = other_loc
+        asset.save(update_fields=["current_location"])
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        admin_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"transfer_asset_id": asset.pk},
+        )
+        asset.refresh_from_db()
+        assert asset.current_location == location
+
+
+# ============================================================
+# BATCH F: SHOULD-IMPLEMENT MEDIUM EFFORT (V25)
+# ============================================================
+
+
+class TestAdminBulkActionsV25:
+    """V25: Admin bulk actions."""
+
+    def test_mark_lost_action(self, admin_client, asset, admin_user):
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/asset/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj.mark_lost(request, qs)
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+    def test_mark_stolen_action(self, admin_client, asset, admin_user):
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/asset/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj.mark_stolen(request, qs)
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+
+    def test_bulk_transfer_action(self, admin_client, asset, admin_user):
+        new_location = Location.objects.create(name="New Warehouse")
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.post(
+            "/admin/assets/asset/", {"location": new_location.pk, "apply": "1"}
+        )
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        admin_obj.bulk_transfer(request, qs)
+        asset.refresh_from_db()
+        assert asset.current_location == new_location
+
+    def test_bulk_change_category_action(
+        self, admin_client, asset, department, admin_user
+    ):
+        new_category = Category.objects.create(
+            name="New Category", department=department
+        )
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.post(
+            "/admin/assets/asset/", {"category": new_category.pk, "apply": "1"}
+        )
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages = FallbackStorage(request)
+        setattr(request, "_messages", messages)
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        admin_obj.bulk_change_category(request, qs)
+        asset.refresh_from_db()
+        assert asset.category == new_category
+
+    def test_print_labels_redirects(self, admin_client, asset):
+        from django.contrib.admin.sites import AdminSite
+        from django.test import RequestFactory
+
+        from assets.admin import AssetAdmin
+
+        factory = RequestFactory()
+        request = factory.get("/admin/assets/asset/")
+
+        admin_obj = AssetAdmin(Asset, AdminSite())
+        qs = Asset.objects.filter(pk=asset.pk)
+        response = admin_obj.print_labels(request, qs)
+        assert response.status_code == 302
+        assert "labels/pregenerate" in response.url
+        assert f"ids={asset.pk}" in response.url
+
+
+class TestThreeTierThumbnails:
+    """V19: Three-tier thumbnail system."""
+
+    def test_original_capped_at_3264_on_upload(self, asset, user):
+        """When uploading an image larger than 3264px, it should be capped."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        # Create a 4000x3000 image
+        img = Image.new("RGB", (4000, 3000), color="red")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="large.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Reload the image and check dimensions
+        saved_img = Image.open(asset_image.image)
+        longest = max(saved_img.size)
+        assert longest <= 3264, f"Expected longest edge <= 3264, got {longest}"
+        # Should maintain aspect ratio (4:3)
+        assert saved_img.size == (3264, 2448)
+
+    def test_original_not_resized_if_already_small(self, asset, user):
+        """Images smaller than 3264px should not be resized."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        # Create a 2000x1500 image
+        img = Image.new("RGB", (2000, 1500), color="blue")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="small.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Reload and check dimensions unchanged
+        saved_img = Image.open(asset_image.image)
+        assert saved_img.size == (2000, 1500)
+
+    def test_grid_thumbnail_generated_at_300px(self, asset, user):
+        """The 300px grid thumbnail should be generated synchronously."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        img = Image.new("RGB", (1000, 800), color="green")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        assert asset_image.thumbnail
+        thumb_img = Image.open(asset_image.thumbnail)
+        # Thumbnail uses PIL's thumbnail() which maintains aspect ratio
+        # and fits within 300x300
+        assert max(thumb_img.size) <= 300
+
+    @patch("assets.tasks.generate_detail_thumbnail.delay")
+    def test_detail_thumbnail_task_queued_on_upload(
+        self, mock_delay, asset, user
+    ):
+        """The Celery task for detail thumbnail should be queued."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        img = Image.new("RGB", (3000, 2000), color="yellow")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Celery task should have been queued with the image ID
+        mock_delay.assert_called_once_with(asset_image.pk)
+
+    def test_detail_thumbnail_generation_task(self, asset, user):
+        """The generate_detail_thumbnail task creates a 2000px image."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a 3000x2000 image
+        img = Image.new("RGB", (3000, 2000), color="purple")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Manually call the task (not .delay)
+        generate_detail_thumbnail(asset_image.pk)
+
+        # Reload and check detail_thumbnail
+        asset_image.refresh_from_db()
+        assert asset_image.detail_thumbnail
+        detail_img = Image.open(asset_image.detail_thumbnail)
+        longest = max(detail_img.size)
+        assert longest <= 2000
+        # Should maintain aspect ratio (3:2)
+        assert detail_img.size == (2000, 1333) or detail_img.size == (
+            2000,
+            1334,
+        )
+
+    def test_detail_thumbnail_not_generated_for_small_images(
+        self, asset, user
+    ):
+        """Images <= 2000px should not get a detail thumbnail."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a 1500x1000 image
+        img = Image.new("RGB", (1500, 1000), color="orange")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="small.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Call the task
+        generate_detail_thumbnail(asset_image.pk)
+
+        # Reload and check detail_thumbnail is still empty
+        asset_image.refresh_from_db()
+        assert not asset_image.detail_thumbnail
+
+    def test_detail_thumbnail_not_regenerated_if_exists(self, asset, user):
+        """If detail_thumbnail already exists, task should skip."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        from django.core.files.base import ContentFile
+
+        from assets.tasks import generate_detail_thumbnail
+
+        # Create a large image
+        img = Image.new("RGB", (3000, 2000), color="cyan")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        buf.seek(0)
+
+        asset_image = AssetImage(
+            asset=asset,
+            image=ContentFile(buf.getvalue(), name="test.jpg"),
+            uploaded_by=user,
+        )
+        asset_image.save()
+
+        # Generate detail thumbnail
+        generate_detail_thumbnail(asset_image.pk)
+        asset_image.refresh_from_db()
+        original_detail_path = asset_image.detail_thumbnail.name
+
+        # Call task again
+        generate_detail_thumbnail(asset_image.pk)
+        asset_image.refresh_from_db()
+
+        # Should be unchanged
+        assert asset_image.detail_thumbnail.name == original_detail_path
+
+
+# ============================================================
+# V6: SERIALISATION CONVERSION TESTS
+# ============================================================
+
+
+class TestSerialisationConversionV6:
+    """V6: Serialisation conversion workflow."""
+
+    def test_convert_to_serialised_impact(self, asset, user):
+        asset.is_serialised = False
+        asset.quantity = 5
+        asset.save()
+        from assets.services.serial import convert_to_serialised
+
+        impact = convert_to_serialised(asset, user)
+        assert impact["current_quantity"] == 5
+
+    def test_apply_convert_to_serialised(self, asset, user):
+        asset.is_serialised = False
+        asset.save()
+        from assets.services.serial import apply_convert_to_serialised
+
+        apply_convert_to_serialised(asset, user)
+        asset.refresh_from_db()
+        assert asset.is_serialised is True
+
+    def test_convert_to_non_serialised_impact(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S2", status="active"
+        )
+        from assets.services.serial import convert_to_non_serialised
+
+        impact = convert_to_non_serialised(asset, user)
+        assert impact["total_serials"] == 2
+        assert impact["active_serials"] == 2
+
+    def test_apply_convert_to_non_serialised(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user)
+        asset.refresh_from_db()
+        assert asset.is_serialised is False
+        assert asset.quantity >= 1
+        assert (
+            AssetSerial.objects.filter(asset=asset, is_archived=True).count()
+            == 1
+        )
+
+    def test_convert_non_serialised_blocks_checked_out(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            checked_out_to=user,
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        with pytest.raises(ValidationError, match="checked out"):
+            apply_convert_to_non_serialised(asset, user)
+
+    def test_convert_non_serialised_override_checkout(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            checked_out_to=user,
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user, override_checkout=True)
+        asset.refresh_from_db()
+        assert asset.is_serialised is False
+
+    def test_restore_archived_serials(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        s = AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            is_archived=True,
+        )
+        from assets.services.serial import restore_archived_serials
+
+        result = restore_archived_serials(asset, user)
+        assert result["restored"] == 1
+        s.refresh_from_db()
+        assert s.is_archived is False
+
+    def test_kit_pins_cleared_on_conversion(
+        self, asset, user, category, location
+    ):
+        asset.is_serialised = True
+        asset.is_kit = False
+        asset.save()
+        serial = AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        kit_asset = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=user,
+        )
+        ak = AssetKit.objects.create(
+            kit=kit_asset, component=asset, serial=serial
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user)
+        ak.refresh_from_db()
+        assert ak.serial is None
+
+    def test_conversion_view_requires_permission(
+        self, client_logged_in, asset
+    ):
+        response = client_logged_in.get(
+            reverse(
+                "assets:asset_convert_serialisation",
+                args=[asset.pk],
+            )
+        )
+        assert response.status_code == 403
+
+    def test_conversion_view_accessible_by_admin(self, admin_client, asset):
+        response = admin_client.get(
+            reverse(
+                "assets:asset_convert_serialisation",
+                args=[asset.pk],
+            )
+        )
+        assert response.status_code == 200
+
+
+# ============================================================
+# HOLD LIST TESTS
+# ============================================================
+
+
+class TestHoldListModels:
+    """H1: Hold list model tests."""
+
+    def test_holdlist_status_seeding(self, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldListStatus
+
+        assert HoldListStatus.objects.count() == 5
+        assert HoldListStatus.objects.filter(is_default=True).count() == 1
+
+    def test_holdlist_creation(self, user, department, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test List",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        assert hl.pk is not None
+        assert str(hl) == "Test List"
+
+    def test_holdlist_requires_dates_without_project(self, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList(name="No dates", status=status, created_by=user)
+        with pytest.raises(ValidationError):
+            hl.full_clean()
+
+    def test_holdlist_item_unique_constraint(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListItem, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        HoldListItem.objects.create(hold_list=hl, asset=asset, added_by=user)
+        with pytest.raises(IntegrityError):
+            HoldListItem.objects.create(
+                hold_list=hl, asset=asset, added_by=user
+            )
+
+    def test_holdlist_item_serial_qty_validation(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import (
+            AssetSerial,
+            HoldList,
+            HoldListItem,
+            HoldListStatus,
+        )
+
+        asset.is_serialised = True
+        asset.save()
+        serial = AssetSerial.objects.create(asset=asset, serial_number="S1")
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        item = HoldListItem(
+            hold_list=hl,
+            asset=asset,
+            serial=serial,
+            quantity=5,
+            added_by=user,
+        )
+        with pytest.raises(ValidationError):
+            item.full_clean()
+
+
+class TestHoldListServices:
+    """H2: Hold list service tests."""
+
+    def test_create_hold_list(self, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import create_hold_list
+
+        hl = create_hold_list(
+            "Service List",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        assert hl.pk is not None
+        assert hl.name == "Service List"
+
+    def test_add_and_remove_item(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            remove_item,
+        )
+
+        hl = create_hold_list(
+            "Test",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        item = add_item(hl, asset, user)
+        assert hl.items.count() == 1
+        remove_item(hl, item.pk, user)
+        assert hl.items.count() == 0
+
+    def test_locked_list_blocks_add(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            lock_hold_list,
+        )
+
+        hl = create_hold_list(
+            "Locked",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        lock_hold_list(hl, user)
+        with pytest.raises(ValidationError):
+            add_item(hl, asset, user)
+
+    def test_overlap_detection(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            detect_overlaps,
+        )
+
+        hl1 = create_hold_list(
+            "List 1",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        hl2 = create_hold_list(
+            "List 2",
+            user,
+            start_date="2026-03-10",
+            end_date="2026-03-20",
+        )
+        add_item(hl1, asset, user)
+        add_item(hl2, asset, user)
+        overlaps = detect_overlaps(hl1)
+        assert len(overlaps) == 1
+
+    def test_check_asset_held(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            check_asset_held,
+            create_hold_list,
+        )
+
+        assert not check_asset_held(asset)
+        hl = create_hold_list(
+            "Hold",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        add_item(hl, asset, user)
+        assert check_asset_held(asset)
+
+
+class TestHoldListViews:
+    """H3: Hold list view tests."""
+
+    def test_holdlist_list_view(self, admin_client, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        response = admin_client.get(reverse("assets:holdlist_list"))
+        assert response.status_code == 200
+
+    def test_holdlist_create_view(self, admin_client, admin_user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        response = admin_client.post(
+            reverse("assets:holdlist_create"),
+            {
+                "name": "View Test",
+                "status": status.pk,
+                "start_date": "2026-03-01",
+                "end_date": "2026-03-15",
+            },
+        )
+        assert response.status_code == 302
+
+    def test_holdlist_detail_view(self, admin_client, admin_user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Detail Test",
+            status=status,
+            created_by=admin_user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        response = admin_client.get(
+            reverse("assets:holdlist_detail", args=[hl.pk])
+        )
+        assert response.status_code == 200
+
+    def test_project_crud(self, admin_client, db):
+        response = admin_client.get(reverse("assets:project_list"))
+        assert response.status_code == 200
+        response = admin_client.post(
+            reverse("assets:project_create"),
+            {"name": "Test Project", "description": "Test"},
+        )
+        assert response.status_code == 302
+
+
+# ============================================================
+# KIT CHECKOUT/CHECK-IN CASCADE TESTS (K1)
+# ============================================================
+
+
+class TestKitCheckoutV7:
+    """V7: Kit checkout cascade."""
+
+    def test_kit_checkout_creates_transactions(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkout
+
+        txns = kit_checkout(kit, user, admin_user)
+        assert len(txns) >= 1
+        comp.refresh_from_db()
+        assert comp.checked_out_to == user
+
+    def test_kit_checkout_blocks_unavailable_required(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+            checked_out_to=user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkout
+
+        with pytest.raises(ValidationError, match="unavailable"):
+            kit_checkout(kit, user, admin_user)
+
+    def test_kit_checkin_returns_all_components(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkin, kit_checkout
+
+        kit_checkout(kit, user, admin_user)
+        txns = kit_checkin(kit, admin_user, to_location=location)
+        assert len(txns) >= 1
+        comp.refresh_from_db()
+        assert comp.checked_out_to is None
+
+    def test_serial_kit_restriction(self, admin_user, category, location):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=True,
+            created_by=admin_user,
+        )
+        serial = AssetSerial.objects.create(
+            asset=comp, serial_number="S1", status="active"
+        )
+        AssetKit.objects.create(
+            kit=kit,
+            component=comp,
+            serial=serial,
+            is_required=True,
+        )
+        from assets.services.kits import (
+            check_serial_kit_restriction,
+        )
+
+        blocked, reason = check_serial_kit_restriction(serial)
+        assert blocked
+        assert "kit" in reason.lower()
+
+    def test_kit_checkout_not_a_kit_raises(
+        self, user, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        from assets.services.kits import kit_checkout
+
+        with pytest.raises(ValidationError, match="not a kit"):
+            kit_checkout(not_kit, user, admin_user)
+
+    def test_kit_checkin_not_a_kit_raises(
+        self, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        from assets.services.kits import kit_checkin
+
+        with pytest.raises(ValidationError, match="not a kit"):
+            kit_checkin(not_kit, admin_user)
+
+
+# ============================================================
+# KIT MANAGEMENT VIEW TESTS (K5)
+# ============================================================
+
+
+class TestKitViewsV8:
+    """V8: Kit management views."""
+
+    def test_kit_contents_view(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.get(
+            reverse("assets:kit_contents", args=[kit.pk])
+        )
+        assert response.status_code == 200
+
+    def test_kit_contents_non_kit_redirects(
+        self, admin_client, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.get(
+            reverse("assets:kit_contents", args=[not_kit.pk])
+        )
+        assert response.status_code == 302
+
+    def test_kit_add_component(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.post(
+            reverse("assets:kit_add_component", args=[kit.pk]),
+            {
+                "component_id": comp.pk,
+                "quantity": "1",
+                "is_required": "1",
+            },
+        )
+        assert response.status_code == 302
+        assert AssetKit.objects.filter(kit=kit, component=comp).exists()
+
+    def test_kit_remove_component(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        ak = AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        response = admin_client.post(
+            reverse(
+                "assets:kit_remove_component",
+                args=[kit.pk, ak.pk],
+            ),
+        )
+        assert response.status_code == 302
+        assert not AssetKit.objects.filter(pk=ak.pk).exists()
+
+    def test_kit_remove_component_permission(
+        self, client_logged_in, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = client_logged_in.post(
+            reverse("assets:kit_remove_component", args=[kit.pk, 1])
+        )
+        assert response.status_code == 403

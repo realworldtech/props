@@ -2,7 +2,6 @@
 
 import pytest
 
-import django
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -15,18 +14,18 @@ settings.STORAGES["staticfiles"] = {
     "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 }
 
-from assets.models import (
+# Run Celery tasks synchronously in tests
+settings.CELERY_TASK_ALWAYS_EAGER = True
+settings.CELERY_TASK_EAGER_PROPAGATES = True
+
+from assets.models import (  # noqa: E402
     Asset,
-    AssetImage,
     AssetKit,
     AssetSerial,
     Category,
     Department,
     Location,
-    NFCTag,
-    StocktakeSession,
     Tag,
-    Transaction,
 )
 
 User = get_user_model()
@@ -159,6 +158,7 @@ def asset(category, location, user):
         category=category,
         current_location=location,
         status="active",
+        is_serialised=False,
         created_by=user,
     )
     a.save()
@@ -170,6 +170,7 @@ def draft_asset(user):
     a = Asset(
         name="Draft Item",
         status="draft",
+        is_serialised=False,
         created_by=user,
     )
     a.save()

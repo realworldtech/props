@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Projects - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="font-display text-3xl font-bold">Projects</h1>
+            <p class="text-cream/50 mt-1">{{ projects|length }} project{{ projects|length|pluralize }}</p>
+        </div>
+        <a href="{% url 'assets:project_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New Project
+        </a>
+    </div>
+
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-stage-700/50">
+                <tr class="border-b border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Name</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Active</th>
+                    <th class="px-4 py-3 text-left font-medium text-cream/70">Hold Lists</th>
+                    <th class="px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+                {% for p in projects %}
+                <tr class="hover:bg-white/5 transition-colors">
+                    <td class="px-4 py-3 text-cream">{{ p.name }}</td>
+                    <td class="px-4 py-3">
+                        {% if p.is_active %}
+                        <span class="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-300">Yes</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-300">No</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-cream/70">{{ p.hold_lists.count }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <a href="{% url 'assets:project_edit' p.pk %}" class="text-spotlight-400 hover:text-spotlight-300 text-xs font-medium">
+                            Edit
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="px-4 py-16 text-center">
+                        <div class="text-center">
+                            <svg class="w-12 h-12 mx-auto text-cream/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                            <p class="text-cream/50">No projects yet.</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
