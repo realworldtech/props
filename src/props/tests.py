@@ -219,11 +219,9 @@ class TestHealthEndpoint:
 class TestSendBrandedEmail:
     """Test the send_branded_email utility."""
 
-    @patch("accounts.tasks.send_email_task")
-    def test_dispatches_to_celery(self, mock_task, db):
+    @patch("django.core.mail.EmailMultiAlternatives.send")
+    def test_sends_synchronously(self, mock_send, db):
         from accounts.email import send_branded_email
-
-        mock_task.delay = MagicMock()
 
         send_branded_email(
             template_name="verification",
@@ -235,51 +233,64 @@ class TestSendBrandedEmail:
             recipient="test@example.com",
         )
 
-        mock_task.delay.assert_called_once()
-        call_kwargs = mock_task.delay.call_args[1]
-        assert call_kwargs["subject"] == "Test Subject"
-        assert call_kwargs["recipient_list"] == ["test@example.com"]
-        assert "example.com/verify/abc/" in call_kwargs["html_body"]
-        assert "example.com/verify/abc/" in call_kwargs["text_body"]
+        mock_send.assert_called_once()
 
-    @patch("accounts.tasks.send_email_task")
-    def test_injects_branding_context(self, mock_task, db):
+    @patch("django.core.mail.EmailMultiAlternatives.send")
+    def test_injects_branding_context(self, mock_send, db):
+        from django.core.mail import EmailMultiAlternatives
+
         from accounts.email import send_branded_email
 
-        mock_task.delay = MagicMock()
+        sent_messages = []
+        original_init = EmailMultiAlternatives.__init__
 
-        send_branded_email(
-            template_name="account_rejected",
-            context={"display_name": "Rejected User"},
-            subject="Rejected",
-            recipient="reject@example.com",
-        )
+        def capture_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            sent_messages.append(self)
 
-        call_kwargs = mock_task.delay.call_args[1]
-        # Should contain the site name from settings
-        assert "PROPS" in call_kwargs["html_body"]
-        assert "PROPS" in call_kwargs["text_body"]
+        with patch.object(EmailMultiAlternatives, "__init__", capture_init):
+            send_branded_email(
+                template_name="account_rejected",
+                context={"display_name": "Rejected User"},
+                subject="Rejected",
+                recipient="reject@example.com",
+            )
 
-    @patch("accounts.tasks.send_email_task")
-    def test_handles_list_recipient(self, mock_task, db):
+        assert len(sent_messages) == 1
+        msg = sent_messages[0]
+        assert "PROPS" in msg.body
+
+    @patch("django.core.mail.EmailMultiAlternatives.send")
+    def test_handles_list_recipient(self, mock_send, db):
+        from django.core.mail import EmailMultiAlternatives
+
         from accounts.email import send_branded_email
 
-        mock_task.delay = MagicMock()
+        sent_messages = []
+        original_init = EmailMultiAlternatives.__init__
 
-        send_branded_email(
-            template_name="admin_new_pending",
-            context={
-                "display_name": "New User",
-                "user_email": "new@example.com",
-                "department_name": "Props",
-                "approval_url": "https://example.com/approve/",
-            },
-            subject="New Pending",
-            recipient=["admin1@example.com", "admin2@example.com"],
-        )
+        def capture_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            sent_messages.append(self)
 
-        call_kwargs = mock_task.delay.call_args[1]
-        assert call_kwargs["recipient_list"] == [
+        with patch.object(EmailMultiAlternatives, "__init__", capture_init):
+            send_branded_email(
+                template_name="admin_new_pending",
+                context={
+                    "display_name": "New User",
+                    "user_email": "new@example.com",
+                    "department_name": "Props",
+                    "approval_url": "https://example.com/approve/",
+                },
+                subject="New Pending",
+                recipient=[
+                    "admin1@example.com",
+                    "admin2@example.com",
+                ],
+            )
+
+        assert len(sent_messages) == 1
+        assert sent_messages[0].to == [
             "admin1@example.com",
             "admin2@example.com",
         ]

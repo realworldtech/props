@@ -1,8 +1,14 @@
-"""Branded email utility for PROPS."""
+"""Branded email utility for PROPS.
+
+Email sending is synchronous per §4.14.5-03. Volume is low (password
+reset, registration notifications) so async via Celery is unnecessary
+for v1.
+"""
 
 import logging
 
 from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
@@ -14,7 +20,7 @@ def send_branded_email(
     subject: str,
     recipient: str | list[str],
 ) -> None:
-    """Render and dispatch a branded email via Celery.
+    """Render and send a branded email synchronously.
 
     Args:
         template_name: Template base name (e.g. "verification"). Will load
@@ -42,12 +48,12 @@ def send_branded_email(
 
     recipient_list = [recipient] if isinstance(recipient, str) else recipient
 
-    from accounts.tasks import send_email_task
-
-    send_email_task.delay(
+    msg = EmailMultiAlternatives(
         subject=subject,
-        text_body=text_body,
-        html_body=html_body,
+        body=text_body,
         from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=recipient_list,
+        to=recipient_list,
     )
+    msg.attach_alternative(html_body, "text/html")
+    msg.send()
+    logger.info("Email sent: '%s' to %s", subject, recipient_list)

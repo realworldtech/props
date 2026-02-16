@@ -268,10 +268,19 @@
                         <input type="checkbox" name="apply_name" value="1"> Use as name
                     </label>
                     {% endif %}
-                    {% if img.ai_description and not asset.description %}
+                    {% if img.ai_description %}
+                    {% if asset.description %}
+                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                        <input type="checkbox" name="apply_description" value="1"> Use as description
+                    </label>
+                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                        <input type="checkbox" name="append_description" value="1"> Append to description
+                    </label>
+                    {% else %}
                     <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
                         <input type="checkbox" name="apply_description" value="1" checked> Apply description
                     </label>
+                    {% endif %}
                     {% endif %}
                     {% load assets_tags %}
                     {% if img.ai_department_suggestion %}
@@ -306,6 +315,11 @@
                     {% if img.ai_tag_suggestions %}
                     <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
                         <input type="checkbox" name="apply_tags" value="1" checked> Apply tags
+                    </label>
+                    {% endif %}
+                    {% if img.ai_ocr_text %}
+                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                        <input type="checkbox" name="copy_ocr_to_notes" value="1"> Copy text to notes
                     </label>
                     {% endif %}
                     <button type="submit" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded text-xs transition-colors">Apply Selected</button>

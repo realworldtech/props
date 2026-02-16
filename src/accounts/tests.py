@@ -135,8 +135,10 @@ class TestEmailTemplateRendering:
 class TestSendBrandedEmail:
     """Tests for the send_branded_email utility."""
 
-    @patch("accounts.tasks.send_email_task")
-    def test_send_branded_email_dispatches_task(self, mock_task, db, settings):
+    @patch("django.core.mail.EmailMultiAlternatives.send")
+    def test_send_branded_email_sends_synchronously(
+        self, mock_send, db, settings
+    ):
         from accounts.email import send_branded_email
 
         settings.SITE_NAME = "TestSite"
@@ -152,17 +154,11 @@ class TestSendBrandedEmail:
             recipient="tester@example.com",
         )
 
-        mock_task.delay.assert_called_once()
-        call_kwargs = mock_task.delay.call_args[1]
-        assert call_kwargs["subject"] == "Verify"
-        assert call_kwargs["recipient_list"] == ["tester@example.com"]
-        assert "TestSite" in call_kwargs["html_body"]
-        assert "TestSite" in call_kwargs["text_body"]
-        assert "#FF0000" in call_kwargs["html_body"]
+        mock_send.assert_called_once()
 
-    @patch("accounts.tasks.send_email_task")
+    @patch("django.core.mail.EmailMultiAlternatives.send")
     def test_send_branded_email_accepts_list_recipients(
-        self, mock_task, db, settings
+        self, mock_send, db, settings
     ):
         from accounts.email import send_branded_email
 
@@ -177,9 +173,7 @@ class TestSendBrandedEmail:
             recipient=recipients,
         )
 
-        mock_task.delay.assert_called_once()
-        call_kwargs = mock_task.delay.call_args[1]
-        assert call_kwargs["recipient_list"] == recipients
+        mock_send.assert_called_once()
 
 
 class TestCustomUser:

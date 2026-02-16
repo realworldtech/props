@@ -31,7 +31,12 @@
             <div class="relative flex-1">
                 <svg class="w-4 h-4 text-cream/30 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 <input type="text" name="q" value="{{ q }}" placeholder="Search name, description, barcode, tags..."
-                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-cream">
+                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-cream"
+                    hx-get="{% url 'assets:asset_list' %}"
+                    hx-trigger="input changed delay:300ms, search"
+                    hx-target="#asset-results"
+                    hx-push-url="true"
+                    hx-include="[name='q'],[name='status'],[name='category'],[name='location'],[name='department'],[name='tag'],[name='condition'],[name='view'],[name='page_size'],[name='sort']">
             </div>
             <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 Search
@@ -106,251 +111,9 @@
         </div>
     </form>
 
-    {% if page_obj.object_list %}
-
-    <form method="post" action="{% url 'assets:bulk_actions' %}" id="bulk-form">
-    {% csrf_token %}
-    <input type="hidden" name="select_all_matching" id="select-all-matching" value="0">
-    <input type="hidden" name="filter_status" value="{{ current_status }}">
-    <input type="hidden" name="filter_q" value="{{ q }}">
-    <input type="hidden" name="filter_department" value="{{ request.GET.department|default:'' }}">
-    <input type="hidden" name="filter_category" value="{{ request.GET.category|default:'' }}">
-    <input type="hidden" name="filter_location" value="{{ request.GET.location|default:'' }}">
-    <input type="hidden" name="filter_tag" value="{{ request.GET.tag|default:'' }}">
-    <input type="hidden" name="filter_condition" value="{{ request.GET.condition|default:'' }}">
-
-    <!-- Select All Matching Banner (V10) -->
-    <div id="select-all-banner" class="hidden bg-spotlight-500/10 border border-spotlight-500/30 rounded-lg p-3 mb-4 text-center text-sm">
-        <span id="banner-page-text">All <strong>{{ page_obj.object_list|length }}</strong> items on this page are selected.</span>
-        <span id="banner-all-text" class="hidden">All <strong>{{ page_obj.paginator.count }}</strong> matching items across all pages are selected.</span>
-        {% if page_obj.paginator.num_pages > 1 %}
-        <button type="button" id="select-all-matching-btn" class="ml-2 text-spotlight-400 hover:text-spotlight-300 underline font-medium" onclick="toggleSelectAllMatching()">
-            Select all {{ page_obj.paginator.count }} matching items
-        </button>
-        <button type="button" id="clear-all-matching-btn" class="ml-2 text-cream/50 hover:text-cream underline font-medium hidden" onclick="clearSelectAllMatching()">
-            Select only this page
-        </button>
-        {% endif %}
+    <div id="asset-results">
+        {% include "assets/partials/asset_list_results.html" %}
     </div>
-
-    {% if view_mode == 'grid' %}
-    <!-- Grid View -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {% for asset in page_obj %}
-        <div class="relative bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden card-hover group">
-            <div class="absolute top-2 left-2 z-10">
-                <input type="checkbox" name="asset_ids" value="{{ asset.pk }}" class="bulk-checkbox w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0">
-            </div>
-            <a href="{{ asset.get_absolute_url }}">
-                <div class="aspect-square bg-stage-700 flex items-center justify-center overflow-hidden">
-                    {% if asset.primary_image %}
-                    <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="{{ asset.name }}">
-                    {% else %}
-                    <svg class="w-10 h-10 text-cream/15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                    {% endif %}
-                </div>
-                <div class="p-3">
-                    <div class="text-cream text-sm font-medium truncate">{{ asset.name }}</div>
-                    <div class="text-cream/40 text-xs font-mono mt-0.5">{{ asset.barcode }}</div>
-                    <div class="flex items-center justify-between mt-2">
-                        <span class="inline-block px-2 py-0.5 rounded-full text-[10px]
-                            {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
-                            {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
-                            {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
-                            {% else %}bg-stage-600/50 text-cream/50{% endif %}">
-                            {{ asset.get_status_display }}
-                        </span>
-                        {% if asset.is_checked_out %}
-                        <span class="text-blue-400 text-[10px]">Checked out</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </a>
-        </div>
-        {% endfor %}
-    </div>
-
-    {% else %}
-    <!-- List View -->
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="text-cream/50 border-b border-white/10">
-                        <th class="py-3 px-4 w-10"><input type="checkbox" id="select-all" class="w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0"></th>
-                        <th class="text-left py-3 px-4 w-12"></th>
-                        <th class="text-left py-3 px-4"><a href="?{% for key, val in request.GET.items %}{% if key != 'sort' and key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}sort={% if current_sort == 'name' %}-name{% else %}name{% endif %}" class="hover:text-cream transition-colors inline-flex items-center gap-1">Name{% if current_sort == 'name' %} <span class="text-spotlight-400">&#9650;</span>{% elif current_sort == '-name' %} <span class="text-spotlight-400">&#9660;</span>{% endif %}</a></th>
-                        <th class="text-left py-3 px-4 hidden md:table-cell">Barcode</th>
-                        <th class="text-left py-3 px-4 hidden lg:table-cell"><a href="?{% for key, val in request.GET.items %}{% if key != 'sort' and key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}sort={% if current_sort == 'category' %}-category{% else %}category{% endif %}" class="hover:text-cream transition-colors inline-flex items-center gap-1">Category{% if current_sort == 'category' %} <span class="text-spotlight-400">&#9650;</span>{% elif current_sort == '-category' %} <span class="text-spotlight-400">&#9660;</span>{% endif %}</a></th>
-                        <th class="text-left py-3 px-4 hidden lg:table-cell"><a href="?{% for key, val in request.GET.items %}{% if key != 'sort' and key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}sort={% if current_sort == 'location' %}-location{% else %}location{% endif %}" class="hover:text-cream transition-colors inline-flex items-center gap-1">Location{% if current_sort == 'location' %} <span class="text-spotlight-400">&#9650;</span>{% elif current_sort == '-location' %} <span class="text-spotlight-400">&#9660;</span>{% endif %}</a></th>
-                        <th class="text-left py-3 px-4 hidden md:table-cell"><a href="?{% for key, val in request.GET.items %}{% if key != 'sort' and key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}sort={% if current_sort == 'condition' %}-condition{% else %}condition{% endif %}" class="hover:text-cream transition-colors inline-flex items-center gap-1">Condition{% if current_sort == 'condition' %} <span class="text-spotlight-400">&#9650;</span>{% elif current_sort == '-condition' %} <span class="text-spotlight-400">&#9660;</span>{% endif %}</a></th>
-                        <th class="text-left py-3 px-4"><a href="?{% for key, val in request.GET.items %}{% if key != 'sort' and key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}sort={% if current_sort == 'status' %}-status{% else %}status{% endif %}" class="hover:text-cream transition-colors inline-flex items-center gap-1">Status{% if current_sort == 'status' %} <span class="text-spotlight-400">&#9650;</span>{% elif current_sort == '-status' %} <span class="text-spotlight-400">&#9660;</span>{% endif %}</a></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-white/5">
-                    {% for asset in page_obj %}
-                    <tr class="hover:bg-white/[0.03] transition-colors">
-                        <td class="py-2.5 px-4"><input type="checkbox" name="asset_ids" value="{{ asset.pk }}" class="bulk-checkbox w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0"></td>
-                        <td class="py-2.5 px-4">
-                            <div class="w-10 h-10 rounded-lg bg-stage-700 flex items-center justify-center text-cream/30 overflow-hidden">
-                                {% if asset.primary_image %}
-                                <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover" alt="">
-                                {% else %}
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td class="py-2.5 px-4">
-                            <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors font-medium">{{ asset.name }}</a>
-                            {% if asset.tags.all %}
-                            <div class="flex flex-wrap gap-1 mt-1">
-                                {% for tag in asset.tags.all %}
-                                <span class="text-[10px] px-1.5 py-0.5 rounded text-cream/70
-    {% if tag.color == 'red' %}bg-red-500/20
-    {% elif tag.color == 'orange' %}bg-orange-500/20
-    {% elif tag.color == 'yellow' %}bg-yellow-500/20
-    {% elif tag.color == 'green' %}bg-green-500/20
-    {% elif tag.color == 'blue' %}bg-blue-500/20
-    {% elif tag.color == 'purple' %}bg-purple-500/20
-    {% elif tag.color == 'pink' %}bg-pink-500/20
-    {% else %}bg-stage-600{% endif %}">{{ tag.name }}</span>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-                        </td>
-                        <td class="py-2.5 px-4 hidden md:table-cell text-cream/50 font-mono text-xs">{{ asset.barcode }}</td>
-                        <td class="py-2.5 px-4 hidden lg:table-cell text-cream/60">{{ asset.category|default:"-" }}</td>
-                        <td class="py-2.5 px-4 hidden lg:table-cell text-cream/60">
-                            {% if asset.is_checked_out %}
-                            <span class="text-blue-400">{{ asset.checked_out_to.get_display_name }}</span>
-                            {% else %}
-                            {{ asset.current_location|default:"-" }}
-                            {% endif %}
-                        </td>
-                        <td class="py-2.5 px-4 hidden md:table-cell">
-                            <span class="inline-block px-2 py-0.5 rounded-full text-xs
-                                {% if asset.condition == 'excellent' %}bg-emerald-500/20 text-emerald-400
-                                {% elif asset.condition == 'good' %}bg-green-500/20 text-green-400
-                                {% elif asset.condition == 'fair' %}bg-yellow-500/20 text-yellow-400
-                                {% elif asset.condition == 'poor' %}bg-orange-500/20 text-orange-400
-                                {% else %}bg-red-500/20 text-red-400{% endif %}">
-                                {{ asset.get_condition_display }}
-                            </span>
-                        </td>
-                        <td class="py-2.5 px-4">
-                            <span class="inline-block px-2 py-0.5 rounded-full text-xs
-                                {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
-                                {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
-                                {% elif asset.status == 'retired' %}bg-gray-500/20 text-gray-400
-                                {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
-                                {% else %}bg-stage-600/50 text-cream/50{% endif %}">
-                                {{ asset.get_status_display }}
-                            </span>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Bulk Actions Bar -->
-    <div id="bulk-bar" class="hidden fixed bottom-0 left-0 right-0 bg-stage-900 border-t border-white/10 p-4 z-50">
-        <div class="max-w-7xl mx-auto flex items-center gap-4">
-            <span id="bulk-count" class="text-cream/70 text-sm">0 selected</span>
-            <select name="bulk_action" id="bulk-action-select" class="form-input rounded-lg px-3 py-2 text-cream text-sm">
-                <option value="">Choose action...</option>
-                <option value="transfer">Transfer to location</option>
-                <option value="status_change">Change status</option>
-                <option value="bulk_edit">Edit Category/Location</option>
-                <option value="bulk_checkout">Bulk Check Out</option>
-                <option value="bulk_checkin">Bulk Check In</option>
-                <option value="print_labels">Print labels</option>
-            </select>
-            <select name="location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-location">
-                <option value="">Select location...</option>
-                {% for loc in locations %}
-                <option value="{{ loc.pk }}">{{ loc }}</option>
-                {% endfor %}
-            </select>
-            <select name="new_status" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-status">
-                <option value="">Select status...</option>
-                <option value="active">Active</option>
-                <option value="retired">Retired</option>
-            </select>
-            <select name="edit_category" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-edit-category">
-                <option value="">Category (no change)</option>
-                {% for cat in categories %}
-                <option value="{{ cat.pk }}">{{ cat.name }}</option>
-                {% endfor %}
-            </select>
-            <select name="edit_location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-edit-location">
-                <option value="">Location (no change)</option>
-                {% for loc in locations %}
-                <option value="{{ loc.pk }}">{{ loc }}</option>
-                {% endfor %}
-            </select>
-            <select name="bulk_borrower" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-borrower">
-                <option value="">Select borrower...</option>
-                {% for u in active_users %}
-                <option value="{{ u.pk }}">{{ u.get_display_name }}{% if u.organisation %} ({{ u.organisation }}){% endif %}</option>
-                {% endfor %}
-            </select>
-            <select name="bulk_checkin_location" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-checkin-location">
-                <option value="">Select location...</option>
-                {% for loc in locations %}
-                <option value="{{ loc.pk }}">{{ loc }}</option>
-                {% endfor %}
-            </select>
-            <input type="datetime-local" name="bulk_action_date" class="form-input rounded-lg px-3 py-2 text-cream text-sm hidden" id="bulk-action-date" title="Optional: backdate action">
-            <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-semibold" onclick="return confirm('Apply this action to the selected assets?')">Apply</button>
-        </div>
-    </div>
-    </form>
-
-    <!-- Pagination -->
-    {% if page_obj.has_other_pages %}
-    <div class="flex items-center justify-between">
-        <div class="text-cream/50 text-sm">
-            Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
-        </div>
-        <div class="flex gap-2">
-            {% if page_obj.has_previous %}
-            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Previous</a>
-            {% endif %}
-
-            {% for num in page_obj.paginator.page_range %}
-                {% if page_obj.number == num %}
-                <span class="px-3 py-1.5 rounded-lg bg-spotlight-500/20 text-spotlight-400 text-sm border border-spotlight-500/30">{{ num }}</span>
-                {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
-                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/50 hover:text-cream text-sm transition-colors">{{ num }}</a>
-                {% elif num == 1 or num == page_obj.paginator.num_pages %}
-                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/50 hover:text-cream text-sm transition-colors">{{ num }}</a>
-                {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
-                <span class="px-1 py-1.5 text-cream/30 text-sm">...</span>
-                {% endif %}
-            {% endfor %}
-
-            {% if page_obj.has_next %}
-            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Next</a>
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
-
-    {% else %}
-    <div class="text-center py-16">
-        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-        </svg>
-        <h3 class="text-lg font-medium text-cream/70 mb-2">No assets found</h3>
-        <p class="text-cream/40 text-sm mb-6">{% if q or request.GET.department or request.GET.category %}Try adjusting your filters{% else %}Start by capturing your first asset{% endif %}</p>
-        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
-            Quick Capture
-        </a>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}
 
@@ -473,6 +236,20 @@
         if (clearBtn) clearBtn.classList.add('hidden');
         updateBulkBar();
     };
+
+    // Re-initialize event handlers after HTMX swap
+    document.addEventListener('htmx:afterSwap', function(event) {
+        if (event.detail.target.id === 'asset-results') {
+            // Re-attach select-all handler if in list view
+            const newSelectAll = document.getElementById('select-all');
+            if (newSelectAll) {
+                newSelectAll.addEventListener('change', function() {
+                    getCheckboxes().forEach(function(cb) { cb.checked = newSelectAll.checked; });
+                    updateBulkBar();
+                });
+            }
+        }
+    });
 })();
 </script>
 {% endblock %}

@@ -136,3 +136,16 @@
 
 .mobile-menu { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; }
 .mobile-menu.open { max-height: 600px; }
+
+/* HTMX loading indicator */
+.htmx-indicator {
+    transition: opacity 0.2s ease-in-out;
+}
+.htmx-request .htmx-indicator {
+    display: block !important;
+    animation: htmxPulse 1.5s ease-in-out infinite;
+}
+@keyframes htmxPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}

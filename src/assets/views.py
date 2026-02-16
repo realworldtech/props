@@ -316,7 +316,12 @@ def asset_list(request):
         "active_users": active_users,
     }
 
-    response = render(request, "assets/asset_list.html", context)
+    # HTMX: Return partial template for AJAX requests
+    template_name = "assets/asset_list.html"
+    if request.htmx:
+        template_name = "assets/partials/asset_list_results.html"
+
+    response = render(request, template_name, context)
     if view_mode in ("list", "grid"):
         response.set_cookie("view_mode", view_mode, max_age=365 * 24 * 3600)
     return response
@@ -2664,7 +2669,14 @@ def ai_apply_suggestions(request, pk, image_pk):
             asset.name = image.ai_name_suggestion
 
         if request.POST.get("apply_description") and image.ai_description:
-            if not asset.description:
+            asset.description = image.ai_description
+
+        if request.POST.get("append_description") and image.ai_description:
+            if asset.description:
+                asset.description = (
+                    f"{asset.description}\n\n{image.ai_description}"
+                )
+            else:
                 asset.description = image.ai_description
 
         if (
@@ -2746,6 +2758,12 @@ def ai_apply_suggestions(request, pk, image_pk):
                     defaults={"name": tag_name.strip()},
                 )
                 asset.tags.add(tag)
+
+        if request.POST.get("copy_ocr_to_notes") and image.ai_ocr_text:
+            if asset.notes:
+                asset.notes = f"{asset.notes}\n\n{image.ai_ocr_text}"
+            else:
+                asset.notes = image.ai_ocr_text
 
         asset.save()
         messages.success(request, "AI suggestions applied.")
