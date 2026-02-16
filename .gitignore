@@ -62,3 +62,6 @@ bin/
 
 # Claude Code
 .claude/
+
+# Git worktrees
+.worktrees/
