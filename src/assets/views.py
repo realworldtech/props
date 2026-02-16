@@ -984,15 +984,43 @@ def asset_checkout(request, pk):
 
     from django.contrib.auth.models import Group
 
+    # Filter to users with Borrower+ roles
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
+    users = (
+        User.objects.filter(
+            is_active=True,
+            groups__name__in=borrower_roles,
+        )
+        .distinct()
+        .order_by("username")
+    )
+    # Also include superusers
+    from django.db.models import Q
+
+    users = (
+        User.objects.filter(
+            Q(is_active=True, groups__name__in=borrower_roles)
+            | Q(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("username")
+    )
+
     borrower_group = Group.objects.filter(name="Borrower").first()
-    users = User.objects.filter(is_active=True).order_by("username")
     return render(
         request,
         "assets/asset_checkout.html",
         {
             "asset": asset,
             "users": users,
-            "borrower_group_id": borrower_group.pk if borrower_group else None,
+            "borrower_group_id": (
+                borrower_group.pk if borrower_group else None
+            ),
         },
     )
 
@@ -2070,6 +2098,11 @@ def export_assets(request):
 
     queryset = Asset.objects.with_related().select_related("created_by")
 
+    # Exclude disposed by default unless explicitly included
+    include_disposed = request.GET.get("include_disposed")
+    if not include_disposed:
+        queryset = queryset.exclude(status="disposed")
+
     # Apply same filters as asset_list
     status = request.GET.get("status")
     if status:
@@ -2656,9 +2689,23 @@ def asset_handover(request, pk):
         return redirect("assets:asset_detail", pk=pk)
 
     from django.contrib.auth.models import Group
+    from django.db.models import Q as HQ
 
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
     borrower_group = Group.objects.filter(name="Borrower").first()
-    users = User.objects.filter(is_active=True).order_by("username")
+    users = (
+        User.objects.filter(
+            HQ(is_active=True, groups__name__in=borrower_roles)
+            | HQ(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("username")
+    )
     locations = Location.objects.filter(is_active=True)
     return render(
         request,

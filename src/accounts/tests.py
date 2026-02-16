@@ -382,8 +382,9 @@ class TestProfileEdit:
         assert user.phone_number == "0412345678"
         assert user.organisation == "Test Org"
 
+    @patch("accounts.views._send_verification_email")
     def test_profile_edit_email_change_triggers_reverification(
-        self, client_logged_in, user
+        self, mock_send, client_logged_in, user
     ):
         response = client_logged_in.post(
             reverse("accounts:profile_edit"),
@@ -399,6 +400,7 @@ class TestProfileEdit:
         assert user.email == "newemail@example.com"
         assert user.email_verified is False
         assert user.is_active is False
+        mock_send.assert_called_once()
 
 
 class TestPasswordChange:

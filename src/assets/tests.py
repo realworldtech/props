@@ -1898,7 +1898,7 @@ class TestAICostControls:
 
 
 class TestAIImageResize:
-    """Test AI image resizing (Batch C)."""
+    """V21: Test AI image resize to longest-edge (1568px)."""
 
     def test_resize_large_image(self):
         from io import BytesIO
@@ -1907,18 +1907,18 @@ class TestAIImageResize:
 
         from assets.services.ai import resize_image_for_ai
 
-        # Create a 4000x4000 image (16MP) which exceeds 3MP default
+        # Create a 3000x2000 image exceeding 1568 longest edge
         buf = BytesIO()
-        PILImage.new("RGB", (4000, 4000), "red").save(buf, "JPEG")
+        PILImage.new("RGB", (3000, 2000), "red").save(buf, "JPEG")
         buf.seek(0)
 
         result_bytes, media_type = resize_image_for_ai(buf.getvalue())
         assert media_type == "image/jpeg"
 
-        # Verify the result image is smaller
         result_img = PILImage.open(BytesIO(result_bytes))
-        w, h = result_img.size
-        assert w * h <= 3000000 + 10000  # Allow small rounding tolerance
+        # Longest edge should be ~1568 (allow +-1 rounding)
+        assert abs(result_img.width - 1568) <= 1
+        assert abs(result_img.height - 1045) <= 1
 
     def test_small_image_unchanged_dimensions(self):
         from io import BytesIO
@@ -1927,7 +1927,7 @@ class TestAIImageResize:
 
         from assets.services.ai import resize_image_for_ai
 
-        # Create a small 100x100 image
+        # Create a small 100x100 image (under 1568 threshold)
         buf = BytesIO()
         PILImage.new("RGB", (100, 100), "blue").save(buf, "JPEG")
         buf.seek(0)
@@ -3900,3 +3900,96 @@ class TestViewerExportPermission:
         response = viewer_client.get(reverse("assets:export_assets"))
         assert response.status_code == 200
         assert "spreadsheet" in response["Content-Type"]
+
+
+# ============================================================
+# BATCH E: SHOULD-IMPLEMENT QUICK WINS
+# ============================================================
+
+
+class TestDepartmentBarcodePrefix:
+    """V10: Department barcode prefix on asset generation."""
+
+    def test_department_has_barcode_prefix_field(self, department):
+        assert hasattr(department, "barcode_prefix")
+
+    def test_asset_uses_department_prefix(self, user, location, db):
+        dept = Department.objects.create(name="Sound", barcode_prefix="SND")
+        cat = Category.objects.create(name="Microphones", department=dept)
+        a = Asset(
+            name="SM58",
+            category=cat,
+            current_location=location,
+            status="active",
+            is_serialised=False,
+            created_by=user,
+        )
+        a.save()
+        assert a.barcode.startswith("SND-")
+
+    def test_asset_falls_back_to_global_prefix(self, asset):
+        # asset fixture has department without barcode_prefix
+        assert asset.barcode.startswith("ASSET-")
+
+
+class TestFilterBorrowerDropdown:
+    """V30: Borrower dropdown filtered to Borrower+ roles."""
+
+    def test_viewer_excluded_from_checkout_dropdown(
+        self, admin_client, asset, viewer_user
+    ):
+        response = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        assert response.status_code == 200
+        users_in_ctx = response.context["users"]
+        user_pks = list(users_in_ctx.values_list("pk", flat=True))
+        assert viewer_user.pk not in user_pks
+
+    def test_member_included_in_checkout_dropdown(
+        self, admin_client, asset, member_user
+    ):
+        response = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        users_in_ctx = response.context["users"]
+        user_pks = list(users_in_ctx.values_list("pk", flat=True))
+        assert member_user.pk in user_pks
+
+
+class TestExcludeDisposedFromExport:
+    """V32: Default export excludes disposed assets."""
+
+    def test_default_export_excludes_disposed(
+        self, admin_client, asset, category, location, user
+    ):
+        disposed = Asset(
+            name="Disposed Thing",
+            category=category,
+            current_location=location,
+            status="disposed",
+            is_serialised=False,
+            created_by=user,
+        )
+        disposed.save()
+        response = admin_client.get(reverse("assets:export_assets"))
+        assert response.status_code == 200
+        # The disposed asset should not appear in the exported data
+        assert b"Disposed Thing" not in response.content
+
+    def test_export_with_include_disposed(
+        self, admin_client, asset, category, location, user
+    ):
+        disposed = Asset(
+            name="Disposed Included",
+            category=category,
+            current_location=location,
+            status="disposed",
+            is_serialised=False,
+            created_by=user,
+        )
+        disposed.save()
+        response = admin_client.get(
+            reverse("assets:export_assets") + "?include_disposed=1"
+        )
+        assert response.status_code == 200

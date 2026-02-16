@@ -21,6 +21,11 @@ class Department(models.Model):
 
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
+    barcode_prefix = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="Barcode prefix for assets in this department",
+    )
     managers = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
@@ -338,8 +343,18 @@ class Asset(models.Model):
         return new_status in self.VALID_TRANSITIONS.get(self.status, [])
 
     def _generate_barcode(self):
-        """Generate a unique barcode string."""
-        prefix = getattr(settings, "BARCODE_PREFIX", "ASSET")
+        """Generate a unique barcode string.
+
+        Uses department barcode_prefix if set, otherwise falls back
+        to global BARCODE_PREFIX setting.
+        """
+        prefix = None
+        if self.category_id and self.category.department:
+            dept_prefix = self.category.department.barcode_prefix
+            if dept_prefix:
+                prefix = dept_prefix
+        if not prefix:
+            prefix = getattr(settings, "BARCODE_PREFIX", "ASSET")
         return f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
 
     def _generate_barcode_image(self):
