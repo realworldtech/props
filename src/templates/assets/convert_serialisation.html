@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Convert Serialisation - {{ asset.name }}{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-4">Convert Serialisation Type</h1>
+    <h2 class="text-lg mb-4">{{ asset.name }}</h2>
+
+    {% if converting_to == "serialised" %}
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4">
+        <p class="font-medium">Converting to Serialised</p>
+        <ul class="mt-2 text-sm space-y-1">
+            <li>Current quantity: {{ impact.current_quantity }}</li>
+            <li>Quantity will become derived from serial count (initially 0)</li>
+            {% if impact.archived_serials %}
+            <li class="text-green-700 dark:text-green-400">{{ impact.archived_serials }} archived serial(s) can be restored</li>
+            {% endif %}
+        </ul>
+    </div>
+    {% else %}
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 mb-4">
+        <p class="font-medium">Converting to Non-Serialised</p>
+        <ul class="mt-2 text-sm space-y-1">
+            <li>Total serials: {{ impact.total_serials }}</li>
+            <li>Active: {{ impact.active_serials }}, Checked out: {{ impact.checked_out_serials }}</li>
+            <li>Suggested quantity: {{ impact.suggested_quantity }}</li>
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if impact.warnings %}
+    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4 mb-4">
+        <p class="font-medium text-red-800 dark:text-red-200">Warnings</p>
+        <ul class="mt-2 text-sm space-y-1 text-red-700 dark:text-red-300">
+            {% for warning in impact.warnings %}
+            <li>{{ warning }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {% if converting_to == "non_serialised" %}
+        <div class="mb-4">
+            <label class="block text-sm font-medium mb-1">Adjusted Quantity (optional)</label>
+            <input type="number" name="adjusted_quantity" value="{{ impact.suggested_quantity }}" min="0" class="border rounded px-3 py-2 w-32 dark:bg-gray-800 dark:border-gray-600">
+        </div>
+        {% if impact.requires_double_confirm %}
+        <label class="flex items-center gap-2 mb-4">
+            <input type="checkbox" name="override_checkout" value="1" required>
+            <span class="text-sm">I understand serials are checked out and want to proceed</span>
+        </label>
+        {% endif %}
+        {% endif %}
+
+        {% if converting_to == "serialised" and impact.archived_serials %}
+        <label class="flex items-center gap-2 mb-4">
+            <input type="checkbox" name="restore_serials" value="1" checked>
+            <span class="text-sm">Restore {{ impact.archived_serials }} archived serial(s)</span>
+        </label>
+        {% endif %}
+
+        <label class="flex items-center gap-2 mb-6">
+            <input type="checkbox" name="confirm" value="1" required>
+            <span class="text-sm font-medium">I understand the consequences of this conversion</span>
+        </label>
+
+        <div class="flex gap-3">
+            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                Convert
+            </button>
+            <a href="{% url 'assets:asset_detail' asset.pk %}" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

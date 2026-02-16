@@ -18,6 +18,11 @@ urlpatterns = [
     path("assets/<int:pk>/", views.asset_detail, name="asset_detail"),
     path("assets/<int:pk>/edit/", views.asset_edit, name="asset_edit"),
     path("assets/<int:pk>/delete/", views.asset_delete, name="asset_delete"),
+    path(
+        "assets/<int:pk>/convert-serialisation/",
+        views.asset_convert_serialisation,
+        name="asset_convert_serialisation",
+    ),
     # Quick Capture
     path("quick-capture/", views.quick_capture, name="quick_capture"),
     path("drafts/", views.drafts_queue, name="drafts_queue"),

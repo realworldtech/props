@@ -4473,3 +4473,161 @@ class TestThreeTierThumbnails:
 
         # Should be unchanged
         assert asset_image.detail_thumbnail.name == original_detail_path
+
+
+# ============================================================
+# V6: SERIALISATION CONVERSION TESTS
+# ============================================================
+
+
+class TestSerialisationConversionV6:
+    """V6: Serialisation conversion workflow."""
+
+    def test_convert_to_serialised_impact(self, asset, user):
+        asset.is_serialised = False
+        asset.quantity = 5
+        asset.save()
+        from assets.services.serial import convert_to_serialised
+
+        impact = convert_to_serialised(asset, user)
+        assert impact["current_quantity"] == 5
+
+    def test_apply_convert_to_serialised(self, asset, user):
+        asset.is_serialised = False
+        asset.save()
+        from assets.services.serial import apply_convert_to_serialised
+
+        apply_convert_to_serialised(asset, user)
+        asset.refresh_from_db()
+        assert asset.is_serialised is True
+
+    def test_convert_to_non_serialised_impact(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S2", status="active"
+        )
+        from assets.services.serial import convert_to_non_serialised
+
+        impact = convert_to_non_serialised(asset, user)
+        assert impact["total_serials"] == 2
+        assert impact["active_serials"] == 2
+
+    def test_apply_convert_to_non_serialised(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user)
+        asset.refresh_from_db()
+        assert asset.is_serialised is False
+        assert asset.quantity >= 1
+        assert (
+            AssetSerial.objects.filter(asset=asset, is_archived=True).count()
+            == 1
+        )
+
+    def test_convert_non_serialised_blocks_checked_out(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            checked_out_to=user,
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        with pytest.raises(ValidationError, match="checked out"):
+            apply_convert_to_non_serialised(asset, user)
+
+    def test_convert_non_serialised_override_checkout(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            checked_out_to=user,
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user, override_checkout=True)
+        asset.refresh_from_db()
+        assert asset.is_serialised is False
+
+    def test_restore_archived_serials(self, asset, user):
+        asset.is_serialised = True
+        asset.save()
+        s = AssetSerial.objects.create(
+            asset=asset,
+            serial_number="S1",
+            status="active",
+            is_archived=True,
+        )
+        from assets.services.serial import restore_archived_serials
+
+        result = restore_archived_serials(asset, user)
+        assert result["restored"] == 1
+        s.refresh_from_db()
+        assert s.is_archived is False
+
+    def test_kit_pins_cleared_on_conversion(
+        self, asset, user, category, location
+    ):
+        asset.is_serialised = True
+        asset.is_kit = False
+        asset.save()
+        serial = AssetSerial.objects.create(
+            asset=asset, serial_number="S1", status="active"
+        )
+        kit_asset = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=user,
+        )
+        ak = AssetKit.objects.create(
+            kit=kit_asset, component=asset, serial=serial
+        )
+        from assets.services.serial import (
+            apply_convert_to_non_serialised,
+        )
+
+        apply_convert_to_non_serialised(asset, user)
+        ak.refresh_from_db()
+        assert ak.serial is None
+
+    def test_conversion_view_requires_permission(
+        self, client_logged_in, asset
+    ):
+        response = client_logged_in.get(
+            reverse(
+                "assets:asset_convert_serialisation",
+                args=[asset.pk],
+            )
+        )
+        assert response.status_code == 403
+
+    def test_conversion_view_accessible_by_admin(self, admin_client, asset):
+        response = admin_client.get(
+            reverse(
+                "assets:asset_convert_serialisation",
+                args=[asset.pk],
+            )
+        )
+        assert response.status_code == 200

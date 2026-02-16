@@ -7,7 +7,7 @@ from django_ratelimit.decorators import ratelimit
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
@@ -2832,5 +2832,109 @@ def asset_handover(request, pk):
             "users": users,
             "locations": locations,
             "borrower_group_id": borrower_group.pk if borrower_group else None,
+        },
+    )
+
+
+# --- Serialisation Conversion ---
+
+
+@login_required
+def asset_convert_serialisation(request, pk):
+    """Show conversion impact and handle confirmation."""
+    asset = get_object_or_404(Asset, pk=pk)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        confirm = request.POST.get("confirm")
+        if not confirm:
+            messages.error(request, "You must confirm the conversion.")
+            return redirect("assets:asset_detail", pk=pk)
+
+        if asset.is_serialised:
+            override = request.POST.get("override_checkout") == "1"
+            adjusted_qty = request.POST.get("adjusted_quantity")
+            qty = int(adjusted_qty) if adjusted_qty else None
+            try:
+                from assets.services.serial import (
+                    apply_convert_to_non_serialised,
+                )
+
+                apply_convert_to_non_serialised(
+                    asset,
+                    request.user,
+                    adjusted_quantity=qty,
+                    override_checkout=override,
+                )
+                messages.success(
+                    request,
+                    f"'{asset.name}' converted to non-serialised. "
+                    f"Serials archived.",
+                )
+            except ValidationError as e:
+                messages.error(request, str(e.message))
+        else:
+            try:
+                from assets.services.serial import (
+                    apply_convert_to_serialised,
+                    restore_archived_serials,
+                )
+
+                apply_convert_to_serialised(asset, request.user)
+
+                restore = request.POST.get("restore_serials") == "1"
+                if restore:
+                    result = restore_archived_serials(asset, request.user)
+                    if result["conflicts"]:
+                        messages.warning(
+                            request,
+                            f"Restored {result['restored']} serial(s)"
+                            f". {len(result['conflicts'])} barcode "
+                            f"conflict(s) were cleared.",
+                        )
+                    elif result["restored"]:
+                        messages.success(
+                            request,
+                            f"Restored {result['restored']} archived"
+                            f" serial(s).",
+                        )
+
+                messages.success(
+                    request,
+                    f"'{asset.name}' converted to serialised.",
+                )
+            except ValidationError as e:
+                messages.error(request, str(e.message))
+
+        return redirect("assets:asset_detail", pk=pk)
+
+    # GET: show impact summary
+    if asset.is_serialised:
+        from assets.services.serial import (
+            convert_to_non_serialised,
+        )
+
+        impact = convert_to_non_serialised(asset, request.user)
+        converting_to = "non_serialised"
+    else:
+        from assets.services.serial import (
+            convert_to_serialised,
+            get_archived_serials,
+        )
+
+        impact = convert_to_serialised(asset, request.user)
+        archived = get_archived_serials(asset)
+        impact["archived_serials"] = archived.count()
+        converting_to = "serialised"
+
+    return render(
+        request,
+        "assets/convert_serialisation.html",
+        {
+            "asset": asset,
+            "impact": impact,
+            "converting_to": converting_to,
         },
     )
