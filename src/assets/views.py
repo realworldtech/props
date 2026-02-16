@@ -2938,3 +2938,251 @@ def asset_convert_serialisation(request, pk):
             "converting_to": converting_to,
         },
     )
+
+
+# --- Hold Lists ---
+
+
+@login_required
+def holdlist_list(request):
+    """List all hold lists."""
+    from assets.models import HoldList, HoldListStatus
+
+    status_filter = request.GET.get("status")
+    project_filter = request.GET.get("project")
+    qs = HoldList.objects.select_related(
+        "project", "department", "status", "created_by"
+    )
+    if status_filter:
+        qs = qs.filter(status__name=status_filter)
+    if project_filter:
+        qs = qs.filter(project_id=project_filter)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_list.html",
+        {
+            "hold_lists": qs,
+            "statuses": statuses,
+            "current_status": status_filter,
+        },
+    )
+
+
+@login_required
+def holdlist_detail(request, pk):
+    """Show hold list with items."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(
+        HoldList.objects.select_related("project", "department", "status"),
+        pk=pk,
+    )
+    items = hold_list.items.select_related("asset", "serial", "pulled_by")
+    from assets.services.holdlists import detect_overlaps
+
+    overlaps = detect_overlaps(hold_list)
+    return render(
+        request,
+        "assets/holdlist_detail.html",
+        {
+            "hold_list": hold_list,
+            "items": items,
+            "overlaps": overlaps,
+        },
+    )
+
+
+@login_required
+def holdlist_create(request):
+    """Create a new hold list."""
+    from assets.models import Department, HoldListStatus, Project
+
+    if request.method == "POST":
+        from assets.services.holdlists import create_hold_list
+
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Name is required.")
+            return redirect("assets:holdlist_create")
+        kwargs = {}
+        project_id = request.POST.get("project")
+        if project_id:
+            kwargs["project_id"] = project_id
+        dept_id = request.POST.get("department")
+        if dept_id:
+            kwargs["department_id"] = dept_id
+        status_id = request.POST.get("status")
+        if status_id:
+            kwargs["status"] = HoldListStatus.objects.get(pk=status_id)
+        start = request.POST.get("start_date")
+        end = request.POST.get("end_date")
+        if start:
+            kwargs["start_date"] = start
+        if end:
+            kwargs["end_date"] = end
+        kwargs["notes"] = request.POST.get("notes", "")
+        try:
+            hold_list = create_hold_list(name, request.user, **kwargs)
+            messages.success(request, f"Hold list '{name}' created.")
+            return redirect("assets:holdlist_detail", pk=hold_list.pk)
+        except Exception as e:
+            messages.error(request, str(e))
+
+    projects = Project.objects.filter(is_active=True)
+    departments = Department.objects.filter(is_active=True)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_form.html",
+        {
+            "projects": projects,
+            "departments": departments,
+            "statuses": statuses,
+            "editing": False,
+        },
+    )
+
+
+@login_required
+def holdlist_edit(request, pk):
+    """Edit an existing hold list."""
+    from assets.models import Department, HoldList, HoldListStatus, Project
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    role = get_user_role(request.user)
+    if hold_list.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        hold_list.name = request.POST.get("name", hold_list.name)
+        project_id = request.POST.get("project")
+        hold_list.project_id = project_id if project_id else None
+        dept_id = request.POST.get("department")
+        hold_list.department_id = dept_id if dept_id else None
+        status_id = request.POST.get("status")
+        if status_id:
+            hold_list.status_id = status_id
+        hold_list.start_date = request.POST.get("start_date") or None
+        hold_list.end_date = request.POST.get("end_date") or None
+        hold_list.notes = request.POST.get("notes", "")
+        try:
+            hold_list.full_clean()
+            hold_list.save()
+            messages.success(request, "Hold list updated.")
+            return redirect("assets:holdlist_detail", pk=pk)
+        except Exception as e:
+            messages.error(request, str(e))
+
+    projects = Project.objects.filter(is_active=True)
+    departments = Department.objects.filter(is_active=True)
+    statuses = HoldListStatus.objects.all()
+    return render(
+        request,
+        "assets/holdlist_form.html",
+        {
+            "hold_list": hold_list,
+            "projects": projects,
+            "departments": departments,
+            "statuses": statuses,
+            "editing": True,
+        },
+    )
+
+
+@login_required
+def holdlist_add_item(request, pk):
+    """Add an item to a hold list."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        asset_id = request.POST.get("asset_id")
+        if asset_id:
+            from assets.services.holdlists import add_item
+
+            asset = get_object_or_404(Asset, pk=asset_id)
+            qty = int(request.POST.get("quantity", 1))
+            notes = request.POST.get("notes", "")
+            try:
+                add_item(
+                    hold_list, asset, request.user, quantity=qty, notes=notes
+                )
+                messages.success(
+                    request, f"Added '{asset.name}' to hold list."
+                )
+            except Exception as e:
+                messages.error(request, str(e))
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def holdlist_remove_item(request, pk, item_pk):
+    """Remove an item from a hold list."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        from assets.services.holdlists import remove_item
+
+        try:
+            remove_item(hold_list, item_pk, request.user)
+            messages.success(request, "Item removed.")
+        except Exception as e:
+            messages.error(request, str(e))
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def project_list(request):
+    """List all projects."""
+    from assets.models import Project
+
+    projects = Project.objects.select_related("created_by").all()
+    return render(request, "assets/project_list.html", {"projects": projects})
+
+
+@login_required
+def project_create(request):
+    """Create a project."""
+    from assets.models import Project
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        if not name:
+            messages.error(request, "Name is required.")
+            return redirect("assets:project_create")
+        Project.objects.create(
+            name=name,
+            description=request.POST.get("description", ""),
+            created_by=request.user,
+        )
+        messages.success(request, f"Project '{name}' created.")
+        return redirect("assets:project_list")
+    return render(request, "assets/project_form.html", {"editing": False})
+
+
+@login_required
+def project_edit(request, pk):
+    """Edit a project."""
+    from assets.models import Project
+
+    project = get_object_or_404(Project, pk=pk)
+    if request.method == "POST":
+        project.name = request.POST.get("name", project.name)
+        project.description = request.POST.get("description", "")
+        project.is_active = request.POST.get("is_active") == "1"
+        project.save()
+        messages.success(request, "Project updated.")
+        return redirect("assets:project_list")
+    return render(
+        request,
+        "assets/project_form.html",
+        {
+            "project": project,
+            "editing": True,
+        },
+    )

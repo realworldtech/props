@@ -1149,3 +1149,214 @@ class SiteBranding(models.Model):
             instance = cls.objects.first()
             cache.set("site_branding", instance, timeout=3600)
         return instance
+
+
+class Project(models.Model):
+    """A project or event that may have hold lists."""
+
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_projects",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class ProjectDateRange(models.Model):
+    """A date range within a project (e.g. rehearsal week, show week)."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="date_ranges",
+    )
+    label = models.CharField(max_length=100)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_date_ranges",
+    )
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_date_ranges",
+    )
+
+    class Meta:
+        ordering = ["start_date"]
+
+    def __str__(self):
+        return f"{self.project.name}: {self.label}"
+
+    def clean(self):
+        super().clean()
+        if self.start_date and self.end_date:
+            if self.end_date < self.start_date:
+                raise ValidationError("End date must be after start date.")
+
+
+class HoldListStatus(models.Model):
+    """Status for hold lists (Draft, Confirmed, In Progress, etc.)."""
+
+    name = models.CharField(max_length=50, unique=True)
+    is_default = models.BooleanField(default=False)
+    is_terminal = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0)
+    color = models.CharField(max_length=20, blank=True, default="gray")
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+        verbose_name_plural = "Hold list statuses"
+
+    def __str__(self):
+        return self.name
+
+
+class HoldList(models.Model):
+    """A list of assets to be held/reserved for a project."""
+
+    name = models.CharField(max_length=200)
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="hold_lists",
+    )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hold_lists",
+    )
+    status = models.ForeignKey(
+        HoldListStatus,
+        on_delete=models.PROTECT,
+        related_name="hold_lists",
+    )
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_hold_lists",
+    )
+    is_locked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["project", "status"],
+                name="idx_holdlist_project_status",
+            ),
+            models.Index(
+                fields=["department", "status"],
+                name="idx_holdlist_dept_status",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        super().clean()
+        if not self.project and not (self.start_date and self.end_date):
+            raise ValidationError("Dates are required when no project is set.")
+        if self.start_date and self.end_date:
+            if self.end_date < self.start_date:
+                raise ValidationError("End date must be after start date.")
+
+
+class HoldListItem(models.Model):
+    """An item on a hold list."""
+
+    PULL_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("pulled", "Pulled"),
+        ("unavailable", "Unavailable"),
+    ]
+
+    hold_list = models.ForeignKey(
+        HoldList,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.PROTECT,
+        related_name="hold_list_items",
+    )
+    serial = models.ForeignKey(
+        AssetSerial,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hold_list_items",
+    )
+    quantity = models.PositiveIntegerField(default=1)
+    pull_status = models.CharField(
+        max_length=15,
+        choices=PULL_STATUS_CHOICES,
+        default="pending",
+    )
+    pulled_at = models.DateTimeField(null=True, blank=True)
+    pulled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pulled_items",
+    )
+    notes = models.TextField(blank=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="added_hold_items",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["hold_list", "asset", "serial"],
+                name="unique_holdlist_asset_serial",
+            ),
+            models.UniqueConstraint(
+                fields=["hold_list", "asset"],
+                condition=models.Q(serial__isnull=True),
+                name="unique_holdlist_asset_no_serial",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.hold_list.name}: {self.asset.name}"
+
+    def clean(self):
+        super().clean()
+        if self.serial and self.quantity != 1:
+            raise ValidationError(
+                "Quantity must be 1 when a specific serial is set."
+            )

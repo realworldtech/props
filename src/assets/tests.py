@@ -6,6 +6,7 @@ import pytest
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.urls import reverse
 
 from assets.models import (
@@ -4631,3 +4632,265 @@ class TestSerialisationConversionV6:
             )
         )
         assert response.status_code == 200
+
+
+# ============================================================
+# HOLD LIST TESTS
+# ============================================================
+
+
+class TestHoldListModels:
+    """H1: Hold list model tests."""
+
+    def test_holdlist_status_seeding(self, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldListStatus
+
+        assert HoldListStatus.objects.count() == 5
+        assert HoldListStatus.objects.filter(is_default=True).count() == 1
+
+    def test_holdlist_creation(self, user, department, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test List",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        assert hl.pk is not None
+        assert str(hl) == "Test List"
+
+    def test_holdlist_requires_dates_without_project(self, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList(name="No dates", status=status, created_by=user)
+        with pytest.raises(ValidationError):
+            hl.full_clean()
+
+    def test_holdlist_item_unique_constraint(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListItem, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        HoldListItem.objects.create(hold_list=hl, asset=asset, added_by=user)
+        with pytest.raises(IntegrityError):
+            HoldListItem.objects.create(
+                hold_list=hl, asset=asset, added_by=user
+            )
+
+    def test_holdlist_item_serial_qty_validation(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import (
+            AssetSerial,
+            HoldList,
+            HoldListItem,
+            HoldListStatus,
+        )
+
+        asset.is_serialised = True
+        asset.save()
+        serial = AssetSerial.objects.create(asset=asset, serial_number="S1")
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Test",
+            status=status,
+            created_by=user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        item = HoldListItem(
+            hold_list=hl,
+            asset=asset,
+            serial=serial,
+            quantity=5,
+            added_by=user,
+        )
+        with pytest.raises(ValidationError):
+            item.full_clean()
+
+
+class TestHoldListServices:
+    """H2: Hold list service tests."""
+
+    def test_create_hold_list(self, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import create_hold_list
+
+        hl = create_hold_list(
+            "Service List",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        assert hl.pk is not None
+        assert hl.name == "Service List"
+
+    def test_add_and_remove_item(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            remove_item,
+        )
+
+        hl = create_hold_list(
+            "Test",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        item = add_item(hl, asset, user)
+        assert hl.items.count() == 1
+        remove_item(hl, item.pk, user)
+        assert hl.items.count() == 0
+
+    def test_locked_list_blocks_add(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            lock_hold_list,
+        )
+
+        hl = create_hold_list(
+            "Locked",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        lock_hold_list(hl, user)
+        with pytest.raises(ValidationError):
+            add_item(hl, asset, user)
+
+    def test_overlap_detection(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            create_hold_list,
+            detect_overlaps,
+        )
+
+        hl1 = create_hold_list(
+            "List 1",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        hl2 = create_hold_list(
+            "List 2",
+            user,
+            start_date="2026-03-10",
+            end_date="2026-03-20",
+        )
+        add_item(hl1, asset, user)
+        add_item(hl2, asset, user)
+        overlaps = detect_overlaps(hl1)
+        assert len(overlaps) == 1
+
+    def test_check_asset_held(self, asset, user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.services.holdlists import (
+            add_item,
+            check_asset_held,
+            create_hold_list,
+        )
+
+        assert not check_asset_held(asset)
+        hl = create_hold_list(
+            "Hold",
+            user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        add_item(hl, asset, user)
+        assert check_asset_held(asset)
+
+
+class TestHoldListViews:
+    """H3: Hold list view tests."""
+
+    def test_holdlist_list_view(self, admin_client, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        response = admin_client.get(reverse("assets:holdlist_list"))
+        assert response.status_code == 200
+
+    def test_holdlist_create_view(self, admin_client, admin_user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        response = admin_client.post(
+            reverse("assets:holdlist_create"),
+            {
+                "name": "View Test",
+                "status": status.pk,
+                "start_date": "2026-03-01",
+                "end_date": "2026-03-15",
+            },
+        )
+        assert response.status_code == 302
+
+    def test_holdlist_detail_view(self, admin_client, admin_user, db):
+        from django.core.management import call_command
+
+        call_command("seed_holdlist_statuses")
+        from assets.models import HoldList, HoldListStatus
+
+        status = HoldListStatus.objects.get(is_default=True)
+        hl = HoldList.objects.create(
+            name="Detail Test",
+            status=status,
+            created_by=admin_user,
+            start_date="2026-03-01",
+            end_date="2026-03-15",
+        )
+        response = admin_client.get(
+            reverse("assets:holdlist_detail", args=[hl.pk])
+        )
+        assert response.status_code == 200
+
+    def test_project_crud(self, admin_client, db):
+        response = admin_client.get(reverse("assets:project_list"))
+        assert response.status_code == 200
+        response = admin_client.post(
+            reverse("assets:project_create"),
+            {"name": "Test Project", "description": "Test"},
+        )
+        assert response.status_code == 302
