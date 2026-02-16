@@ -36,6 +36,9 @@ openpyxl
 # AI (optional at runtime, required at build)
 anthropic
 
+# Colour
+coloraide
+
 # Dev/build tools
 pip-tools
 black

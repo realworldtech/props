@@ -28,6 +28,13 @@
             }
         })();
     </script>
+    {% if brand_css_properties %}
+    <style>
+      :root {
+        {{ brand_css_properties|safe }}
+      }
+    </style>
+    {% endif %}
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     {% block extra_head %}{% endblock %}

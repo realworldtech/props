@@ -1078,6 +1078,31 @@ class SiteBranding(models.Model):
         help_text="Favicon (PNG or ICO, max 100 KB)",
         validators=[validate_favicon_file_size],
     )
+    primary_color = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="Primary brand colour (hex, e.g. #4F46E5)",
+    )
+    secondary_color = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="Secondary brand colour (hex)",
+    )
+    accent_color = models.CharField(
+        max_length=7,
+        blank=True,
+        help_text="Accent brand colour (hex)",
+    )
+    color_mode = models.CharField(
+        max_length=5,
+        choices=[
+            ("light", "Light"),
+            ("dark", "Dark"),
+            ("auto", "Auto"),
+        ],
+        default="auto",
+        help_text="Default colour mode for the site",
+    )
 
     class Meta:
         verbose_name = "Site Branding"

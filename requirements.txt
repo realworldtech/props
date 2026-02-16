@@ -52,6 +52,8 @@ click-plugins==1.1.1.2
     # via celery
 click-repl==0.3.0
     # via celery
+coloraide==8.3
+    # via -r requirements.in
 coverage==7.13.3
     # via -r requirements.in
 cron-descriptor==2.0.6

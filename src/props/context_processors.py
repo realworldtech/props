@@ -17,12 +17,33 @@ def site_settings(request):
     if branding and branding.logo_light:
         logo_url = branding.logo_light.url
 
+    # Generate brand CSS custom properties
+    brand_css = ""
+    primary = settings.BRAND_PRIMARY_COLOR
+    secondary = ""
+    accent = ""
+    if branding:
+        if branding.primary_color:
+            primary = branding.primary_color
+        secondary = branding.secondary_color or ""
+        accent = branding.accent_color or ""
+
+    if primary:
+        from props.colors import generate_brand_css_properties
+
+        brand_css = generate_brand_css_properties(
+            primary_hex=primary,
+            secondary_hex=secondary,
+            accent_hex=accent,
+        )
+
     return {
         "SITE_NAME": settings.SITE_NAME,
         "SITE_SHORT_NAME": settings.SITE_SHORT_NAME,
         "BARCODE_PREFIX": settings.BARCODE_PREFIX,
         "AI_ANALYSIS_ENABLED": is_ai_analysis_enabled(),
-        "brand_primary_color": settings.BRAND_PRIMARY_COLOR,
+        "brand_primary_color": primary,
+        "brand_css_properties": brand_css,
         "logo_url": logo_url,
     }
 
