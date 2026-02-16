@@ -2,7 +2,6 @@
 
 import pytest
 
-import django
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -19,18 +18,14 @@ settings.STORAGES["staticfiles"] = {
 settings.CELERY_TASK_ALWAYS_EAGER = True
 settings.CELERY_TASK_EAGER_PROPAGATES = True
 
-from assets.models import (
+from assets.models import (  # noqa: E402
     Asset,
-    AssetImage,
     AssetKit,
     AssetSerial,
     Category,
     Department,
     Location,
-    NFCTag,
-    StocktakeSession,
     Tag,
-    Transaction,
 )
 
 User = get_user_model()

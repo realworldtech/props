@@ -25,6 +25,7 @@ from .forms import (
 from .models import (
     Asset,
     AssetImage,
+    AssetKit,
     AssetSerial,
     Category,
     Department,
@@ -3186,3 +3187,76 @@ def project_edit(request, pk):
             "editing": True,
         },
     )
+
+
+# --- Kit Management ---
+
+
+@login_required
+def kit_contents(request, pk):
+    """View kit contents (components)."""
+    asset = get_object_or_404(Asset, pk=pk)
+    if not asset.is_kit:
+        messages.error(request, "This asset is not a kit.")
+        return redirect("assets:asset_detail", pk=pk)
+    components = AssetKit.objects.filter(kit=asset).select_related(
+        "component", "serial"
+    )
+    role = get_user_role(request.user)
+    can_manage = role in ("system_admin", "department_manager")
+    return render(
+        request,
+        "assets/kit_contents.html",
+        {
+            "asset": asset,
+            "components": components,
+            "can_manage": can_manage,
+        },
+    )
+
+
+@login_required
+def kit_add_component(request, pk):
+    """Add a component to a kit."""
+    asset = get_object_or_404(Asset, pk=pk)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    if not asset.is_kit:
+        messages.error(request, "This asset is not a kit.")
+        return redirect("assets:asset_detail", pk=pk)
+
+    if request.method == "POST":
+        component_id = request.POST.get("component_id")
+        if component_id:
+            component = get_object_or_404(Asset, pk=component_id)
+            is_required = request.POST.get("is_required") == "1"
+            qty = int(request.POST.get("quantity", 1))
+            try:
+                ak = AssetKit(
+                    kit=asset,
+                    component=component,
+                    is_required=is_required,
+                    quantity=qty,
+                )
+                ak.full_clean()
+                ak.save()
+                messages.success(
+                    request,
+                    f"Added '{component.name}' to kit.",
+                )
+            except Exception as e:
+                messages.error(request, str(e))
+    return redirect("assets:kit_contents", pk=pk)
+
+
+@login_required
+def kit_remove_component(request, pk, component_pk):
+    """Remove a component from a kit."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    if request.method == "POST":
+        AssetKit.objects.filter(kit_id=pk, pk=component_pk).delete()
+        messages.success(request, "Component removed from kit.")
+    return redirect("assets:kit_contents", pk=pk)

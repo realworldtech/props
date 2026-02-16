@@ -4894,3 +4894,269 @@ class TestHoldListViews:
             {"name": "Test Project", "description": "Test"},
         )
         assert response.status_code == 302
+
+
+# ============================================================
+# KIT CHECKOUT/CHECK-IN CASCADE TESTS (K1)
+# ============================================================
+
+
+class TestKitCheckoutV7:
+    """V7: Kit checkout cascade."""
+
+    def test_kit_checkout_creates_transactions(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkout
+
+        txns = kit_checkout(kit, user, admin_user)
+        assert len(txns) >= 1
+        comp.refresh_from_db()
+        assert comp.checked_out_to == user
+
+    def test_kit_checkout_blocks_unavailable_required(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+            checked_out_to=user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkout
+
+        with pytest.raises(ValidationError, match="unavailable"):
+            kit_checkout(kit, user, admin_user)
+
+    def test_kit_checkin_returns_all_components(
+        self, user, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        from assets.services.kits import kit_checkin, kit_checkout
+
+        kit_checkout(kit, user, admin_user)
+        txns = kit_checkin(kit, admin_user, to_location=location)
+        assert len(txns) >= 1
+        comp.refresh_from_db()
+        assert comp.checked_out_to is None
+
+    def test_serial_kit_restriction(self, admin_user, category, location):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=True,
+            created_by=admin_user,
+        )
+        serial = AssetSerial.objects.create(
+            asset=comp, serial_number="S1", status="active"
+        )
+        AssetKit.objects.create(
+            kit=kit,
+            component=comp,
+            serial=serial,
+            is_required=True,
+        )
+        from assets.services.kits import (
+            check_serial_kit_restriction,
+        )
+
+        blocked, reason = check_serial_kit_restriction(serial)
+        assert blocked
+        assert "kit" in reason.lower()
+
+    def test_kit_checkout_not_a_kit_raises(
+        self, user, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        from assets.services.kits import kit_checkout
+
+        with pytest.raises(ValidationError, match="not a kit"):
+            kit_checkout(not_kit, user, admin_user)
+
+    def test_kit_checkin_not_a_kit_raises(
+        self, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        from assets.services.kits import kit_checkin
+
+        with pytest.raises(ValidationError, match="not a kit"):
+            kit_checkin(not_kit, admin_user)
+
+
+# ============================================================
+# KIT MANAGEMENT VIEW TESTS (K5)
+# ============================================================
+
+
+class TestKitViewsV8:
+    """V8: Kit management views."""
+
+    def test_kit_contents_view(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.get(
+            reverse("assets:kit_contents", args=[kit.pk])
+        )
+        assert response.status_code == 200
+
+    def test_kit_contents_non_kit_redirects(
+        self, admin_client, admin_user, category, location
+    ):
+        not_kit = Asset.objects.create(
+            name="Not Kit",
+            category=category,
+            current_location=location,
+            is_kit=False,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.get(
+            reverse("assets:kit_contents", args=[not_kit.pk])
+        )
+        assert response.status_code == 302
+
+    def test_kit_add_component(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = admin_client.post(
+            reverse("assets:kit_add_component", args=[kit.pk]),
+            {
+                "component_id": comp.pk,
+                "quantity": "1",
+                "is_required": "1",
+            },
+        )
+        assert response.status_code == 302
+        assert AssetKit.objects.filter(kit=kit, component=comp).exists()
+
+    def test_kit_remove_component(
+        self, admin_client, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        comp = Asset.objects.create(
+            name="Comp",
+            category=category,
+            current_location=location,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        ak = AssetKit.objects.create(kit=kit, component=comp, is_required=True)
+        response = admin_client.post(
+            reverse(
+                "assets:kit_remove_component",
+                args=[kit.pk, ak.pk],
+            ),
+        )
+        assert response.status_code == 302
+        assert not AssetKit.objects.filter(pk=ak.pk).exists()
+
+    def test_kit_remove_component_permission(
+        self, client_logged_in, admin_user, category, location
+    ):
+        kit = Asset.objects.create(
+            name="Kit",
+            category=category,
+            current_location=location,
+            is_kit=True,
+            is_serialised=False,
+            created_by=admin_user,
+        )
+        response = client_logged_in.post(
+            reverse("assets:kit_remove_component", args=[kit.pk, 1])
+        )
+        assert response.status_code == 403

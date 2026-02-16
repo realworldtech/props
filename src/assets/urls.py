@@ -267,4 +267,20 @@ urlpatterns = [
     path("projects/", views.project_list, name="project_list"),
     path("projects/create/", views.project_create, name="project_create"),
     path("projects/<int:pk>/edit/", views.project_edit, name="project_edit"),
+    # Kit management
+    path(
+        "assets/<int:pk>/kit/",
+        views.kit_contents,
+        name="kit_contents",
+    ),
+    path(
+        "assets/<int:pk>/kit/add/",
+        views.kit_add_component,
+        name="kit_add_component",
+    ),
+    path(
+        "assets/<int:pk>/kit/remove/<int:component_pk>/",
+        views.kit_remove_component,
+        name="kit_remove_component",
+    ),
 ]
