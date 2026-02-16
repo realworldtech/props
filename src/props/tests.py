@@ -190,6 +190,25 @@ class TestSiteBranding:
             branding.clean()
 
 
+class TestHealthEndpoint:
+    """C1: Health check endpoint at /health/."""
+
+    def test_health_returns_200(self, client, db):
+        response = client.get("/health/")
+        assert response.status_code == 200
+
+    def test_health_returns_json(self, client, db):
+        response = client.get("/health/")
+        assert response["Content-Type"] == "application/json"
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["db"] is True
+
+    def test_health_no_auth_required(self, client, db):
+        response = client.get("/health/")
+        assert response.status_code == 200
+
+
 class TestSendBrandedEmail:
     """Test the send_branded_email utility."""
 

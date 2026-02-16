@@ -5,9 +5,10 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 
-from props.views import media_proxy
+from props.views import health_check, media_proxy
 
 urlpatterns = [
+    path("health/", health_check, name="health_check"),
     path("admin/", admin.site.urls),
     path("accounts/", include("accounts.urls")),
     path("", include("assets.urls")),

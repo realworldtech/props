@@ -3,6 +3,8 @@
 import json
 import re
 
+from django_ratelimit.decorators import ratelimit
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -691,6 +693,7 @@ def scan_lookup(request):
 
 
 @login_required
+@ratelimit(key="user", rate="60/m", method="GET", block=True)
 def asset_by_identifier(request, identifier):
     """Unified lookup endpoint: /a/{identifier}/."""
     # 1. Barcode match
