@@ -196,7 +196,7 @@ class Asset(models.Model):
     }
 
     is_serialised = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Track individual serial units for this asset",
     )
     is_kit = models.BooleanField(

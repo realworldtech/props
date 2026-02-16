@@ -1317,6 +1317,7 @@ class TestEdgeCaseMerge:
             category=category,
             current_location=location,
             status="active",
+            is_serialised=False,
             created_by=user,
         )
         dup.save()
@@ -2737,23 +2738,34 @@ class TestLostStolenStatuses:
 
         validate_transition(asset, "lost")  # Should not raise
 
-    def test_state_service_blocks_checked_out_to_lost(self, asset, admin_user):
+    def test_state_service_allows_checked_out_to_lost(self, asset, admin_user):
+        """V1: lost/stolen MUST be allowed on checked-out assets."""
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
         asset.save(update_fields=["checked_out_to"])
-        with pytest.raises(ValidationError):
-            validate_transition(asset, "lost")
+        validate_transition(asset, "lost")  # Should not raise
 
-    def test_state_service_blocks_checked_out_to_stolen(
+    def test_state_service_allows_checked_out_to_stolen(
         self, asset, admin_user
     ):
+        """V1: lost/stolen MUST be allowed on checked-out assets."""
         from assets.services.state import validate_transition
 
         asset.checked_out_to = admin_user
         asset.save(update_fields=["checked_out_to"])
-        with pytest.raises(ValidationError):
-            validate_transition(asset, "stolen")
+        validate_transition(asset, "stolen")  # Should not raise
+
+    def test_state_service_still_blocks_checked_out_to_retired(
+        self, asset, admin_user
+    ):
+        """V1: retired/disposed still blocked on checked-out."""
+        from assets.services.state import validate_transition
+
+        asset.checked_out_to = admin_user
+        asset.save(update_fields=["checked_out_to"])
+        with pytest.raises(ValidationError, match="Check it in"):
+            validate_transition(asset, "retired")
 
 
 # ============================================================
@@ -3169,8 +3181,17 @@ class TestAssetImageAdmin:
 class TestAssetNewFields:
     """Test is_serialised and is_kit defaults on Asset."""
 
-    def test_is_serialised_default_false(self, asset):
-        assert asset.is_serialised is False
+    def test_is_serialised_default_true(self, category, location, user):
+        """V3: new assets default to is_serialised=True."""
+        a = Asset(
+            name="Default Check",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        a.save()
+        assert a.is_serialised is True
 
     def test_is_kit_default_false(self, asset):
         assert asset.is_kit is False

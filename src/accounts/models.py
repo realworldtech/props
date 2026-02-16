@@ -24,7 +24,7 @@ class CustomUser(AbstractUser):
         default="",
         help_text="External organisation (e.g., 'NUCMS')",
     )
-    email = models.EmailField("email address", blank=False)
+    email = models.EmailField("email address", blank=False, unique=True)
     email_verified = models.BooleanField(
         default=False,
         help_text="Set to True when user clicks email verification link",

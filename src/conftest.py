@@ -159,6 +159,7 @@ def asset(category, location, user):
         category=category,
         current_location=location,
         status="active",
+        is_serialised=False,
         created_by=user,
     )
     a.save()
@@ -170,6 +171,7 @@ def draft_asset(user):
     a = Asset(
         name="Draft Item",
         status="draft",
+        is_serialised=False,
         created_by=user,
     )
     a.save()

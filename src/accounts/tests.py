@@ -226,6 +226,26 @@ class TestCustomUser:
         # email field has blank=False
         assert User._meta.get_field("email").blank is False
 
+    def test_email_is_unique(self, db):
+        """V2: email field must have unique=True."""
+        assert User._meta.get_field("email").unique is True
+
+    def test_duplicate_email_raises_integrity_error(self, db):
+        """V2: creating two users with same email raises error."""
+        from django.db import IntegrityError
+
+        User.objects.create_user(
+            username="user1",
+            email="dupe@example.com",
+            password="pass123!",
+        )
+        with pytest.raises(IntegrityError):
+            User.objects.create_user(
+                username="user2",
+                email="dupe@example.com",
+                password="pass123!",
+            )
+
 
 class TestLoginView:
     """Tests for the login view."""

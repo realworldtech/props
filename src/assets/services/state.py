@@ -24,10 +24,10 @@ def validate_transition(asset: Asset, new_status: str) -> None:
             f"{', '.join(allowed) or 'none'}."
         )
 
-    # §7.5.1: Cannot retire/dispose/lose/steal a checked-out asset
-    if new_status in ("retired", "disposed", "lost", "stolen") and (
-        asset.is_checked_out
-    ):
+    # Cannot retire/dispose a checked-out asset (must check in first).
+    # Lost/stolen ARE allowed on checked-out assets since the asset
+    # is out of physical control.
+    if new_status in ("retired", "disposed") and asset.is_checked_out:
         raise ValidationError(
             f"Cannot change status to '{new_status}' while the asset "
             f"is checked out. Check it in first."
