@@ -260,6 +260,7 @@ services:
   # Traefik reverse proxy - prod only
   traefik:
     image: traefik:v3.6
+    restart: unless-stopped
     profiles: ["prod"]
     ports:
       - "80:80"

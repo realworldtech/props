@@ -606,6 +606,7 @@ def scan_view(request):
 
 
 @login_required
+@ratelimit(key="user", rate="60/m", method="GET", block=True)
 def scan_lookup(request):
     """Look up an asset by scanned code. Returns JSON."""
     code = request.GET.get("code", "").strip()
