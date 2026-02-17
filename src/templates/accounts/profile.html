@@ -64,6 +64,20 @@
         </dl>
     </div>
 
+    {% if managed_departments %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <h2 class="font-display text-xl font-semibold mb-4">Department Memberships</h2>
+        <div class="space-y-2">
+            {% for dept in managed_departments %}
+            <div class="flex items-center gap-3 p-3 bg-stage-700/50 rounded-lg">
+                <span class="text-cream">{{ dept.name }}</span>
+                <span class="text-xs text-cream/40">Manager</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if borrowed_assets %}
     <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
         <div class="flex items-center justify-between mb-4">

@@ -23,64 +23,98 @@
     </div>
 
     {% if page_obj.object_list %}
-    <div class="space-y-3">
-        {% for asset in page_obj %}
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4 card-hover">
-            <div class="flex items-start gap-4">
-                {% if asset.primary_image %}
-                <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" alt="{{ asset.name }}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
-                {% else %}
-                <div class="w-16 h-16 rounded-lg bg-stage-700 flex items-center justify-center flex-shrink-0">
-                    <svg class="w-6 h-6 text-cream/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                </div>
-                {% endif %}
+    <form method="post" action="{% url 'assets:drafts_bulk_action' %}" id="bulk-action-form">
+        {% csrf_token %}
+        <!-- Bulk action bar -->
+        <div class="flex items-center gap-3 bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-3 mb-3">
+            <label class="flex items-center gap-2 text-sm text-cream/70 cursor-pointer">
+                <input type="checkbox" id="select-all" class="rounded border-white/20 text-spotlight-500 focus:ring-spotlight-500">
+                <span>Select All</span>
+            </label>
+            <select name="action" class="form-input rounded-lg px-3 py-1.5 text-cream text-sm bg-stage-700 border-white/10">
+                <option value="">Bulk Actions...</option>
+                <option value="activate">Activate Selected</option>
+                <option value="delete">Dispose Selected</option>
+            </select>
+            <button type="submit" class="px-4 py-1.5 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
+                Apply
+            </button>
+        </div>
 
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-start justify-between gap-2">
-                        <div>
-                            <h3 class="font-medium text-cream truncate">
-                                <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
-                            </h3>
-                            <p class="text-sm text-cream/40 font-mono">{{ asset.barcode }}</p>
-                        </div>
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-spotlight-500/10 text-spotlight-400 border border-spotlight-500/20 flex-shrink-0">
-                            Draft
-                        </span>
-                        {% if asset.images.all %}
-                            {% for img in asset.images.all %}
-                                {% if img.ai_processing_status == 'completed' %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 flex-shrink-0" title="AI suggestions available">
-                                    AI
-                                </span>
-                                {% endif %}
-                            {% endfor %}
-                        {% endif %}
+        <div class="space-y-3">
+            {% for asset in page_obj %}
+            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4 card-hover">
+                <div class="flex items-start gap-4">
+                    <div class="flex items-center pt-1 flex-shrink-0">
+                        <input type="checkbox" name="selected" value="{{ asset.pk }}" class="bulk-checkbox rounded border-white/20 text-spotlight-500 focus:ring-spotlight-500">
                     </div>
-
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-cream/40">
-                        {% if asset.created_by %}
-                        <span>By {{ asset.created_by.get_display_name }}</span>
-                        {% endif %}
-                        <span>{{ asset.created_at|timesince }} ago</span>
-                        {% if asset.notes %}
-                        <span class="truncate max-w-[200px]">{{ asset.notes }}</span>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <a href="{% url 'assets:asset_edit' asset.pk %}" class="p-2 text-cream/40 hover:text-cream hover:bg-white/5 rounded-lg transition-colors" title="Edit">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    {% if asset.primary_image %}
+                    <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" alt="{{ asset.name }}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                    {% else %}
+                    <div class="w-16 h-16 rounded-lg bg-stage-700 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-cream/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                         </svg>
-                    </a>
+                    </div>
+                    {% endif %}
+
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <h3 class="font-medium text-cream truncate">
+                                    <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                                </h3>
+                                <p class="text-sm text-cream/40 font-mono">{{ asset.barcode }}</p>
+                            </div>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-spotlight-500/10 text-spotlight-400 border border-spotlight-500/20 flex-shrink-0">
+                                Draft
+                            </span>
+                            {% if asset.images.all %}
+                                {% for img in asset.images.all %}
+                                    {% if img.ai_processing_status == 'completed' %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 flex-shrink-0" title="AI suggestions available">
+                                        AI
+                                    </span>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-cream/40">
+                            {% if asset.created_by %}
+                            <span>By {{ asset.created_by.get_display_name }}</span>
+                            {% endif %}
+                            <span>{{ asset.created_at|timesince }} ago</span>
+                            {% if asset.notes %}
+                            <span class="truncate max-w-[200px]">{{ asset.notes }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <a href="{% url 'assets:asset_edit' asset.pk %}" class="p-2 text-cream/40 hover:text-cream hover:bg-white/5 rounded-lg transition-colors" title="Edit">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                        </a>
+                    </div>
                 </div>
             </div>
+            {% endfor %}
         </div>
-        {% endfor %}
-    </div>
+    </form>
+
+    <script>
+    (function() {
+        var selectAll = document.getElementById('select-all');
+        var checkboxes = document.querySelectorAll('.bulk-checkbox');
+        if (selectAll) {
+            selectAll.addEventListener('change', function() {
+                checkboxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+            });
+        }
+    })();
+    </script>
 
     <!-- Pagination -->
     {% if page_obj.has_other_pages %}

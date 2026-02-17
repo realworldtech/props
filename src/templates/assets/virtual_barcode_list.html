@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Virtual Barcodes - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="font-display text-3xl font-bold">Unassigned Virtual Barcodes</h1>
+            <p class="text-cream/50 mt-1">{{ virtual_barcodes|length }} unassigned barcode{{ virtual_barcodes|length|pluralize }}</p>
+        </div>
+        <a href="{% url 'assets:barcode_pregenerate' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Pre-generate More
+        </a>
+    </div>
+
+    {% if virtual_barcodes %}
+    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-white/5">
+                    <th class="text-left px-4 py-3 text-cream/50 font-medium">Barcode</th>
+                    <th class="text-left px-4 py-3 text-cream/50 font-medium">Created</th>
+                    <th class="text-left px-4 py-3 text-cream/50 font-medium">Created By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vb in virtual_barcodes %}
+                <tr class="border-b border-white/5 last:border-b-0">
+                    <td class="px-4 py-3 font-mono text-cream">{{ vb.barcode }}</td>
+                    <td class="px-4 py-3 text-cream/70">{{ vb.created_at|date:"d M Y H:i" }}</td>
+                    <td class="px-4 py-3 text-cream/70">{{ vb.created_by|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-16">
+        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+        </svg>
+        <h3 class="text-lg font-medium text-cream/70">No unassigned virtual barcodes</h3>
+        <p class="text-cream/40 text-sm mt-1">All pre-generated barcodes have been assigned to assets.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

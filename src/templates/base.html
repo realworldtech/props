@@ -12,9 +12,11 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <script>
+        // V618: System-wide color_mode default from SiteBranding
+        var siteColorMode = '{{ color_mode|default:"system" }}';
         // Apply theme before render to prevent flash
         (function() {
-            var pref = localStorage.getItem('props-theme') || 'system';
+            var pref = localStorage.getItem('props-theme') || siteColorMode;
             var isDark;
             if (pref === 'system') {
                 isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -33,6 +35,20 @@
       :root {
         {{ brand_css_properties|safe }}
       }
+      /* Brand utility classes mapped to CSS custom properties */
+      .bg-brand-primary { background-color: var(--brand-primary-500); }
+      .bg-brand-primary-light { background-color: var(--brand-primary-200); }
+      .bg-brand-primary-dark { background-color: var(--brand-primary-700); }
+      .text-brand-primary { color: var(--brand-primary-500); }
+      .text-brand-primary-light { color: var(--brand-primary-300); }
+      .text-brand-primary-dark { color: var(--brand-primary-700); }
+      .border-brand-primary { border-color: var(--brand-primary-500); }
+      .bg-brand-secondary { background-color: var(--brand-secondary-500); }
+      .text-brand-secondary { color: var(--brand-secondary-500); }
+      .bg-brand-accent { background-color: var(--brand-accent-500); }
+      .text-brand-accent { color: var(--brand-accent-500); }
+      .hover\:bg-brand-primary:hover { background-color: var(--brand-primary-400); }
+      .hover\:bg-brand-primary-dark:hover { background-color: var(--brand-primary-600); }
     </style>
     {% endif %}
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
@@ -42,7 +58,7 @@
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans antialiased" hx-indicator="#htmx-indicator">
     <div class="fixed inset-0 texture-overlay"></div>
     <div class="fixed inset-0 spotlight-bg pointer-events-none"></div>
-    <div id="htmx-indicator" class="htmx-indicator fixed top-0 left-0 right-0 z-[100] h-1 bg-spotlight-500" style="display: none;"></div>
+    <div id="htmx-indicator" class="htmx-indicator fixed top-0 left-0 right-0 z-[100] h-1" style="display: none; background-color: var(--brand-primary-500, #f59e0b);"></div>
 
     <div class="relative z-10 min-h-screen flex flex-col">
         {% if user.is_authenticated %}
@@ -50,7 +66,7 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6">
                 <div class="flex justify-between items-center h-16">
                     <a href="{% url 'assets:dashboard' %}" class="flex items-center gap-3 group">
-                        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center shadow-lg group-hover:animate-glow transition-all">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:animate-glow transition-all" style="background: linear-gradient(to bottom right, var(--brand-primary-500, #f59e0b), var(--brand-primary-600, #d97706))">
                             <svg class="w-5 h-5 text-stage-900" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
@@ -106,7 +122,7 @@
 
                     <div class="flex items-center gap-3">
                         {% if can_capture %}
-                        <a href="{% url 'assets:quick_capture' %}" class="hidden sm:flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-medium btn-press transition-all">
+                        <a href="{% url 'assets:quick_capture' %}" class="hidden sm:flex items-center gap-2 bg-brand-primary hover:bg-brand-primary text-stage-900 px-4 py-2 rounded-lg text-sm font-medium btn-press transition-all" style="background-color: var(--brand-primary-500, #f59e0b)">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>

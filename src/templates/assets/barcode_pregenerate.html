@@ -16,7 +16,18 @@
                 <label for="quantity" class="block text-sm font-medium text-cream/70 mb-1.5">Number of labels</label>
                 <input type="number" name="quantity" id="quantity" value="10" min="1" max="100"
                     class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
-                <p class="text-cream/40 text-xs mt-1">Max 100 per batch. Each label creates a draft asset.</p>
+                <p class="text-cream/40 text-xs mt-1">Max 100 per batch. Barcodes are generated on demand for label printing.</p>
+            </div>
+            <div>
+                <label for="department" class="block text-sm font-medium text-cream/70 mb-1.5">Department (optional)</label>
+                <select name="department" id="department"
+                    class="form-select w-full rounded-lg px-4 py-2.5 text-cream">
+                    <option value="">Use global prefix</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.pk }}">{{ dept.name }}{% if dept.barcode_prefix %} ({{ dept.barcode_prefix }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-cream/40 text-xs mt-1">If selected, uses the department's barcode prefix instead of the global default.</p>
             </div>
             <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 Generate Labels

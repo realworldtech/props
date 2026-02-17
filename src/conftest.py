@@ -3,7 +3,6 @@
 import pytest
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
 # Use local filesystem storage for tests (avoids S3 credential errors)
@@ -18,18 +17,23 @@ settings.STORAGES["staticfiles"] = {
 settings.CELERY_TASK_ALWAYS_EAGER = True
 settings.CELERY_TASK_EAGER_PROPAGATES = True
 
-from assets.models import (  # noqa: E402
-    Asset,
-    AssetKit,
-    AssetSerial,
-    Category,
-    Department,
-    Location,
-    Tag,
+# Use in-memory cache for tests (avoids Redis connection errors)
+settings.CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
+from assets.factories import (  # noqa: E402
+    AssetFactory,
+    AssetSerialFactory,
+    CategoryFactory,
+    DepartmentFactory,
+    LocationFactory,
+    TagFactory,
+    UserFactory,
 )
-
-User = get_user_model()
-
+from assets.models import AssetKit  # noqa: E402
 
 # --- User fixtures ---
 
@@ -42,7 +46,7 @@ def password():
 @pytest.fixture
 def user(db, password):
     group, _ = Group.objects.get_or_create(name="Member")
-    u = User.objects.create_user(
+    u = UserFactory(
         username="testuser",
         email="test@example.com",
         password=password,
@@ -54,20 +58,24 @@ def user(db, password):
 
 @pytest.fixture
 def admin_user(db, password):
-    return User.objects.create_superuser(
+    u = UserFactory(
         username="admin",
         email="admin@example.com",
         password=password,
+        is_staff=True,
+        is_superuser=True,
     )
+    return u
 
 
 @pytest.fixture
 def member_user(db, password):
     group, _ = Group.objects.get_or_create(name="Member")
-    u = User.objects.create_user(
+    u = UserFactory(
         username="member",
         email="member@example.com",
         password=password,
+        display_name="",
     )
     u.groups.add(group)
     return u
@@ -76,10 +84,11 @@ def member_user(db, password):
 @pytest.fixture
 def viewer_user(db, password):
     group, _ = Group.objects.get_or_create(name="Viewer")
-    u = User.objects.create_user(
+    u = UserFactory(
         username="viewer",
         email="viewer@example.com",
         password=password,
+        display_name="",
     )
     u.groups.add(group)
     return u
@@ -112,7 +121,7 @@ def viewer_client(client, viewer_user, password):
 @pytest.fixture
 def dept_manager_user(db, password, department):
     group, _ = Group.objects.get_or_create(name="Department Manager")
-    u = User.objects.create_user(
+    u = UserFactory(
         username="deptmanager",
         email="deptmanager@example.com",
         password=password,
@@ -134,7 +143,7 @@ def dept_manager_client(client, dept_manager_user, password):
 
 @pytest.fixture
 def department(db):
-    return Department.objects.create(
+    return DepartmentFactory(
         name="Props",
         description="Props department",
     )
@@ -142,12 +151,12 @@ def department(db):
 
 @pytest.fixture
 def tag(db):
-    return Tag.objects.create(name="fragile", color="red")
+    return TagFactory(name="fragile", color="red")
 
 
 @pytest.fixture
 def category(department):
-    return Category.objects.create(
+    return CategoryFactory(
         name="Hand Props",
         description="Small hand-held items",
         department=department,
@@ -156,7 +165,7 @@ def category(department):
 
 @pytest.fixture
 def location(db):
-    return Location.objects.create(
+    return LocationFactory(
         name="Main Store",
         address="123 Theatre St",
     )
@@ -164,7 +173,7 @@ def location(db):
 
 @pytest.fixture
 def child_location(location):
-    return Location.objects.create(
+    return LocationFactory(
         name="Shelf A",
         parent=location,
     )
@@ -172,7 +181,7 @@ def child_location(location):
 
 @pytest.fixture
 def asset(category, location, user):
-    a = Asset(
+    return AssetFactory(
         name="Test Prop",
         description="A test prop for testing",
         category=category,
@@ -181,25 +190,23 @@ def asset(category, location, user):
         is_serialised=False,
         created_by=user,
     )
-    a.save()
-    return a
 
 
 @pytest.fixture
 def draft_asset(user):
-    a = Asset(
+    return AssetFactory(
         name="Draft Item",
         status="draft",
         is_serialised=False,
         created_by=user,
+        category=None,
+        current_location=None,
     )
-    a.save()
-    return a
 
 
 @pytest.fixture
 def second_user(db, password):
-    return User.objects.create_user(
+    return UserFactory(
         username="borrower",
         email="borrower@example.com",
         password=password,
@@ -212,7 +219,7 @@ def second_user(db, password):
 
 @pytest.fixture
 def serialised_asset(category, location, user):
-    a = Asset(
+    return AssetFactory(
         name="Wireless Mic Set",
         description="Set of wireless microphones",
         category=category,
@@ -221,13 +228,11 @@ def serialised_asset(category, location, user):
         is_serialised=True,
         created_by=user,
     )
-    a.save()
-    return a
 
 
 @pytest.fixture
 def non_serialised_asset(category, location, user):
-    a = Asset(
+    return AssetFactory(
         name="Cable Bundle",
         description="Pack of XLR cables",
         category=category,
@@ -237,13 +242,11 @@ def non_serialised_asset(category, location, user):
         quantity=10,
         created_by=user,
     )
-    a.save()
-    return a
 
 
 @pytest.fixture
 def asset_serial(serialised_asset, location):
-    return AssetSerial.objects.create(
+    return AssetSerialFactory(
         asset=serialised_asset,
         serial_number="001",
         barcode=f"{serialised_asset.barcode}-S001",
@@ -255,7 +258,7 @@ def asset_serial(serialised_asset, location):
 
 @pytest.fixture
 def kit_asset(category, location, user):
-    a = Asset(
+    return AssetFactory(
         name="Sound Kit",
         description="Complete sound kit",
         category=category,
@@ -264,8 +267,6 @@ def kit_asset(category, location, user):
         is_kit=True,
         created_by=user,
     )
-    a.save()
-    return a
 
 
 @pytest.fixture

@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    <p>Select the primary asset to keep. The other asset will be merged into it and disposed.</p>
+    <div style="margin: 1em 0;">
+    {% for asset in assets %}
+        <label style="display: block; margin: 0.5em 0;">
+            <input type="radio" name="primary" value="{{ asset.pk }}" required>
+            <strong>{{ asset.name }}</strong> ({{ asset.barcode }})
+        </label>
+    {% endfor %}
+    </div>
+    {% for asset in assets %}
+    <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="{{ action }}">
+    <input type="hidden" name="apply" value="1">
+    <button type="submit" class="button">Merge Assets</button>
+    <a href="{% url 'admin:assets_asset_changelist' %}" class="button cancel-link">Cancel</a>
+</form>
+{% endblock %}

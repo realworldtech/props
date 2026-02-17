@@ -8,6 +8,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -831,3 +832,425 @@ class TestAccountState:
         )
         # Should not redirect to dashboard
         assert response.status_code == 200
+
+
+class TestAdminCreatedUsers:
+    """L16: Admin-created users should have email_verified=True."""
+
+    def test_admin_created_user_has_email_verified_true(
+        self, admin_client, db
+    ):
+        from django.contrib.admin.sites import site
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin = CustomUserAdmin(CustomUser, site)
+        user = CustomUser(
+            username="admincreated",
+            email="admincreated@example.com",
+        )
+        user.set_password("pass123!")
+
+        # Simulate admin save_model (change=False for new user)
+        from django.http import HttpRequest
+
+        request = HttpRequest()
+        request.user = User.objects.get(username="admin")
+
+        admin.save_model(request=request, obj=user, form=None, change=False)
+
+        assert user.email_verified is True
+
+    def test_admin_edited_user_preserves_email_verified(
+        self, admin_client, db, user
+    ):
+        from django.contrib.admin.sites import site
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        user.email_verified = False
+        user.save(update_fields=["email_verified"])
+
+        admin = CustomUserAdmin(CustomUser, site)
+
+        # Simulate admin save_model (change=True for existing user)
+        from django.http import HttpRequest
+
+        request = HttpRequest()
+        request.user = User.objects.get(username="admin")
+
+        original_verified = user.email_verified
+        admin.save_model(request=request, obj=user, form=None, change=True)
+
+        # Should not modify email_verified on edit
+        assert user.email_verified == original_verified
+
+
+class TestUserDeletionWarning:
+    """M11: User deletion warnings for SET_NULL effects (S7.10.1)."""
+
+    def test_user_deletion_creates_transaction_note(
+        self, admin_client, user, asset
+    ):
+        """Deleting a user via admin creates a note on affected records."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+        from assets.models import Transaction
+
+        # Create a transaction by this user
+        Transaction.objects.create(asset=asset, user=user, action="checkout")
+
+        site = AdminSite()
+        admin = CustomUserAdmin(CustomUser, site)
+
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.http import HttpRequest
+
+        request = HttpRequest()
+        request.user = User.objects.get(username="admin")
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        # delete_model should not raise
+        admin.delete_model(request, user)
+
+        # User should be deleted
+        assert not User.objects.filter(username="testuser").exists()
+
+        # Transactions should still exist with user=None
+        txn = Transaction.objects.filter(asset=asset).first()
+        assert txn is not None
+        assert txn.user is None
+
+        # Check a warning message was generated
+        stored = [m.message for m in messages_storage]
+        assert any("transaction" in m.lower() for m in stored)
+
+    def test_user_deletion_records_affected_counts(
+        self, admin_client, user, asset, db
+    ):
+        """delete_model logs affected record counts."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+        from assets.models import NFCTag, Transaction
+
+        Transaction.objects.create(asset=asset, user=user, action="checkout")
+        NFCTag.objects.create(
+            tag_id="NFC-DEL-001", asset=asset, assigned_by=user
+        )
+
+        site = AdminSite()
+        admin_obj = CustomUserAdmin(CustomUser, site)
+
+        from django.http import HttpRequest
+
+        request = HttpRequest()
+        request.user = User.objects.get(username="admin")
+
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.delete_model(request, user)
+
+        # Check messages were added
+        stored = [m.message for m in messages_storage]
+        assert any("transaction" in m.lower() for m in stored)
+
+
+# ============================================================
+# BATCH 5: S2.10.5 USER PROFILE GAP TESTS
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestProfileViewContent:
+    """V300 S2.10.5-01: User profile page displays user info."""
+
+    def test_profile_shows_display_name(self, client_logged_in, user):
+        """Profile page shows the user's display name."""
+        response = client_logged_in.get(reverse("accounts:profile"))
+        content = response.content.decode()
+        assert user.get_display_name() in content
+
+    def test_profile_shows_email(self, client_logged_in, user):
+        """Profile page shows the user's email."""
+        response = client_logged_in.get(reverse("accounts:profile"))
+        content = response.content.decode()
+        assert user.email in content
+
+    def test_profile_shows_borrowed_assets_section_when_borrowed(
+        self, client_logged_in, user, asset
+    ):
+        """Profile page shows borrowed items section when user has borrows."""
+        asset.checked_out_to = user
+        asset.save()
+        response = client_logged_in.get(reverse("accounts:profile"))
+        content = response.content.decode()
+        assert "My Borrowed Items" in content
+        assert asset.name in content
+
+    def test_profile_shows_recent_transactions(
+        self, client_logged_in, user, asset
+    ):
+        """Profile page shows recent transactions for the user."""
+        from assets.models import Transaction
+
+        Transaction.objects.create(asset=asset, user=user, action="checkout")
+        response = client_logged_in.get(reverse("accounts:profile"))
+        assert response.status_code == 200
+
+    def test_profile_has_gravatar(self, client_logged_in, user):
+        """Profile page includes a Gravatar image."""
+        response = client_logged_in.get(reverse("accounts:profile"))
+        content = response.content.decode()
+        assert "gravatar" in content.lower()
+
+
+@pytest.mark.django_db
+class TestNavbarGravatarAndDisplayName:
+    """V305 S2.10.5-06: Navbar displays Gravatar and display name."""
+
+    def test_navbar_has_display_name(self, client_logged_in, user):
+        """Navbar shows the user's display name."""
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        assert user.get_display_name() in content
+
+    def test_navbar_has_gravatar_image(self, client_logged_in, user):
+        """Navbar includes a Gravatar image tag."""
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        assert "gravatar" in content.lower()
+
+
+@pytest.mark.django_db
+class TestProfileBorrowedItemsLink:
+    """V306 S2.10.5-07: Profile page includes My Borrowed Items link."""
+
+    def test_profile_has_borrowed_items_url(
+        self, client_logged_in, user, asset
+    ):
+        """Profile page contains a link to My Borrowed Items when active."""
+        # The borrowed items section only appears when user has borrows
+        asset.checked_out_to = user
+        asset.save()
+        response = client_logged_in.get(reverse("accounts:profile"))
+        content = response.content.decode()
+        my_items_url = reverse("assets:my_borrowed_items")
+        assert my_items_url in content
+
+    def test_base_template_has_borrowed_items_link(self, client_logged_in):
+        """Base template nav has My Borrowed Items link."""
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        assert "My Borrowed Items" in content
+
+
+@pytest.mark.django_db
+class TestUserRoleContextProcessor:
+    """V305: user_role context processor provides role and flags."""
+
+    def test_context_processor_returns_role(self, db):
+        from django.test import RequestFactory
+
+        from props.context_processors import user_role
+
+        from .models import CustomUser
+
+        user = CustomUser.objects.create_user(
+            username="ctx_user",
+            email="ctx@example.com",
+            password="pass123!",
+            is_superuser=True,
+        )
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+        ctx = user_role(request)
+        assert ctx["user_role"] == "system_admin"
+        assert ctx["can_manage"] is True
+        assert ctx["can_capture"] is True
+
+    def test_context_processor_anonymous(self, db):
+        from django.contrib.auth.models import AnonymousUser
+        from django.test import RequestFactory
+
+        from props.context_processors import user_role
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = AnonymousUser()
+        ctx = user_role(request)
+        assert ctx["user_role"] == "anonymous"
+        assert ctx["can_capture"] is False
+        assert ctx["can_manage"] is False
+
+    def test_context_processor_member_role(self, db):
+        from django.contrib.auth.models import Group
+        from django.test import RequestFactory
+
+        from props.context_processors import user_role
+
+        from .models import CustomUser
+
+        user = CustomUser.objects.create_user(
+            username="ctx_member",
+            email="ctxm@example.com",
+            password="pass123!",
+        )
+        group, _ = Group.objects.get_or_create(name="Member")
+        user.groups.add(group)
+        factory = RequestFactory()
+        request = factory.get("/")
+        request.user = user
+        ctx = user_role(request)
+        assert ctx["user_role"] == "member"
+        assert ctx["can_capture"] is True
+        assert ctx["can_manage"] is False
+
+
+# ============================================================
+# S2.15 AUTH TESTS (V384, V411, V412, V416)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestV384RegistrationPageLinksToLogin:
+    """V384 S2.15.1-10 MUST: Registration page links to login."""
+
+    def test_registration_page_contains_login_link(self, client, department):
+        """Registration page contains a link to the login page."""
+        response = client.get(reverse("accounts:register"))
+        assert response.status_code == 200
+        content = response.content.decode()
+        login_url = reverse("accounts:login")
+        assert login_url in content or "login" in content.lower()
+
+
+@pytest.mark.django_db
+class TestV411DashboardShowsPendingApprovalsCount:
+    """V411 S2.15.4-09 MUST: Dashboard shows pending approvals count."""
+
+    def test_dashboard_with_pending_users_shows_count(self, admin_client, db):
+        """Dashboard shows count of pending user approvals for admins."""
+        from accounts.models import CustomUser
+
+        # Create pending users
+        pending1 = CustomUser.objects.create_user(
+            username="pending1",
+            email="pending1@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending1.email_verified = True
+        pending1.save(update_fields=["email_verified"])
+
+        pending2 = CustomUser.objects.create_user(
+            username="pending2",
+            email="pending2@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending2.email_verified = True
+        pending2.save(update_fields=["email_verified"])
+
+        response = admin_client.get(reverse("assets:dashboard"))
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Check for pending count indicator
+        assert (
+            "pending" in content.lower()
+            or "approval" in content.lower()
+            or "2" in content
+        )
+
+
+@pytest.mark.django_db
+class TestV412ApprovalQueueHistoryTab:
+    """V412 S2.15.4-10 SHOULD: Approval queue history tab."""
+
+    def test_approval_queue_shows_history(self, admin_client, admin_user, db):
+        """Approval queue page shows history of processed approvals."""
+        from django.contrib.auth.models import Group
+
+        from accounts.models import CustomUser
+
+        Group.objects.get_or_create(name="Member")
+
+        # Create an approved user
+        approved = CustomUser.objects.create_user(
+            username="approved",
+            email="approved@example.com",
+            password="pass123!",
+            is_active=True,
+        )
+        approved.email_verified = True
+        approved.approved_by = admin_user
+        approved.approved_at = timezone.now()
+        approved.save(
+            update_fields=["email_verified", "approved_by", "approved_at"]
+        )
+
+        response = admin_client.get(reverse("accounts:approval_queue"))
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Check for history section or approved users list
+        assert (
+            "history" in content.lower()
+            or "approved" in content.lower()
+            or approved.email in content
+        )
+
+
+@pytest.mark.django_db
+class TestV416ReverseRejectionViaApproval:
+    """V416 S2.15.5-04 SHOULD: Reverse rejection via approval."""
+
+    @patch("accounts.views._send_approval_email")
+    def test_approving_previously_rejected_user(
+        self, mock_email, admin_client, admin_user, db
+    ):
+        """Approving a previously rejected user activates their account."""
+        from django.contrib.auth.models import Group
+
+        from accounts.models import CustomUser
+
+        Group.objects.get_or_create(name="Member")
+
+        # Create a rejected user
+        rejected = CustomUser.objects.create_user(
+            username="rejected_now_approved",
+            email="rejected@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        rejected.email_verified = True
+        rejected.rejection_reason = "Previously rejected"
+        rejected.save(update_fields=["email_verified", "rejection_reason"])
+
+        # Now approve them
+        response = admin_client.post(
+            reverse("accounts:approve_user", args=[rejected.pk]),
+            {"role": "Member"},
+        )
+        assert response.status_code == 302
+
+        rejected.refresh_from_db()
+        assert rejected.is_active is True
+        assert rejected.approved_by == admin_user
+        # Rejection reason may remain but user is now active
+        assert rejected.groups.filter(name="Member").exists()

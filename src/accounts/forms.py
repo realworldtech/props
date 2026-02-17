@@ -66,7 +66,7 @@ class RegistrationForm(UserCreationForm):
     phone_number = forms.CharField(max_length=20, required=False)
     requested_department = forms.ModelChoiceField(
         queryset=Department.objects.filter(is_active=True),
-        required=True,
+        required=False,
         empty_label="Select a department...",
     )
 

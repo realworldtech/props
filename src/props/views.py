@@ -19,6 +19,16 @@ def media_proxy(request, path):
     )
 
 
+def ratelimited_view(request, exception=None):
+    """V894: Return 429 with Retry-After header on rate limit."""
+    response = JsonResponse(
+        {"error": "Rate limit exceeded. Please try again later."},
+        status=429,
+    )
+    response["Retry-After"] = "60"
+    return response
+
+
 def health_check(request):
     """Health check endpoint for monitoring and load balancers."""
     from django.db import connection

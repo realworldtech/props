@@ -13,6 +13,7 @@ from django.contrib import admin, messages
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.template.response import TemplateResponse
 from django.urls import reverse_lazy
 from django.utils.html import format_html
 
@@ -23,6 +24,9 @@ from .models import (
     AssetSerial,
     Category,
     Department,
+    HoldList,
+    HoldListItem,
+    HoldListStatus,
     Location,
     NFCTag,
     SiteBranding,
@@ -108,6 +112,8 @@ class NFCTagInline(TabularInline):
 class DepartmentAdmin(ModelAdmin):
     list_display = [
         "name",
+        "description",
+        "get_managers",
         "display_active",
         "display_category_count",
         "display_asset_count",
@@ -115,6 +121,17 @@ class DepartmentAdmin(ModelAdmin):
     list_filter = ["is_active"]
     search_fields = ["name", "description"]
     filter_horizontal = ["managers"]
+
+    @display(description="Managers")
+    def get_managers(self, obj):
+        managers = obj.managers.all()
+        return (
+            ", ".join(
+                m.display_name or m.get_full_name() or m.username
+                for m in managers
+            )
+            or "-"
+        )
 
     @display(description="Active", boolean=True)
     def display_active(self, obj):
@@ -150,6 +167,20 @@ class CategoryAdmin(ModelAdmin):
     def display_asset_count(self, obj):
         return obj.assets.count()
 
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        category = self.get_object(request, object_id)
+        if category:
+            asset_count = category.assets.count()
+            if asset_count > 0:
+                messages.warning(
+                    request,
+                    f"Warning: This category contains {asset_count} "
+                    f"asset(s). Changing the department means these "
+                    f"assets will be moved and current department "
+                    f"managers will lose access.",
+                )
+        return super().change_view(request, object_id, form_url, extra_context)
+
 
 @admin.register(Location)
 class LocationAdmin(ModelAdmin):
@@ -167,6 +198,36 @@ class LocationAdmin(ModelAdmin):
     @display(description="Assets")
     def display_asset_count(self, obj):
         return obj.assets.count()
+
+
+class OnHoldListFilter(admin.SimpleListFilter):
+    """V598: Custom filter to show assets on active hold lists."""
+
+    title = "on hold list"
+    parameter_name = "on_hold_list"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("yes", "On active hold list"),
+            ("no", "Not on hold list"),
+        ]
+
+    def queryset(self, request, queryset):
+        active_statuses = HoldListStatus.objects.filter(
+            is_terminal=False
+        ).values_list("pk", flat=True)
+        held_ids = (
+            HoldListItem.objects.filter(
+                hold_list__status_id__in=active_statuses
+            )
+            .values_list("asset_id", flat=True)
+            .distinct()
+        )
+        if self.value() == "yes":
+            return queryset.filter(pk__in=held_ids)
+        if self.value() == "no":
+            return queryset.exclude(pk__in=held_ids)
+        return queryset
 
 
 @admin.register(Asset)
@@ -190,6 +251,7 @@ class AssetAdmin(ModelAdmin):
         ("tags", MultipleRelatedDropdownFilter),
         "is_serialised",
         "is_kit",
+        OnHoldListFilter,
     ]
     list_filter_submit = True
     search_fields = ["name", "barcode", "description"]
@@ -359,23 +421,73 @@ class AssetAdmin(ModelAdmin):
 
     mark_retired.short_description = "Mark as retired"
 
-    @action(description="Mark as lost")
+    @action(description="Mark as lost (requires notes)")
     def mark_lost(self, request, queryset):
-        updated = queryset.exclude(status__in=["disposed", "lost"]).update(
-            status="lost"
+        if "apply" in request.POST:
+            notes = request.POST.get("notes", "").strip()
+            if notes:
+                qs = queryset.exclude(status__in=["disposed", "lost"])
+                count = 0
+                for asset in qs:
+                    asset.status = "lost"
+                    if asset.notes:
+                        asset.notes += f"\n---\n{notes}"
+                    else:
+                        asset.notes = notes
+                    asset.save(update_fields=["status", "notes"])
+                    count += 1
+                messages.success(
+                    request,
+                    f"{count} asset(s) marked as lost.",
+                )
+                return None
+        return TemplateResponse(
+            request,
+            "admin/assets/mark_with_notes.html",
+            {
+                "assets": queryset,
+                "action": "mark_lost",
+                "target_status": "lost",
+                "opts": self.model._meta,
+                "title": "Mark assets as lost",
+            },
         )
-        messages.success(request, f"{updated} asset(s) marked as lost.")
 
-    mark_lost.short_description = "Mark as lost"
+    mark_lost.short_description = "Mark as lost (requires notes)"
 
-    @action(description="Mark as stolen")
+    @action(description="Mark as stolen (requires notes)")
     def mark_stolen(self, request, queryset):
-        updated = queryset.exclude(status__in=["disposed", "stolen"]).update(
-            status="stolen"
+        if "apply" in request.POST:
+            notes = request.POST.get("notes", "").strip()
+            if notes:
+                qs = queryset.exclude(status__in=["disposed", "stolen"])
+                count = 0
+                for asset in qs:
+                    asset.status = "stolen"
+                    if asset.notes:
+                        asset.notes += f"\n---\n{notes}"
+                    else:
+                        asset.notes = notes
+                    asset.save(update_fields=["status", "notes"])
+                    count += 1
+                messages.success(
+                    request,
+                    f"{count} asset(s) marked as stolen.",
+                )
+                return None
+        return TemplateResponse(
+            request,
+            "admin/assets/mark_with_notes.html",
+            {
+                "assets": queryset,
+                "action": "mark_stolen",
+                "target_status": "stolen",
+                "opts": self.model._meta,
+                "title": "Mark assets as stolen",
+            },
         )
-        messages.success(request, f"{updated} asset(s) marked as stolen.")
 
-    mark_stolen.short_description = "Mark as stolen"
+    mark_stolen.short_description = "Mark as stolen (requires notes)"
 
     @action(description="Print labels for selected")
     def print_labels(self, request, queryset):
@@ -403,8 +515,6 @@ class AssetAdmin(ModelAdmin):
                 )
                 return None
         locations = Location.objects.filter(is_active=True).order_by("name")
-        from django.template.response import TemplateResponse
-
         return TemplateResponse(
             request,
             "admin/assets/bulk_transfer.html",
@@ -432,8 +542,6 @@ class AssetAdmin(ModelAdmin):
                 )
                 return None
         categories = Category.objects.all().order_by("name")
-        from django.template.response import TemplateResponse
-
         return TemplateResponse(
             request,
             "admin/assets/bulk_change_category.html",
@@ -448,6 +556,124 @@ class AssetAdmin(ModelAdmin):
 
     bulk_change_category.short_description = "Change category..."
 
+    @action(description="Merge assets")
+    def merge_assets(self, request, queryset):
+        if queryset.count() != 2:
+            messages.error(
+                request,
+                "Please select exactly 2 assets to merge.",
+            )
+            return None
+        if "apply" in request.POST:
+            primary_pk = request.POST.get("primary")
+            if primary_pk:
+                from .services.merge import merge_assets
+
+                assets = list(queryset)
+                primary = next(a for a in assets if str(a.pk) == primary_pk)
+                duplicates = [a for a in assets if str(a.pk) != primary_pk]
+                try:
+                    merge_assets(primary, duplicates, request.user)
+                    messages.success(
+                        request,
+                        f"Assets merged into '{primary.name}'.",
+                    )
+                except ValueError as e:
+                    messages.error(request, str(e))
+                return None
+        return TemplateResponse(
+            request,
+            "admin/assets/merge_assets.html",
+            {
+                "assets": queryset,
+                "action": "merge_assets",
+                "opts": self.model._meta,
+                "title": "Merge assets",
+            },
+        )
+
+    merge_assets.short_description = "Merge assets"
+
+    @action(description="Convert to serialised")
+    def bulk_serialise(self, request, queryset):
+        updated = queryset.filter(is_serialised=False).update(
+            is_serialised=True
+        )
+        messages.success(
+            request,
+            f"{updated} asset(s) converted to serialised.",
+        )
+
+    bulk_serialise.short_description = "Convert to serialised"
+
+    @action(description="Add to hold list...")
+    def add_to_hold_list(self, request, queryset):
+        if "apply" in request.POST:
+            hold_list_pk = request.POST.get("hold_list")
+            if hold_list_pk:
+                hold_list = HoldList.objects.get(pk=hold_list_pk)
+                count = 0
+                for asset in queryset:
+                    HoldListItem.objects.get_or_create(
+                        hold_list=hold_list,
+                        asset=asset,
+                        defaults={
+                            "added_by": request.user,
+                            "quantity": 1,
+                        },
+                    )
+                    count += 1
+                messages.success(
+                    request,
+                    f"{count} asset(s) added to '{hold_list.name}'.",
+                )
+                return None
+        hold_lists = HoldList.objects.filter(
+            is_locked=False,
+        ).order_by("name")
+        return TemplateResponse(
+            request,
+            "admin/assets/add_to_hold_list.html",
+            {
+                "assets": queryset,
+                "hold_lists": hold_lists,
+                "action": "add_to_hold_list",
+                "opts": self.model._meta,
+                "title": "Add assets to hold list",
+            },
+        )
+
+    add_to_hold_list.short_description = "Add to hold list..."
+
+    @action(description="Generate kit labels")
+    def generate_kit_labels(self, request, queryset):
+        kit_assets = queryset.filter(is_kit=True)
+        if not kit_assets.exists():
+            messages.error(
+                request,
+                "No kit assets in the selection.",
+            )
+            return None
+        component_pks = set()
+        for kit in kit_assets:
+            kit_components = AssetKit.objects.filter(kit=kit).select_related(
+                "component"
+            )
+            for kc in kit_components:
+                component_pks.add(kc.component.pk)
+        if not component_pks:
+            messages.warning(
+                request,
+                "Selected kits have no components.",
+            )
+            return None
+        pks = ",".join(str(pk) for pk in component_pks)
+        return redirect(
+            f"{reverse_lazy('assets:barcode_pregenerate')}?ids={pks}"
+        )
+
+    generate_kit_labels.short_description = "Generate kit labels"
+
     actions = [
         "export_selected_xlsx",
         "mark_active",
@@ -457,6 +683,10 @@ class AssetAdmin(ModelAdmin):
         "print_labels",
         "bulk_transfer",
         "bulk_change_category",
+        "merge_assets",
+        "bulk_serialise",
+        "add_to_hold_list",
+        "generate_kit_labels",
     ]
 
     @action(
@@ -563,6 +793,26 @@ class AssetImageAdmin(ModelAdmin):
             total_completion_tokens=Sum("ai_completion_tokens"),
         )
         extra_context["ai_stats"] = stats
+
+        # Daily usage count and remaining quota (L29)
+        import datetime
+
+        from django.conf import settings as django_settings
+        from django.utils import timezone
+
+        today_local = timezone.localdate()
+        today_start = timezone.make_aware(
+            datetime.datetime.combine(today_local, datetime.time.min)
+        )
+        daily_usage = AssetImage.objects.filter(
+            ai_processed_at__gte=today_start,
+            ai_processing_status="completed",
+        ).count()
+        daily_limit = getattr(django_settings, "AI_ANALYSIS_DAILY_LIMIT", 100)
+        extra_context["daily_usage"] = daily_usage
+        extra_context["daily_limit"] = daily_limit
+        extra_context["daily_remaining"] = max(0, daily_limit - daily_usage)
+
         return super().changelist_view(request, extra_context=extra_context)
 
 
@@ -718,6 +968,13 @@ class StocktakeSessionAdmin(ModelAdmin):
     )
     def display_status(self, obj):
         return obj.status
+
+
+@admin.register(HoldListStatus)
+class HoldListStatusAdmin(ModelAdmin):
+    list_display = ["name", "is_default", "is_terminal", "sort_order", "color"]
+    list_filter = ["is_default", "is_terminal"]
+    search_fields = ["name"]
 
 
 @admin.register(SiteBranding)

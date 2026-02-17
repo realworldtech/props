@@ -29,13 +29,28 @@ def site_settings(request):
         accent = branding.accent_color or ""
 
     if primary:
-        from props.colors import generate_brand_css_properties
+        from props.colors import (
+            auto_derive_accent,
+            auto_derive_secondary,
+            generate_brand_css_properties,
+        )
+
+        # Auto-derive secondary and accent when not explicitly set
+        if not secondary:
+            secondary = auto_derive_secondary(primary)
+        if not accent:
+            accent = auto_derive_accent(primary)
 
         brand_css = generate_brand_css_properties(
             primary_hex=primary,
             secondary_hex=secondary,
             accent_hex=accent,
         )
+
+    # V618: Inject SiteBranding.color_mode for dark mode JS
+    color_mode = "system"
+    if branding and branding.color_mode:
+        color_mode = branding.color_mode
 
     return {
         "SITE_NAME": settings.SITE_NAME,
@@ -45,6 +60,7 @@ def site_settings(request):
         "brand_primary_color": primary,
         "brand_css_properties": brand_css,
         "logo_url": logo_url,
+        "color_mode": color_mode,
     }
 
 

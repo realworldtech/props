@@ -40,7 +40,20 @@
                 {% for comp in components %}
                 <tr>
                     <td class="px-4 py-3"><a href="{% url 'assets:asset_detail' comp.component.pk %}" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{ comp.component.name }}</a></td>
-                    <td class="px-4 py-3">{{ comp.serial|default:"-" }}</td>
+                    <td class="px-4 py-3">
+                        {% if comp.serial %}
+                            {{ comp.serial }}
+                            {% if comp.serial.status == "disposed" %}
+                                <span class="text-red-500 text-xs ml-1">(disposed - replacement needed)</span>
+                            {% elif comp.serial.status != "active" %}
+                                <span class="text-amber-500 text-xs ml-1">(unavailable)</span>
+                            {% endif %}
+                        {% elif comp.component.is_serialised and comp.is_required %}
+                            <span class="text-amber-500 text-xs">No serial pinned - replacement needed</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td class="px-4 py-3">{{ comp.quantity }}</td>
                     <td class="px-4 py-3">{{ comp.is_required|yesno:"Yes,No" }}</td>
                     <td class="px-4 py-3">{{ comp.component.status }}</td>

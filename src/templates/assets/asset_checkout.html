@@ -16,6 +16,12 @@
         <p class="text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
     </div>
 
+    {% if kit_only_warning %}
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-300 text-sm">
+        <strong>Kit Warning:</strong> {{ kit_only_warning }}
+    </div>
+    {% endif %}
+
     <form method="post" class="space-y-5">
         {% csrf_token %}
 
@@ -25,9 +31,20 @@
                 <input type="text" id="borrower-search" class="form-input w-full rounded-lg px-4 py-2.5 text-cream mb-2" placeholder="Type to filter users..." autocomplete="off">
                 <select name="borrower" id="borrower" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
                     <option value="">Select a person...</option>
-                    {% for user in users %}
-                    <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %} ({{ user.username }})</option>
-                    {% endfor %}
+                    {% if internal_users %}
+                    <optgroup label="Staff">
+                        {% for user in internal_users %}
+                        <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %} ({{ user.username }})</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if external_borrowers %}
+                    <optgroup label="External Borrowers">
+                        {% for user in external_borrowers %}
+                        <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %} ({{ user.username }})</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
                 </select>
             </div>
 
@@ -35,6 +52,50 @@
                 <label class="block text-sm font-medium text-cream/70 mb-1.5">Date of action <span class="text-cream/40">(optional, defaults to now)</span></label>
                 <input type="datetime-local" name="action_date" class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
                 <p class="text-xs text-cream/40 mt-1">Set a past date if recording a historical action.</p>
+            </div>
+
+            {% if available_serials %}
+            <div>
+                <label class="block text-sm font-medium text-cream/70 mb-1.5">Serial Units *</label>
+                <p class="text-xs text-cream/40 mb-2">Select the serial unit(s) to check out.</p>
+                <div class="space-y-2 max-h-60 overflow-y-auto">
+                    {% for serial in available_serials %}
+                    <label class="flex items-center gap-3 p-2.5 rounded-lg bg-stage-700/50 hover:bg-stage-700 cursor-pointer transition-colors">
+                        <input type="checkbox" name="serial_ids" value="{{ serial.pk }}" class="rounded border-white/20 text-spotlight-500 focus:ring-spotlight-500">
+                        <span class="text-cream">
+                            #{{ serial.serial_number }}
+                            {% if serial.barcode %}<span class="font-mono text-cream/50 text-xs ml-1">{{ serial.barcode }}</span>{% endif %}
+                            {% if serial.condition != "good" %}<span class="text-xs text-amber-400 ml-1">({{ serial.get_condition_display }})</span>{% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if show_quantity %}
+            <div>
+                <label for="quantity" class="block text-sm font-medium text-cream/70 mb-1.5">Quantity *</label>
+                <input type="number" name="quantity" id="quantity" value="1" min="1" max="{{ max_quantity }}" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                <p class="text-xs text-cream/40 mt-1">Available: {{ max_quantity }} units.</p>
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="destination_location" class="block text-sm font-medium text-cream/70 mb-1.5">Destination Location <span class="text-cream/40">(optional)</span></label>
+                <select name="destination_location" id="destination_location" class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                    <option value="">Current location (no change)</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc.pk }}">{{ loc.full_path }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-cream/40 mt-1">Where the asset will be used during checkout.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-cream/70 mb-1.5">Due Date <span class="text-cream/40">(optional)</span></label>
+                <input type="datetime-local" name="due_date" class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
+                <p class="text-xs text-cream/40 mt-1">Expected return date for this checkout.</p>
             </div>
 
             <div>

@@ -156,6 +156,7 @@ if USE_S3:
                 "querystring_auth": False,
                 "file_overwrite": False,
                 "location": "media",
+                "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN"),
             },
         },
         "staticfiles": {
@@ -176,6 +177,9 @@ else:
     }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# V894: Custom rate limit view returns 429 with Retry-After header
+RATELIMIT_VIEW = "props.views.ratelimited_view"
 
 AUTHENTICATION_BACKENDS = [
     "accounts.backends.EmailOrUsernameBackend",
@@ -233,6 +237,14 @@ SITE_URL = os.environ.get("SITE_URL", "")
 BARCODE_PREFIX = os.environ.get("BARCODE_PREFIX", "ASSET")
 BRAND_PRIMARY_COLOR = os.environ.get("BRAND_PRIMARY_COLOR", "#4F46E5")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
+
+# Cache configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.environ.get("CACHE_URL", "redis://localhost:6379/1"),
+    }
+}
 
 # Celery configuration
 CELERY_BROKER_URL = os.environ.get(

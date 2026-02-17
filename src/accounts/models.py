@@ -3,6 +3,8 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 
 
 class CustomUser(AbstractUser):
@@ -83,3 +85,23 @@ class CustomUser(AbstractUser):
 
     def __str__(self):
         return self.get_display_name()
+
+
+@receiver(pre_delete, sender=CustomUser)
+def create_orphan_checkout_transactions(sender, instance, **kwargs):
+    """Create transaction notes for assets checked out to a user
+    being deleted, preserving the audit trail (S7.10.1)."""
+    from assets.models import Asset, Transaction
+
+    checked_out = Asset.objects.filter(checked_out_to=instance)
+    display_name = instance.get_display_name()
+    for asset in checked_out:
+        Transaction.objects.create(
+            asset=asset,
+            user=instance,
+            action="audit",
+            notes=(
+                f"Borrower '{display_name}' (user #{instance.pk}) "
+                f"deleted. Asset was checked out to this borrower."
+            ),
+        )

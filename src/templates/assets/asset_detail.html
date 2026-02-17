@@ -35,6 +35,16 @@
                     Checked out to {{ asset.checked_out_to.get_display_name }}
                 </span>
                 {% endif %}
+                {% if checkout_warning %}
+                <div class="w-full mt-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-sm">
+                    <strong>Warning:</strong> This asset is currently checked out to {{ asset.checked_out_to.get_display_name }}. Changing the status to missing, lost, or stolen requires explicit confirmation acknowledging that the asset is checked out.
+                </div>
+                {% endif %}
+                {% for hold in active_holds %}
+                <span class="inline-block px-2.5 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-400">
+                    Held for {{ hold.hold_list.name }}{% if hold.hold_list.start_date %} ({{ hold.hold_list.start_date }} - {{ hold.hold_list.end_date }}){% endif %}
+                </span>
+                {% endfor %}
             </div>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -63,6 +73,12 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
                 Print Label
             </a>
+            {% if can_convert and asset.status != 'disposed' %}
+            <a href="{% url 'assets:asset_convert_serialisation' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                Convert Serialisation
+            </a>
+            {% endif %}
             {% if can_delete and asset.status != 'disposed' %}
             <a href="{% url 'assets:asset_delete' asset.pk %}" class="inline-flex items-center gap-1.5 text-red-400 hover:text-red-300 px-3 py-2 rounded-lg text-sm transition-colors">Dispose</a>
             {% endif %}
@@ -79,7 +95,7 @@
                     currentIndex: 0,
                     images: [
                         {% for img in images %}
-                        { url: '{{ img.image.url }}', caption: '{{ img.caption|escapejs }}' }{% if not forloop.last %},{% endif %}
+                        { url: '{% if img.detail_thumbnail %}{{ img.detail_thumbnail.url }}{% else %}{{ img.image.url }}{% endif %}', detail_url: '{% if img.detail_thumbnail %}{{ img.detail_thumbnail.url }}{% else %}{{ img.image.url }}{% endif %}', caption: '{{ img.caption|escapejs }}' }{% if not forloop.last %},{% endif %}
                         {% endfor %}
                     ],
                     open(index) {
@@ -110,11 +126,18 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                     {% for img in images %}
                     <div class="relative rounded-lg overflow-hidden bg-stage-700 aspect-square group">
-                        <img src="{{ img.image.url }}" class="w-full h-full object-cover cursor-pointer" alt="{{ img.caption }}"
-                             @click="open({{ forloop.counter0 }})">
+                        <img src="{{ img.image.url }}" class="w-full h-full object-cover" alt="{{ img.caption }}"
+                             onerror="this.onerror=null;this.src='';this.alt='Image unavailable (placeholder)';this.style.display='none'">
                         {% if img.is_primary %}
                         <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-spotlight-500/90 text-stage-900 text-xs font-medium">Primary</span>
                         {% endif %}
+                        <!-- V69: Preview icon triggers lightbox -->
+                        <button class="lightbox-trigger preview-icon absolute top-2 right-2 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-1.5 rounded-lg transition-colors border border-white/10 z-10"
+                                @click="open({{ forloop.counter0 }})" title="Preview image">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
+                            </svg>
+                        </button>
                         <div class="absolute inset-0 bg-stage-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
                              @click.stop>
                             {% if not img.is_primary %}
@@ -128,7 +151,7 @@
                                 <button type="submit" class="text-xs bg-red-600 text-white px-2 py-1 rounded">Delete</button>
                             </form>
                             {% if AI_ANALYSIS_ENABLED %}
-                            <a href="{% url 'assets:ai_analyse' asset.pk img.pk %}" class="text-xs bg-purple-600 text-white px-2 py-1 rounded">{% if img.ai_processing_status == 'completed' %}Re-analyse{% else %}AI Analyse{% endif %}</a>
+                            <a href="{% url 'assets:ai_analyse' asset.pk img.pk %}" class="text-xs {% if img.ai_suggestions_applied %}bg-amber-600{% else %}bg-purple-600{% endif %} text-white px-2 py-1 rounded">{% if img.ai_suggestions_applied %}Re-analyse{% elif img.ai_processing_status == 'completed' %}Re-analyse{% else %}AI Analyse{% endif %}</a>
                             {% endif %}
                         </div>
                         {% if img.ai_processing_status == 'completed' %}
@@ -213,7 +236,7 @@
                 <div class="flex items-center gap-3 mb-4">
                     <img src="{{ img.image.url }}" class="w-12 h-12 object-cover rounded" alt="">
                     <h2 class="font-display text-lg font-semibold text-purple-300">AI Analysis</h2>
-                    <p class="text-cream/30 text-xs mt-1">Images are sent to Anthropic's API for analysis. <a href="https://www.anthropic.com/policies/privacy" class="underline hover:text-cream/50" target="_blank" rel="noopener">Anthropic's data usage policies</a> apply.</p>
+                    <p class="text-cream/30 text-xs mt-1">Images are sent to Anthropic's API for analysis. Image data is used only for this request and is not stored or used for training. <a href="https://www.anthropic.com/policies/privacy" class="underline hover:text-cream/50" target="_blank" rel="noopener">Anthropic's data usage policies</a> apply.</p>
                     <span class="text-xs text-cream/40">{{ img.ai_processed_at|timesince }} ago</span>
                 </div>
                 {% if img.ai_description %}
@@ -420,6 +443,56 @@
                 {% endif %}
             </div>
 
+            {% if active_serials %}
+            <!-- Active Serials (V492) -->
+            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+                <h2 class="font-display text-lg font-semibold mb-4">Serial Units ({{ active_serials|length }})</h2>
+                <div class="space-y-2">
+                    {% for serial in active_serials %}
+                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-700/50 text-sm">
+                        <div>
+                            <span class="text-cream font-medium">#{{ serial.serial_number }}</span>
+                            {% if serial.barcode %}<span class="font-mono text-cream/40 text-xs ml-2">{{ serial.barcode }}</span>{% endif %}
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="inline-block px-2 py-0.5 rounded-full text-xs
+                                {% if serial.status == 'active' %}bg-emerald-500/20 text-emerald-400
+                                {% elif serial.status == 'lost' or serial.status == 'stolen' %}bg-red-500/20 text-red-400
+                                {% else %}bg-gray-500/20 text-gray-400{% endif %}">
+                                {{ serial.get_status_display }}
+                            </span>
+                            {% if serial.checked_out_to %}
+                            <span class="text-xs text-blue-400">{{ serial.checked_out_to.get_display_name }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if archived_serials %}
+            <!-- Archived Serials (V492) -->
+            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6"
+                 x-data="{ showArchived: false }">
+                <button @click="showArchived = !showArchived" class="flex items-center gap-2 text-cream/50 hover:text-cream transition-colors w-full text-left">
+                    <svg class="w-4 h-4 transition-transform" :class="showArchived ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <h2 class="font-display text-lg font-semibold">Archived Serials ({{ archived_serials|length }})</h2>
+                </button>
+                <div x-show="showArchived" x-cloak class="mt-4 space-y-2">
+                    {% for serial in archived_serials %}
+                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-700/30 text-sm text-cream/40">
+                        <div>
+                            <span>#{{ serial.serial_number }}</span>
+                            {% if serial.barcode %}<span class="font-mono text-xs ml-2">{{ serial.barcode }}</span>{% endif %}
+                        </div>
+                        <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-500/20 text-gray-500">Archived</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Transaction History -->
             <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
                 <h2 class="font-display text-lg font-semibold mb-4">Transaction History</h2>
@@ -476,6 +549,14 @@
                     <img src="{{ asset.barcode_image.url }}" class="w-full" alt="{{ asset.barcode }}">
                 </div>
                 <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-spotlight-400 text-xs mt-2 hover:text-spotlight-300 transition-colors">Print Label</a>
+                {% if user_role == "system_admin" or user_role == "department_manager" %}
+                <form method="post" action="{% url 'assets:clear_barcode' asset.pk %}"
+                      onsubmit="return confirm('Are you sure you want to clear the barcode? This cannot be undone.');"
+                      class="mt-2">
+                    {% csrf_token %}
+                    <button type="submit" class="w-full text-center text-red-400 text-xs hover:text-red-300 transition-colors">Clear Barcode</button>
+                </form>
+                {% endif %}
             </div>
             {% endif %}
 
@@ -513,6 +594,23 @@
                 </details>
                 {% endif %}
             </div>
+
+            <!-- Member of Kits -->
+            {% if member_of_kits %}
+            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+                <h3 class="text-sm font-medium text-cream/50 mb-3">Member of Kits</h3>
+                <div class="space-y-2">
+                    {% for membership in member_of_kits %}
+                    <a href="{% url 'assets:kit_contents' membership.kit.pk %}" class="flex items-center gap-2 text-sm text-spotlight-400 hover:text-spotlight-300 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        {{ membership.kit.name }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
 
             <!-- Meta -->
             <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">

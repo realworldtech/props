@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
+from accounts.models import CustomUser
 from assets.models import Asset, Category, Department, Location
 
 
@@ -16,6 +17,7 @@ class Command(BaseCommand):
         category_ct = ContentType.objects.get_for_model(Category)
         location_ct = ContentType.objects.get_for_model(Location)
         department_ct = ContentType.objects.get_for_model(Department)
+        user_ct = ContentType.objects.get_for_model(CustomUser)
 
         # Get or create standard permissions
         def get_perm(codename, ct=None):
@@ -38,6 +40,7 @@ class Command(BaseCommand):
         merge_assets = get_perm("can_merge_assets", asset_ct)
         export_assets = get_perm("can_export_assets", asset_ct)
         handover_asset = get_perm("can_handover_asset", asset_ct)
+        override_hold = get_perm("override_hold_checkout", asset_ct)
 
         # Category permissions
         add_category = get_perm("add_category", category_ct)
@@ -57,6 +60,9 @@ class Command(BaseCommand):
         delete_department = get_perm("delete_department", department_ct)
         view_department = get_perm("view_department", department_ct)
 
+        # User permissions
+        approve_users = get_perm("can_approve_users", user_ct)
+
         # System Admin group
         system_admin, _ = Group.objects.get_or_create(name="System Admin")
         system_admin.permissions.set(
@@ -71,6 +77,7 @@ class Command(BaseCommand):
                 merge_assets,
                 export_assets,
                 handover_asset,
+                override_hold,
                 add_category,
                 change_category,
                 delete_category,
@@ -83,6 +90,7 @@ class Command(BaseCommand):
                 change_department,
                 delete_department,
                 view_department,
+                approve_users,
             ]
         )
         self.stdout.write(
@@ -105,6 +113,7 @@ class Command(BaseCommand):
                 merge_assets,
                 export_assets,
                 handover_asset,
+                override_hold,
                 add_category,
                 change_category,
                 delete_category,

@@ -14,7 +14,17 @@ urlpatterns = [
     path("assets/", views.asset_list, name="asset_list"),
     path("assets/create/", views.asset_create, name="asset_create"),
     path("assets/export/", views.export_assets, name="export_assets"),
+    path(
+        "assets/lost-stolen/",
+        views.lost_stolen_report,
+        name="lost_stolen_report",
+    ),
     path("assets/bulk/", views.bulk_actions, name="bulk_actions"),
+    path(
+        "assets/labels/all-filtered/",
+        views.print_all_filtered_labels,
+        name="print_all_filtered_labels",
+    ),
     path("assets/<int:pk>/", views.asset_detail, name="asset_detail"),
     path("assets/<int:pk>/edit/", views.asset_edit, name="asset_edit"),
     path("assets/<int:pk>/delete/", views.asset_delete, name="asset_delete"),
@@ -26,6 +36,11 @@ urlpatterns = [
     # Quick Capture
     path("quick-capture/", views.quick_capture, name="quick_capture"),
     path("drafts/", views.drafts_queue, name="drafts_queue"),
+    path(
+        "drafts/bulk/",
+        views.drafts_bulk_action,
+        name="drafts_bulk_action",
+    ),
     # Scanning
     path("scan/", views.scan_view, name="scan"),
     path("scan/lookup/", views.scan_lookup, name="scan_lookup"),
@@ -61,6 +76,11 @@ urlpatterns = [
         "assets/<int:pk>/nfc/<int:nfc_pk>/remove/",
         views.nfc_remove,
         name="nfc_remove",
+    ),
+    path(
+        "nfc/<str:tag_uid>/history/",
+        views.nfc_history,
+        name="nfc_history",
     ),
     # Check-out / Check-in / Transfer
     path(
@@ -100,9 +120,19 @@ urlpatterns = [
         name="asset_label_zpl",
     ),
     path(
+        "assets/<int:pk>/clear-barcode/",
+        views.clear_barcode,
+        name="clear_barcode",
+    ),
+    path(
         "labels/pregenerate/",
         views.barcode_pregenerate,
         name="barcode_pregenerate",
+    ),
+    path(
+        "barcodes/virtual/",
+        views.virtual_barcode_list,
+        name="virtual_barcode_list",
     ),
     # Transactions
     path("transactions/", views.transaction_list, name="transaction_list"),
@@ -254,6 +284,26 @@ urlpatterns = [
         name="holdlist_edit",
     ),
     path(
+        "hold-lists/<int:pk>/delete/",
+        views.holdlist_delete,
+        name="holdlist_delete",
+    ),
+    path(
+        "hold-lists/<int:pk>/lock/",
+        views.holdlist_lock,
+        name="holdlist_lock",
+    ),
+    path(
+        "hold-lists/<int:pk>/unlock/",
+        views.holdlist_unlock,
+        name="holdlist_unlock",
+    ),
+    path(
+        "hold-lists/<int:pk>/fulfil/",
+        views.holdlist_fulfil,
+        name="holdlist_fulfil",
+    ),
+    path(
         "hold-lists/<int:pk>/add-item/",
         views.holdlist_add_item,
         name="holdlist_add_item",
@@ -264,14 +314,34 @@ urlpatterns = [
         name="holdlist_remove_item",
     ),
     path(
+        "hold-lists/<int:pk>/edit-item/<int:item_pk>/",
+        views.holdlist_edit_item,
+        name="holdlist_edit_item",
+    ),
+    path(
         "hold-lists/<int:pk>/pick-sheet/",
         views.holdlist_pick_sheet,
         name="holdlist_pick_sheet",
+    ),
+    path(
+        "hold-lists/<int:pk>/items/<int:item_pk>/pull-status/",
+        views.holdlist_update_pull_status,
+        name="holdlist_update_pull_status",
     ),
     # Projects
     path("projects/", views.project_list, name="project_list"),
     path("projects/create/", views.project_create, name="project_create"),
     path("projects/<int:pk>/edit/", views.project_edit, name="project_edit"),
+    path(
+        "projects/<int:pk>/",
+        views.project_detail,
+        name="project_detail",
+    ),
+    path(
+        "projects/<int:pk>/delete/",
+        views.project_delete,
+        name="project_delete",
+    ),
     # Kit management
     path(
         "assets/<int:pk>/kit/",

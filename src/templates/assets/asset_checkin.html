@@ -23,6 +23,25 @@
         {% csrf_token %}
 
         <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
+            {% if checked_out_serials %}
+            <div>
+                <label class="block text-sm font-medium text-cream/70 mb-1.5">Serial Units to Check In</label>
+                <p class="text-xs text-cream/40 mb-2">Deselect any units you do not want to check in.</p>
+                <div class="space-y-2 max-h-60 overflow-y-auto">
+                    {% for serial in checked_out_serials %}
+                    <label class="flex items-center gap-3 p-2.5 rounded-lg bg-stage-700/50 hover:bg-stage-700 cursor-pointer transition-colors">
+                        <input type="checkbox" name="serial_ids" value="{{ serial.pk }}" checked class="rounded border-white/20 text-emerald-500 focus:ring-emerald-500">
+                        <span class="text-cream">
+                            #{{ serial.serial_number }}
+                            {% if serial.barcode %}<span class="font-mono text-cream/50 text-xs ml-1">{{ serial.barcode }}</span>{% endif %}
+                            {% if serial.checked_out_to %}<span class="text-xs text-spotlight-400 ml-1">(with {{ serial.checked_out_to.get_display_name }})</span>{% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <div>
                 <label for="location" class="block text-sm font-medium text-cream/70 mb-1.5">Return to Location *</label>
                 <select name="location" id="location" required class="form-input w-full rounded-lg px-4 py-2.5 text-cream">
@@ -31,6 +50,13 @@
                     <option value="{{ loc.pk }}" {% if home_location and home_location.pk == loc.pk %}selected{% elif not home_location and asset.current_location and asset.current_location.pk == loc.pk %}selected{% endif %}>{{ loc.full_path }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            <div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="set_home_location" value="1" class="w-4 h-4 rounded border-white/20 bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0">
+                    <span class="text-sm text-cream/70">Set this as the asset's home location</span>
+                </label>
             </div>
 
             <div>

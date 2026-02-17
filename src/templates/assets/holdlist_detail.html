@@ -41,6 +41,11 @@
             <span class="text-cream/50">Dates:</span>
             <span class="ml-2 text-cream">{{ hold_list.start_date }} - {{ hold_list.end_date }}</span>
         </div>
+        {% elif effective_start %}
+        <div class="col-span-2">
+            <span class="text-cream/50">Effective Dates (from project):</span>
+            <span class="ml-2 text-cream">{{ effective_start|date:"Y-m-d" }} - {{ effective_end|date:"Y-m-d" }}</span>
+        </div>
         {% endif %}
     </div>
 
@@ -60,12 +65,12 @@
         {% csrf_token %}
         <div class="flex flex-wrap gap-3 items-end">
             <div>
-                <label class="block text-xs text-cream/50 mb-1">Asset ID</label>
-                <input type="number" name="asset_id" required class="form-input rounded-lg px-3 py-1.5 w-32">
+                <label class="block text-xs text-cream/50 mb-1">Search or scan asset</label>
+                <input type="text" name="asset_id" placeholder="Search by name or barcode..." required class="form-input rounded-lg px-3 py-1.5 w-48">
             </div>
             <div>
                 <label class="block text-xs text-cream/50 mb-1">Qty</label>
-                <input type="number" name="quantity" value="1" min="1" class="form-input rounded-lg px-3 py-1.5 w-20">
+                <input type="text" inputmode="numeric" name="quantity" value="1" pattern="[0-9]+" class="form-input rounded-lg px-3 py-1.5 w-20">
             </div>
             <div class="flex-1">
                 <label class="block text-xs text-cream/50 mb-1">Notes</label>
@@ -91,7 +96,13 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-white/5">
-                {% for item in items %}
+                {% for loc_name, loc_items in items_by_location.items %}
+                <tr class="bg-stage-700/30">
+                    <td colspan="6" class="px-4 py-2 text-xs font-semibold text-cream/60 uppercase tracking-wide">
+                        {{ loc_name }}
+                    </td>
+                </tr>
+                {% for item in loc_items %}
                 <tr class="hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
                         <a href="{% url 'assets:asset_detail' item.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-300">
@@ -101,20 +112,58 @@
                     <td class="px-4 py-3 text-cream/70">{{ item.serial|default:"-" }}</td>
                     <td class="px-4 py-3 text-cream/70">{{ item.quantity }}</td>
                     <td class="px-4 py-3">
-                        <span class="px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ item.pull_status }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs
+                            {% if item.pull_status == 'pulled' %}bg-emerald-500/20 text-emerald-400
+                            {% elif item.pull_status == 'unavailable' %}bg-red-500/20 text-red-400
+                            {% else %}bg-stage-700 text-cream/70{% endif %}">
+                            {{ item.get_pull_status_display }}
+                        </span>
+                        {% if item.pulled_by and item.pull_status == 'pulled' %}
+                        <span class="text-cream/40 text-xs ml-1">by {{ item.pulled_by.get_display_name }}</span>
+                        {% endif %}
                     </td>
                     <td class="px-4 py-3 text-cream/70">{{ item.notes|default:"-" }}</td>
                     <td class="px-4 py-3">
-                        {% if not hold_list.is_locked %}
-                        <form method="post" action="{% url 'assets:holdlist_remove_item' hold_list.pk item.pk %}">
-                            {% csrf_token %}
-                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs transition-colors">
-                                Remove
-                            </button>
-                        </form>
-                        {% endif %}
+                        <div class="flex items-center gap-2">
+                            {% if item.pull_status != 'pulled' %}
+                            <form method="post" action="{% url 'assets:holdlist_update_pull_status' hold_list.pk item.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="pull_status" value="pulled">
+                                <button type="submit" class="text-emerald-400 hover:text-emerald-300 text-xs transition-colors">
+                                    Mark Pulled
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if item.pull_status != 'unavailable' %}
+                            <form method="post" action="{% url 'assets:holdlist_update_pull_status' hold_list.pk item.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="pull_status" value="unavailable">
+                                <button type="submit" class="text-amber-400 hover:text-amber-300 text-xs transition-colors">
+                                    Unavailable
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if item.pull_status != 'pending' %}
+                            <form method="post" action="{% url 'assets:holdlist_update_pull_status' hold_list.pk item.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="pull_status" value="pending">
+                                <button type="submit" class="text-cream/50 hover:text-cream/70 text-xs transition-colors">
+                                    Reset
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if not hold_list.is_locked %}
+                            <form method="post" action="{% url 'assets:holdlist_remove_item' hold_list.pk item.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="text-red-400 hover:text-red-300 text-xs transition-colors">
+                                    Remove
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
+                {% endfor %}
                 {% empty %}
                 <tr>
                     <td colspan="6" class="px-4 py-16 text-center">

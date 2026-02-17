@@ -38,7 +38,19 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
     """Check if the user can edit the given asset."""
     role = get_user_role(user, asset.department)
 
-    if role in ("system_admin", "department_manager"):
+    if role == "system_admin":
+        return True
+
+    if role == "department_manager":
+        # Block write access if the asset's department is inactive
+        dept = asset.department
+        if dept and not dept.is_active:
+            # Only block if user is not a system admin
+            if (
+                not user.is_superuser
+                and not user.groups.filter(name="System Admin").exists()
+            ):
+                return False
         return True
 
     if role == "member":

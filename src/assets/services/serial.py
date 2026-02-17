@@ -127,7 +127,18 @@ def convert_to_serialised(asset, user) -> dict:
             "specificity."
         )
 
-    from assets.models import AssetKit
+    from assets.models import AssetKit, Transaction
+
+    # V484 S2.17.1d-04a: Warn about historical transactions with qty > 1
+    bulk_txn_count = Transaction.objects.filter(
+        asset=asset, quantity__gt=1
+    ).count()
+    if bulk_txn_count:
+        impact["warnings"].append(
+            f"This asset has {bulk_txn_count} historical transaction(s) "
+            "with quantity > 1. After conversion, these transactions "
+            "will not map to individual serial units."
+        )
 
     kit_memberships = AssetKit.objects.filter(component=asset).count()
     if kit_memberships:
@@ -140,21 +151,33 @@ def convert_to_serialised(asset, user) -> dict:
 
 
 def apply_convert_to_serialised(asset, user) -> None:
-    """Apply the conversion to serialised (after user confirms)."""
-    if asset.is_serialised:
-        raise ValidationError("Asset is already serialised.")
+    """Apply the conversion to serialised (after user confirms).
 
-    asset.is_serialised = True
-    asset.save(update_fields=["is_serialised"])
+    Uses select_for_update to prevent concurrent conversions
+    (S7.19.10).
+    """
+    from django.db import transaction as db_transaction
 
+    from assets.models import Asset as AssetModel
     from assets.models import Transaction
 
-    Transaction.objects.create(
-        asset=asset,
-        user=user,
-        action="note",
-        notes="Converted from non-serialised to serialised.",
-    )
+    with db_transaction.atomic():
+        locked = AssetModel.objects.select_for_update().get(pk=asset.pk)
+        if locked.is_serialised:
+            raise ValidationError("Asset is already serialised.")
+
+        locked.is_serialised = True
+        locked.save(update_fields=["is_serialised"])
+
+        Transaction.objects.create(
+            asset=locked,
+            user=user,
+            action="note",
+            notes="Converted from non-serialised to serialised.",
+        )
+
+        # Sync the in-memory object
+        asset.is_serialised = True
 
 
 def convert_to_non_serialised(asset, user) -> dict:
@@ -218,46 +241,64 @@ def convert_to_non_serialised(asset, user) -> dict:
 def apply_convert_to_non_serialised(
     asset, user, adjusted_quantity=None, override_checkout=False
 ) -> None:
-    """Apply conversion to non-serialised (after user confirms)."""
-    if not asset.is_serialised:
-        raise ValidationError("Asset is already non-serialised.")
+    """Apply conversion to non-serialised (after user confirms).
 
-    serials = asset.serials.filter(is_archived=False)
-    checked_out = serials.filter(checked_out_to__isnull=False).count()
-
-    if checked_out and not override_checkout:
-        raise ValidationError(
-            f"{checked_out} serial(s) are checked out. "
-            "Use override_checkout=True to proceed."
-        )
-
-    active_count = serials.filter(status__in=["active"]).count() + checked_out
-    quantity = (
-        adjusted_quantity if adjusted_quantity is not None else active_count
-    )
-
-    from assets.models import AssetKit
-
-    AssetKit.objects.filter(serial__in=serials).update(serial=None)
-
-    serials.update(is_archived=True)
-
-    asset.is_serialised = False
-    asset.quantity = max(quantity, 0)
-    asset.save(update_fields=["is_serialised", "quantity"])
+    Uses select_for_update to prevent concurrent conversions
+    (S7.19.10).
+    """
+    from django.db import transaction as db_transaction
 
     from assets.models import Transaction
 
-    Transaction.objects.create(
-        asset=asset,
-        user=user,
-        action="note",
-        notes=(
-            f"Converted from serialised to non-serialised. "
-            f"Archived {serials.count()} serial(s). "
-            f"Quantity set to {asset.quantity}."
-        ),
-    )
+    with db_transaction.atomic():
+        from assets.models import Asset as AssetModel
+
+        locked = AssetModel.objects.select_for_update().get(pk=asset.pk)
+        if not locked.is_serialised:
+            raise ValidationError("Asset is already non-serialised.")
+
+        serials = locked.serials.filter(is_archived=False)
+        checked_out = serials.filter(checked_out_to__isnull=False).count()
+
+        if checked_out and not override_checkout:
+            raise ValidationError(
+                f"{checked_out} serial(s) are checked out. "
+                "Use override_checkout=True to proceed."
+            )
+
+        active_count = (
+            serials.filter(status__in=["active"]).count() + checked_out
+        )
+        quantity = (
+            adjusted_quantity
+            if adjusted_quantity is not None
+            else active_count
+        )
+
+        from assets.models import AssetKit
+
+        AssetKit.objects.filter(serial__in=serials).update(serial=None)
+
+        serials.update(is_archived=True)
+
+        locked.is_serialised = False
+        locked.quantity = max(quantity, 0)
+        locked.save(update_fields=["is_serialised", "quantity"])
+
+        Transaction.objects.create(
+            asset=locked,
+            user=user,
+            action="note",
+            notes=(
+                f"Converted from serialised to non-serialised. "
+                f"Archived {serials.count()} serial(s). "
+                f"Quantity set to {locked.quantity}."
+            ),
+        )
+
+        # Sync the in-memory object
+        asset.is_serialised = False
+        asset.quantity = locked.quantity
 
 
 def get_archived_serials(asset):
@@ -302,7 +343,22 @@ def restore_archived_serials(asset, user) -> dict:
         )
         restored += 1
 
-    return {"restored": restored, "conflicts": conflicts}
+    result = {"restored": restored, "conflicts": conflicts}
+
+    # S7.19.9: Flag quantity mismatch for reconciliation
+    active_count = asset.serials.filter(is_archived=False).count()
+    if active_count != asset.quantity:
+        result["discrepancy"] = {
+            "serial_count": active_count,
+            "quantity": asset.quantity,
+            "message": (
+                f"Serial count ({active_count}) differs from "
+                f"quantity ({asset.quantity}). Reconciliation "
+                f"may be needed."
+            ),
+        }
+
+    return result
 
 
 def get_serial_summary(asset) -> dict:

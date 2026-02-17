@@ -67,6 +67,13 @@ def create_transfer(
     timestamp=None,
 ) -> Transaction:
     """Transfer an asset to a new location. Returns the Transaction."""
+    # S7.22.1: Reject transfer to same location
+    if (
+        asset.current_location_id
+        and to_location.pk == asset.current_location_id
+    ):
+        raise ValueError("Asset is already at this location.")
+
     extra = {}
     if timestamp:
         extra = {"timestamp": timestamp, "is_backdated": True}
@@ -91,37 +98,56 @@ def create_handover(
     to_location: Location | None = None,
     notes: str = "",
     timestamp=None,
-) -> tuple[Transaction, Transaction]:
-    """Hand over a checked-out asset to a new borrower (atomically)."""
+) -> Transaction:
+    """Hand over a checked-out asset to a new borrower (atomically).
+
+    Creates a single 'handover' transaction instead of a
+    checkin + checkout pair.
+    """
+    # S7.20.2: Reject handover to the same borrower
+    if asset.checked_out_to_id and asset.checked_out_to_id == new_borrower.pk:
+        raise ValueError("Asset is already checked out to this person.")
+
+    # S7.20.4: Reject handover on lost/stolen assets
+    if asset.status in ("lost", "stolen"):
+        raise ValueError(
+            f"Cannot hand over a {asset.status} asset. "
+            "Recover the asset first."
+        )
+
     extra = {}
     if timestamp:
         extra = {"timestamp": timestamp, "is_backdated": True}
 
     with db_transaction.atomic():
-        old_borrower = asset.checked_out_to
-        loc = to_location or asset.current_location
+        # S7.20.5: Use select_for_update to prevent concurrent
+        # custody transfers
+        locked = Asset.objects.select_for_update().get(pk=asset.pk)
+        old_borrower = locked.checked_out_to
+        loc = to_location or locked.current_location
 
-        checkin_txn = Transaction.objects.create(
-            asset=asset,
+        handover_notes = (
+            f"Handover from {old_borrower} to "
+            f"{new_borrower}. {notes}".strip()
+        )
+        txn = Transaction.objects.create(
+            asset=locked,
             user=performed_by,
-            action="checkin",
-            from_location=asset.current_location,
+            action="handover",
+            from_location=locked.current_location,
             to_location=loc,
-            notes=f"Handover: returned by {old_borrower}. {notes}".strip(),
-            **extra,
-        )
-        checkout_txn = Transaction.objects.create(
-            asset=asset,
-            user=performed_by,
-            action="checkout",
-            from_location=loc,
             borrower=new_borrower,
-            notes=f"Handover: issued to {new_borrower}. {notes}".strip(),
+            notes=handover_notes,
             **extra,
         )
+        locked.checked_out_to = new_borrower
+        if to_location:
+            locked.current_location = to_location
+        locked.save(update_fields=["checked_out_to", "current_location"])
+
+        # Update the in-memory asset to match
         asset.checked_out_to = new_borrower
         if to_location:
             asset.current_location = to_location
-        asset.save(update_fields=["checked_out_to", "current_location"])
 
-    return checkin_txn, checkout_txn
+    return txn

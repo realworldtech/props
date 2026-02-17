@@ -5,11 +5,15 @@ import re
 
 from django_ratelimit.decorators import ratelimit
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db import transaction
+from django.db.models import Count, Prefetch, Q
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -31,9 +35,11 @@ from .models import (
     Department,
     Location,
     NFCTag,
+    StocktakeItem,
     StocktakeSession,
     Tag,
     Transaction,
+    VirtualBarcode,
 )
 from .services.permissions import (
     can_checkout_asset,
@@ -43,84 +49,57 @@ from .services.permissions import (
     get_user_role,
 )
 
-BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$")
+BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
 
 # --- Dashboard ---
 
 
-@login_required
-def dashboard(request):
-    """Display the dashboard with summary metrics."""
-    role = get_user_role(request.user)
-    show_actions = role != "viewer"
+DASHBOARD_CACHE_TTL = 60  # seconds
 
-    # Department managers only see their departments
-    if role == "department_manager":
-        user_depts = Department.objects.filter(managers=request.user)
-        dept_filter = Q(category__department__in=user_depts)
-    else:
-        user_depts = None
-        dept_filter = Q()  # No filter for admin/member/viewer
 
-    total_active = (
-        Asset.objects.filter(status="active").filter(dept_filter).count()
+def _compute_dashboard_aggregates(role, user_depts, dept_filter):
+    """Compute expensive aggregate counts for the dashboard."""
+    # Single query for all status counts (replaces 4 separate COUNTs)
+    status_counts = Asset.objects.filter(dept_filter).aggregate(
+        total_active=Coalesce(Count("pk", filter=Q(status="active")), 0),
+        total_draft=Coalesce(Count("pk", filter=Q(status="draft")), 0),
+        total_checked_out=Coalesce(
+            Count("pk", filter=Q(checked_out_to__isnull=False)), 0
+        ),
+        total_missing=Coalesce(Count("pk", filter=Q(status="missing")), 0),
     )
-    total_draft = (
-        Asset.objects.filter(status="draft").filter(dept_filter).count()
-    )
-    total_checked_out = (
-        Asset.objects.filter(checked_out_to__isnull=False)
-        .filter(dept_filter)
-        .count()
-    )
-    total_missing = (
-        Asset.objects.filter(status="missing").filter(dept_filter).count()
-    )
-
-    recent_transactions = Transaction.objects.select_related(
-        "asset", "user", "borrower", "from_location", "to_location"
-    )
-    if role == "department_manager":
-        recent_transactions = recent_transactions.filter(
-            Q(asset__category__department__in=user_depts)
-        )
-    recent_transactions = recent_transactions[:10]
-
-    recent_drafts = Asset.objects.filter(status="draft").select_related(
-        "category", "created_by"
-    )
-    if role == "department_manager":
-        recent_drafts = recent_drafts.filter(dept_filter)
-    recent_drafts = recent_drafts[:5]
-
-    checked_out_assets = (
-        Asset.objects.filter(checked_out_to__isnull=False)
-        .select_related("checked_out_to", "category", "current_location")
-        .prefetch_related("transactions")
-    )
-    if role == "department_manager":
-        checked_out_assets = checked_out_assets.filter(dept_filter)
-    checked_out_assets = checked_out_assets[:10]
+    total_active = status_counts["total_active"]
+    total_draft = status_counts["total_draft"]
+    total_checked_out = status_counts["total_checked_out"]
+    total_missing = status_counts["total_missing"]
 
     # Per-department counts
     dept_qs = Department.objects.filter(is_active=True)
     if role == "department_manager":
         dept_qs = dept_qs.filter(pk__in=user_depts)
-    dept_counts = dept_qs.annotate(
-        asset_count=Count(
-            "categories__assets",
-            filter=Q(categories__assets__status="active"),
+    dept_counts = list(
+        dept_qs.annotate(
+            asset_count=Count(
+                "categories__assets",
+                filter=Q(categories__assets__status="active"),
+            )
         )
-    ).order_by("-asset_count")[:10]
+        .order_by("-asset_count")
+        .values("name", "asset_count")[:10]
+    )
 
     # Per-category counts
     cat_qs = Category.objects.all()
     if role == "department_manager":
         cat_qs = cat_qs.filter(department__in=user_depts)
-    cat_counts = cat_qs.annotate(
-        asset_count=Count("assets", filter=Q(assets__status="active"))
-    ).order_by("-asset_count")[:10]
+    cat_counts = list(
+        cat_qs.annotate(
+            asset_count=Count("assets", filter=Q(assets__status="active"))
+        )
+        .order_by("-asset_count")
+        .values("name", "asset_count")[:10]
+    )
 
     # Per-location counts
     loc_qs = Location.objects.filter(is_active=True)
@@ -139,19 +118,83 @@ def dashboard(request):
                 filter=Q(assets__status="active"),
             )
         )
-    loc_counts = loc_qs.order_by("-asset_count")[:10]
+    loc_counts = list(
+        loc_qs.order_by("-asset_count").values("name", "asset_count")[:10]
+    )
 
     # Top 10 tags
     if role == "department_manager":
-        top_tags = (
+        top_tags = list(
             Tag.objects.filter(assets__category__department__in=user_depts)
             .annotate(asset_count=Count("assets"))
-            .order_by("-asset_count")[:10]
+            .order_by("-asset_count")
+            .values("name", "asset_count")[:10]
         )
     else:
-        top_tags = Tag.objects.annotate(asset_count=Count("assets")).order_by(
-            "-asset_count"
-        )[:10]
+        top_tags = list(
+            Tag.objects.annotate(asset_count=Count("assets"))
+            .order_by("-asset_count")
+            .values("name", "asset_count")[:10]
+        )
+
+    return {
+        "total_active": total_active,
+        "total_draft": total_draft,
+        "total_checked_out": total_checked_out,
+        "total_missing": total_missing,
+        "dept_counts": dept_counts,
+        "cat_counts": cat_counts,
+        "loc_counts": loc_counts,
+        "top_tags": top_tags,
+    }
+
+
+@login_required
+def dashboard(request):
+    """Display the dashboard with summary metrics."""
+    role = get_user_role(request.user)
+    show_actions = role != "viewer"
+
+    # Department managers only see their departments
+    if role == "department_manager":
+        user_depts = Department.objects.filter(managers=request.user)
+        dept_filter = Q(category__department__in=user_depts)
+    else:
+        user_depts = None
+        dept_filter = Q()  # No filter for admin/member/viewer
+
+    # Cached aggregate counts (60-second TTL)
+    cache_key = f"dashboard_aggregates_{request.user.pk}"
+    aggregates = cache.get(cache_key)
+    if aggregates is None:
+        aggregates = _compute_dashboard_aggregates(
+            role, user_depts, dept_filter
+        )
+        cache.set(cache_key, aggregates, DASHBOARD_CACHE_TTL)
+
+    # Real-time data: recent transactions, drafts, checked-out
+    recent_transactions = Transaction.objects.select_related(
+        "asset", "user", "borrower", "from_location", "to_location"
+    )
+    if role == "department_manager":
+        recent_transactions = recent_transactions.filter(
+            Q(asset__category__department__in=user_depts)
+        )
+    recent_transactions = recent_transactions[:10]
+
+    recent_drafts = Asset.objects.filter(status="draft").select_related(
+        "category", "created_by"
+    )
+    if role == "department_manager":
+        recent_drafts = recent_drafts.filter(dept_filter)
+    recent_drafts = recent_drafts[:5]
+
+    checked_out_assets = Asset.objects.filter(
+        checked_out_to__isnull=False
+    ).select_related("checked_out_to", "category", "current_location")
+    if role == "department_manager":
+        checked_out_assets = checked_out_assets.filter(dept_filter)
+    checked_out_assets = checked_out_assets[:10]
 
     # My borrowed items for members
     if role == "member":
@@ -161,33 +204,51 @@ def dashboard(request):
     else:
         my_borrowed = Asset.objects.none()
 
-    # Pending approvals count for admins (S2.15.4-09)
-    pending_approvals_count = 0
-    if role == "system_admin":
-        from accounts.models import CustomUser as User
+    # Note: pending_approvals_count is provided by the user_role
+    # context processor — no need to compute it here.
 
-        pending_approvals_count = User.objects.filter(
-            is_active=False,
-            email_verified=True,
-            rejection_reason="",
+    # AI daily usage for admin dashboard (S2.14.5-03)
+    ai_context = {}
+    if role == "system_admin":
+        import datetime
+
+        from django.conf import settings as django_settings
+        from django.utils import timezone
+
+        from assets.models import AssetImage
+
+        today_local = timezone.localdate()
+        today_start = timezone.make_aware(
+            datetime.datetime.combine(today_local, datetime.time.min)
+        )
+        ai_usage = AssetImage.objects.filter(
+            ai_processed_at__gte=today_start,
+            ai_processing_status="completed",
         ).count()
+        ai_limit = getattr(django_settings, "AI_ANALYSIS_DAILY_LIMIT", 100)
+        ai_context = {
+            "ai_daily_usage": ai_usage,
+            "ai_daily_remaining": max(0, ai_limit - ai_usage),
+        }
+
+    # L25: Active hold lists count
+    from assets.models import HoldList
+
+    hl_qs = HoldList.objects.filter(status__is_terminal=False)
+    if role == "department_manager":
+        hl_qs = hl_qs.filter(department__in=user_depts)
+    active_hold_lists_count = hl_qs.count()
 
     return render(
         request,
         "assets/dashboard.html",
         {
-            "total_active": total_active,
-            "total_draft": total_draft,
-            "total_checked_out": total_checked_out,
-            "total_missing": total_missing,
+            **aggregates,
+            **ai_context,
             "recent_transactions": recent_transactions,
             "recent_drafts": recent_drafts,
             "checked_out_assets": checked_out_assets,
-            "dept_counts": dept_counts,
-            "cat_counts": cat_counts,
-            "loc_counts": loc_counts,
-            "top_tags": top_tags,
-            "pending_approvals_count": pending_approvals_count,
+            "active_hold_lists_count": active_hold_lists_count,
             "show_actions": show_actions,
             "my_borrowed": my_borrowed,
         },
@@ -258,6 +319,12 @@ def asset_list(request):
     if condition:
         queryset = queryset.filter(condition=condition)
 
+    is_kit_filter = request.GET.get("is_kit", "")
+    if is_kit_filter == "1":
+        queryset = queryset.filter(is_kit=True)
+    elif is_kit_filter == "0":
+        queryset = queryset.filter(is_kit=False)
+
     # Sorting
     SORT_FIELDS = {
         "name": "name",
@@ -272,6 +339,8 @@ def asset_list(request):
         "-updated": "-updated_at",
         "condition": "condition",
         "-condition": "-condition",
+        "created_at": "created_at",
+        "-created_at": "-created_at",
     }
     sort = request.GET.get("sort", "-updated")
     order_by = SORT_FIELDS.get(sort, "-updated_at")
@@ -333,21 +402,84 @@ def asset_list(request):
 @login_required
 def asset_detail(request, pk):
     """Display asset detail view."""
-    asset = get_object_or_404(
-        Asset.objects.with_related().select_related("created_by"),
-        pk=pk,
+    # Build a single queryset with all prefetches for the detail view
+    # (avoids the double-images query from with_related primary_images)
+    detail_qs = Asset.objects.select_related(
+        "category",
+        "category__department",
+        "current_location",
+        "checked_out_to",
+        "created_by",
+    ).prefetch_related(
+        "tags",
+        "images",
+        "nfc_tags",
+        Prefetch(
+            "transactions",
+            queryset=Transaction.objects.select_related(
+                "user",
+                "borrower",
+                "from_location",
+                "to_location",
+            ),
+        ),
     )
-    transactions = asset.transactions.select_related(
-        "user", "borrower", "from_location", "to_location"
-    )
+    asset = get_object_or_404(detail_qs, pk=pk)
+    transactions = asset.transactions.all()[:25]
     images = asset.images.all()
-    active_nfc = asset.nfc_tags.filter(removed_at__isnull=True)
-    removed_nfc = asset.nfc_tags.filter(removed_at__isnull=False)
+    # Use prefetched NFC tags and partition in Python
+    all_nfc = list(asset.nfc_tags.all())
+    active_nfc = [t for t in all_nfc if t.removed_at is None]
+    removed_nfc = [t for t in all_nfc if t.removed_at is not None]
 
     can_edit = can_edit_asset(request.user, asset)
     can_delete = can_delete_asset(request.user, asset)
     can_checkout = can_checkout_asset(request.user, asset)
     can_handover = can_handover_asset(request.user, asset)
+
+    from assets.services.holdlists import get_active_hold_items
+
+    active_holds = get_active_hold_items(asset)
+
+    # V494: Conversion link for managers/admins
+    role = get_user_role(request.user)
+    can_convert = role in ("system_admin", "department_manager")
+
+    member_of_kits = AssetKit.objects.filter(component=asset).select_related(
+        "kit"
+    )
+
+    # S7.5.4: Show a warning when the asset is checked out and
+    # could be marked as missing
+    checkout_warning = None
+    if asset.is_checked_out and asset.status == "active":
+        borrower = asset.checked_out_to
+        borrower_name = (
+            borrower.get_full_name() or borrower.username
+            if borrower
+            else "unknown"
+        )
+        checkout_warning = (
+            f"Warning: This asset is currently checked out to "
+            f"{borrower_name}. Changing the status to missing, "
+            f"lost, or stolen requires explicit confirmation "
+            f"acknowledging that the asset is checked out."
+        )
+
+    # V492: Serialised assets — active + archived serial sections
+    active_serials = []
+    archived_serials = []
+    if asset.is_serialised:
+        active_serials = list(
+            asset.serials.filter(is_archived=False).select_related(
+                "checked_out_to", "current_location"
+            )
+        )
+        archived_serials = list(
+            asset.serials.filter(is_archived=True).select_related(
+                "current_location"
+            )
+        )
 
     return render(
         request,
@@ -362,6 +494,12 @@ def asset_detail(request, pk):
             "can_delete": can_delete,
             "can_checkout": can_checkout,
             "can_handover": can_handover,
+            "active_holds": active_holds,
+            "member_of_kits": member_of_kits,
+            "checkout_warning": checkout_warning,
+            "can_convert": can_convert,
+            "active_serials": active_serials,
+            "archived_serials": archived_serials,
         },
     )
 
@@ -660,6 +798,51 @@ def drafts_queue(request):
     )
 
 
+@login_required
+def drafts_bulk_action(request):
+    """Handle bulk actions on draft assets (V20)."""
+    role = get_user_role(request.user)
+    if role == "viewer":
+        raise PermissionDenied
+    if request.method == "POST":
+        action = request.POST.get("action", "")
+        selected_ids = request.POST.getlist("selected")
+        if not selected_ids:
+            messages.warning(request, "No assets selected.")
+            return redirect("assets:drafts_queue")
+
+        drafts = Asset.objects.filter(pk__in=selected_ids, status="draft")
+        if action == "activate":
+            category_id = request.POST.get("category")
+            location_id = request.POST.get("location")
+            if category_id and location_id:
+                count = drafts.count()
+                drafts.update(
+                    status="active",
+                    category_id=category_id,
+                    current_location_id=location_id,
+                )
+                messages.success(
+                    request,
+                    f"{count} draft(s) activated.",
+                )
+            else:
+                # Activate without category/location changes
+                activated = 0
+                for draft in drafts:
+                    if draft.category and draft.current_location:
+                        draft.status = "active"
+                        draft.save(update_fields=["status"])
+                        activated += 1
+                messages.success(request, f"{activated} draft(s) activated.")
+        elif action == "delete":
+            count = drafts.count()
+            drafts.update(status="disposed")
+            messages.success(request, f"{count} draft(s) disposed.")
+
+    return redirect("assets:drafts_queue")
+
+
 # --- Scan & Lookup ---
 
 
@@ -705,6 +888,46 @@ def scan_lookup(request):
         )
         parent = serial.asset
         url = f"{parent.get_absolute_url()}?serial={serial.pk}"
+        # S7.19.3: Show disposed message for disposed serials
+        response_data = {
+            "found": True,
+            "asset_id": parent.pk,
+            "asset_name": parent.name,
+            "barcode": parent.barcode,
+            "serial_id": serial.pk,
+            "serial_number": serial.serial_number,
+            "location": (
+                str(serial.current_location or parent.current_location)
+                if (serial.current_location or parent.current_location)
+                else None
+            ),
+            "url": url,
+            "is_draft": parent.status == "draft",
+        }
+        if serial.status == "disposed":
+            response_data["status"] = "disposed"
+            response_data["message"] = (
+                f"This serial ({serial.serial_number}) of "
+                f"{parent.name} has been disposed."
+            )
+        return JsonResponse(response_data)
+    except AssetSerial.DoesNotExist:
+        pass
+
+    # 2b. S7.19.3: Check disposed serial via transaction history
+    # (barcode is cleared on disposal but stored in transactions)
+    disposed_txn = (
+        Transaction.objects.filter(
+            serial_barcode__iexact=code,
+            serial__status="disposed",
+        )
+        .select_related("asset", "serial")
+        .first()
+    )
+    if disposed_txn and disposed_txn.serial:
+        serial = disposed_txn.serial
+        parent = disposed_txn.asset
+        url = f"{parent.get_absolute_url()}?serial={serial.pk}"
         return JsonResponse(
             {
                 "found": True,
@@ -713,17 +936,14 @@ def scan_lookup(request):
                 "barcode": parent.barcode,
                 "serial_id": serial.pk,
                 "serial_number": serial.serial_number,
-                "location": (
-                    str(serial.current_location or parent.current_location)
-                    if (serial.current_location or parent.current_location)
-                    else None
+                "status": "disposed",
+                "message": (
+                    f"This serial ({serial.serial_number}) of "
+                    f"{parent.name} has been disposed."
                 ),
                 "url": url,
-                "is_draft": parent.status == "draft",
             }
         )
-    except AssetSerial.DoesNotExist:
-        pass
 
     # 3. Check active NFC tag
     nfc_asset = NFCTag.get_asset_by_tag(code)
@@ -775,9 +995,35 @@ def asset_by_identifier(request, identifier):
             barcode__iexact=identifier
         )
         parent = serial.asset
+        # S7.19.3: Show disposed message for disposed serials
+        if serial.status == "disposed":
+            messages.warning(
+                request,
+                f"This serial ({serial.serial_number}) of "
+                f"{parent.name} has been disposed.",
+            )
         return redirect(f"{parent.get_absolute_url()}?serial={serial.pk}")
     except AssetSerial.DoesNotExist:
         pass
+
+    # 2b. S7.19.3: Check disposed serial via transaction history
+    disposed_txn = (
+        Transaction.objects.filter(
+            serial_barcode__iexact=identifier,
+            serial__status="disposed",
+        )
+        .select_related("asset", "serial")
+        .first()
+    )
+    if disposed_txn and disposed_txn.serial:
+        serial = disposed_txn.serial
+        parent = disposed_txn.asset
+        messages.warning(
+            request,
+            f"This serial ({serial.serial_number}) of "
+            f"{parent.name} has been disposed.",
+        )
+        return redirect(f"{parent.get_absolute_url()}?serial={serial.pk}")
 
     # 3. Active NFC tag match
     nfc_asset = NFCTag.get_asset_by_tag(identifier)
@@ -856,7 +1102,11 @@ def image_upload(request, pk):
     role = get_user_role(request.user)
     if role == "viewer":
         raise PermissionDenied
-    MAX_IMAGE_SIZE = 25 * 1024 * 1024  # 25 MB (§S7.8.1)
+    # V899: Configurable via MAX_IMAGE_SIZE_MB env var
+    import os
+
+    MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", "25"))
+    MAX_IMAGE_SIZE = MAX_IMAGE_SIZE_MB * 1024 * 1024
     ALLOWED_TYPES = {
         "image/jpeg",
         "image/png",
@@ -890,20 +1140,27 @@ def image_upload(request, pk):
             # Convert all images to JPEG for storage (§S2.2.5-05a)
             uploaded_file = _convert_to_jpeg(uploaded_file)
             form.files["image"] = uploaded_file
-            image = form.save(commit=False)
-            image.asset = asset
-            image.uploaded_by = request.user
-            image.save()
-            # Trigger AI analysis if enabled
-            from props.context_processors import is_ai_analysis_enabled
+            try:
+                image = form.save(commit=False)
+                image.asset = asset
+                image.uploaded_by = request.user
+                image.save()
+                # Trigger AI analysis if enabled
+                from props.context_processors import is_ai_analysis_enabled
 
-            if is_ai_analysis_enabled():
-                image.ai_processing_status = "pending"
-                image.save(update_fields=["ai_processing_status"])
-                from .tasks import analyse_image
+                if is_ai_analysis_enabled():
+                    image.ai_processing_status = "pending"
+                    image.save(update_fields=["ai_processing_status"])
+                    from .tasks import analyse_image
 
-                analyse_image.delay(image.pk)
-            messages.success(request, "Image uploaded.")
+                    analyse_image.delay(image.pk)
+                messages.success(request, "Image uploaded.")
+            except OSError:
+                messages.error(
+                    request,
+                    "Image upload failed: storage is currently "
+                    "unavailable. Please try again later.",
+                )
     return redirect("assets:asset_detail", pk=pk)
 
 
@@ -948,11 +1205,19 @@ def asset_checkout(request, pk):
     if not can_checkout_asset(request.user, asset):
         raise PermissionDenied
 
-    if asset.is_checked_out:
+    # V500: For non-serialised, only block if no quantity available
+    if not asset.is_serialised and asset.available_count <= 0:
         messages.error(
             request,
-            f"This asset is already checked out to "
-            f"{asset.checked_out_to.get_display_name()}.",
+            "No units available for checkout.",
+        )
+        return redirect("assets:asset_detail", pk=pk)
+
+    # For serialised assets, block if no serials are available
+    if asset.is_serialised and asset.available_count == 0:
+        messages.error(
+            request,
+            "All serial units are currently checked out.",
         )
         return redirect("assets:asset_detail", pk=pk)
 
@@ -962,6 +1227,54 @@ def asset_checkout(request, pk):
         )
         return redirect("assets:asset_detail", pk=pk)
 
+    # Block checkout if asset is on an active hold list
+    from assets.services.holdlists import (
+        check_asset_held,
+        get_held_quantity,
+    )
+
+    hold_is_active = check_asset_held(asset)
+    has_override = request.user.has_perm("assets.override_hold_checkout")
+    # For non-serialised assets, hold blocking is quantity-aware:
+    # only block if the requested qty would exceed available.
+    # This is checked later in POST for non-serialised assets.
+    # For serialised assets, blocking is serial-aware (checked in POST).
+    # For the initial page load, we only block if ALL units are held
+    # (or override perm is missing).
+    if hold_is_active and not has_override:
+        if not asset.is_serialised:
+            held_qty = get_held_quantity(asset)
+            available_after_holds = asset.quantity - held_qty
+            if available_after_holds <= 0:
+                messages.error(
+                    request,
+                    "This asset is on an active hold list and "
+                    "cannot be checked out. An override permission "
+                    "is required.",
+                )
+                return redirect("assets:asset_detail", pk=pk)
+        else:
+            # For serialised assets, only block if ALL available
+            # serials are held. If some serials are not pinned
+            # on a hold list, allow checkout (filtering happens
+            # in POST).
+            from assets.services.holdlists import (
+                get_active_hold_items as _get_ahi,
+            )
+
+            held_items = _get_ahi(asset)
+            # Check if any hold item pins a specific serial
+            has_serial_pins = any(i.serial_id is not None for i in held_items)
+            if not has_serial_pins:
+                # No specific serials pinned; block all
+                messages.error(
+                    request,
+                    "This asset is on an active hold list and "
+                    "cannot be checked out. An override "
+                    "permission is required.",
+                )
+                return redirect("assets:asset_detail", pk=pk)
+
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -970,6 +1283,18 @@ def asset_checkout(request, pk):
         borrower_id = request.POST.get("borrower")
         notes = request.POST.get("notes", "")
         destination_id = request.POST.get("destination_location", "")
+
+        # Log hold override in transaction notes
+        if hold_is_active and has_override:
+            from assets.services.holdlists import get_active_hold_items
+
+            active_items = get_active_hold_items(asset)
+            hl_names = ", ".join(set(i.hold_list.name for i in active_items))
+            override_note = f"Hold override: asset is held on [{hl_names}]"
+            if notes:
+                notes = f"{notes}\n{override_note}"
+            else:
+                notes = override_note
 
         try:
             borrower = User.objects.get(pk=borrower_id)
@@ -996,50 +1321,183 @@ def asset_checkout(request, pk):
             if action_date:
                 if timezone.is_naive(action_date):
                     action_date = timezone.make_aware(action_date)
-                if action_date <= timezone.now():
-                    extra_kwargs = {
-                        "timestamp": action_date,
-                        "is_backdated": True,
-                    }
+                # S7.21.1: Reject future dates
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:asset_checkout", pk=pk)
+                # S7.21.2: Reject dates before asset creation
+                if asset.created_at and action_date < asset.created_at:
+                    messages.error(
+                        request,
+                        "Date cannot be before the asset was " "created.",
+                    )
+                    return redirect("assets:asset_checkout", pk=pk)
+                # S7.21.4: Reject backdated checkout when already
+                # checked out at that date
+                if asset.is_checked_out:
+                    messages.error(
+                        request,
+                        "Cannot backdate a checkout for an asset "
+                        "that was already checked out at that "
+                        "date.",
+                    )
+                    return redirect("assets:asset_checkout", pk=pk)
+                extra_kwargs = {
+                    "timestamp": action_date,
+                    "is_backdated": True,
+                }
+
+        # Parse optional due date (L2: S2.3.2-10)
+        due_date_str = request.POST.get("due_date", "").strip()
+        if due_date_str:
+            from django.utils.dateparse import parse_datetime as pd
+
+            due_date = pd(due_date_str)
+            if due_date:
+                if timezone.is_naive(due_date):
+                    due_date = timezone.make_aware(due_date)
+                extra_kwargs["due_date"] = due_date
 
         # Re-fetch with select_for_update to prevent concurrent checkout
         from django.db import transaction as db_transaction
 
         with db_transaction.atomic():
             locked_asset = Asset.objects.select_for_update().get(pk=pk)
-            if locked_asset.is_checked_out:
-                messages.error(
-                    request,
-                    "This asset was just checked out by another user.",
-                )
-                return redirect("assets:asset_detail", pk=pk)
 
             if not locked_asset.home_location:
                 locked_asset.home_location = locked_asset.current_location
 
-            tx_kwargs = {
-                "asset": locked_asset,
-                "user": request.user,
-                "action": "checkout",
-                "from_location": locked_asset.current_location,
-                "borrower": borrower,
-                "notes": notes,
-                **extra_kwargs,
-            }
-            if destination:
-                tx_kwargs["to_location"] = destination
+            if locked_asset.is_serialised:
+                # --- Serialised checkout ---
+                serial_ids = request.POST.getlist("serial_ids")
+                auto_assign = request.POST.get("auto_assign_count", "").strip()
 
-            Transaction.objects.create(**tx_kwargs)
-            locked_asset.checked_out_to = borrower
-            if destination:
-                locked_asset.current_location = destination
-            locked_asset.save(
-                update_fields=[
-                    "checked_out_to",
-                    "home_location",
-                    "current_location",
-                ]
-            )
+                if auto_assign and not serial_ids:
+                    # V496: Auto-assign mode — system picks serials
+                    count = max(1, int(auto_assign))
+                    available = AssetSerial.objects.filter(
+                        asset=locked_asset,
+                        status="active",
+                        checked_out_to__isnull=True,
+                        is_archived=False,
+                    )[:count]
+                else:
+                    available = AssetSerial.objects.filter(
+                        asset=locked_asset,
+                        pk__in=serial_ids,
+                        status="active",
+                        checked_out_to__isnull=True,
+                        is_archived=False,
+                    )
+                # Serial-aware hold blocking: only block
+                # serials that are specifically pinned on a
+                # hold list, not all serials of the asset
+                if hold_is_active and not has_override:
+                    from assets.models import HoldListItem
+
+                    held_serial_ids = set(
+                        HoldListItem.objects.filter(
+                            asset=locked_asset,
+                            serial__isnull=False,
+                        )
+                        .exclude(
+                            hold_list__status__is_terminal=True,
+                        )
+                        .exclude(pull_status="unavailable")
+                        .values_list("serial_id", flat=True)
+                    )
+                    available = available.exclude(pk__in=held_serial_ids)
+                if not available.exists():
+                    messages.error(
+                        request,
+                        "No available serials selected.",
+                    )
+                    return redirect("assets:asset_checkout", pk=pk)
+                for serial in available:
+                    tx_kwargs = {
+                        "asset": locked_asset,
+                        "user": request.user,
+                        "action": "checkout",
+                        "from_location": (
+                            serial.current_location
+                            or locked_asset.current_location
+                        ),
+                        "borrower": borrower,
+                        "serial": serial,
+                        "notes": notes,
+                        **extra_kwargs,
+                    }
+                    if destination:
+                        tx_kwargs["to_location"] = destination
+                    Transaction.objects.create(**tx_kwargs)
+                    serial.checked_out_to = borrower
+                    if destination:
+                        serial.current_location = destination
+                    serial.save(
+                        update_fields=[
+                            "checked_out_to",
+                            "current_location",
+                        ]
+                    )
+                # If all serials are now checked out, mark
+                # the parent asset
+                all_out = not AssetSerial.objects.filter(
+                    asset=locked_asset,
+                    status="active",
+                    checked_out_to__isnull=True,
+                    is_archived=False,
+                ).exists()
+                if all_out:
+                    locked_asset.checked_out_to = borrower
+                if destination:
+                    locked_asset.current_location = destination
+                locked_asset.save(
+                    update_fields=[
+                        "checked_out_to",
+                        "home_location",
+                        "current_location",
+                    ]
+                )
+            else:
+                # --- Non-serialised checkout (V500: concurrent) ---
+                avail = locked_asset.available_count
+                if avail <= 0:
+                    messages.error(
+                        request,
+                        "No units available for checkout.",
+                    )
+                    return redirect("assets:asset_detail", pk=pk)
+
+                quantity = int(request.POST.get("quantity", 1) or 1)
+                quantity = max(1, min(quantity, avail))
+
+                tx_kwargs = {
+                    "asset": locked_asset,
+                    "user": request.user,
+                    "action": "checkout",
+                    "from_location": (locked_asset.current_location),
+                    "borrower": borrower,
+                    "quantity": quantity,
+                    "notes": notes,
+                    **extra_kwargs,
+                }
+                if destination:
+                    tx_kwargs["to_location"] = destination
+
+                Transaction.objects.create(**tx_kwargs)
+                locked_asset.checked_out_to = borrower
+                if destination:
+                    locked_asset.current_location = destination
+                locked_asset.save(
+                    update_fields=[
+                        "checked_out_to",
+                        "home_location",
+                        "current_location",
+                    ]
+                )
 
         messages.success(
             request,
@@ -1078,16 +1536,52 @@ def asset_checkout(request, pk):
     )
 
     borrower_group = Group.objects.filter(name="Borrower").first()
+    # V130: Split users into internal staff and external borrowers
+    borrower_ids = set()
+    if borrower_group:
+        borrower_ids = set(
+            borrower_group.user_set.values_list("pk", flat=True)
+        )
+    internal_users = [u for u in users if u.pk not in borrower_ids]
+    external_borrowers = [u for u in users if u.pk in borrower_ids]
+
+    locations = Location.objects.filter(is_active=True)
+    context = {
+        "asset": asset,
+        "users": users,
+        "internal_users": internal_users,
+        "external_borrowers": external_borrowers,
+        "locations": locations,
+        "borrower_group_id": (borrower_group.pk if borrower_group else None),
+    }
+
+    # S7.16.4: Warn if this asset is a kit-only component
+    kit_only_links = AssetKit.objects.filter(
+        component=asset, is_kit_only=True
+    ).select_related("kit")
+    if kit_only_links.exists():
+        kit_names = ", ".join(link.kit.name for link in kit_only_links)
+        context["kit_only_warning"] = (
+            f"This asset is normally checked out as part of a "
+            f"kit ({kit_names}). You may still check it out "
+            f"independently."
+        )
+
+    if asset.is_serialised:
+        context["available_serials"] = AssetSerial.objects.filter(
+            asset=asset,
+            status="active",
+            checked_out_to__isnull=True,
+            is_archived=False,
+        )
+    else:
+        context["show_quantity"] = True
+        context["max_quantity"] = asset.quantity
+
     return render(
         request,
         "assets/asset_checkout.html",
-        {
-            "asset": asset,
-            "users": users,
-            "borrower_group_id": (
-                borrower_group.pk if borrower_group else None
-            ),
-        },
+        context,
     )
 
 
@@ -1118,24 +1612,94 @@ def asset_checkin(request, pk):
             if action_date:
                 if timezone.is_naive(action_date):
                     action_date = timezone.make_aware(action_date)
-                if action_date <= timezone.now():
-                    extra_kwargs = {
-                        "timestamp": action_date,
-                        "is_backdated": True,
-                    }
+                # S7.21.1: Reject future dates
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:asset_checkin", pk=pk)
+                # S7.21.2: Reject dates before asset creation
+                if asset.created_at and action_date < asset.created_at:
+                    messages.error(
+                        request,
+                        "Date cannot be before the asset was " "created.",
+                    )
+                    return redirect("assets:asset_checkin", pk=pk)
+                extra_kwargs = {
+                    "timestamp": action_date,
+                    "is_backdated": True,
+                }
 
-        Transaction.objects.create(
-            asset=asset,
-            user=request.user,
-            action="checkin",
-            from_location=asset.current_location,
-            to_location=to_location,
-            notes=notes,
-            **extra_kwargs,
-        )
-        asset.checked_out_to = None
-        asset.current_location = to_location
-        asset.save(update_fields=["checked_out_to", "current_location"])
+        if asset.is_serialised:
+            # --- Serialised check-in ---
+            serial_ids = request.POST.getlist("serial_ids")
+            checked_out = AssetSerial.objects.filter(
+                asset=asset,
+                pk__in=serial_ids,
+                checked_out_to__isnull=False,
+                is_archived=False,
+            )
+            for serial in checked_out:
+                Transaction.objects.create(
+                    asset=asset,
+                    user=request.user,
+                    action="checkin",
+                    from_location=serial.current_location,
+                    to_location=to_location,
+                    serial=serial,
+                    notes=notes,
+                    **extra_kwargs,
+                )
+                serial.checked_out_to = None
+                serial.current_location = to_location
+                serial.save(
+                    update_fields=[
+                        "checked_out_to",
+                        "current_location",
+                    ]
+                )
+            # If no serials remain checked out, clear the
+            # parent asset
+            still_out = AssetSerial.objects.filter(
+                asset=asset,
+                checked_out_to__isnull=False,
+                is_archived=False,
+            ).exists()
+            if not still_out:
+                asset.checked_out_to = None
+            asset.current_location = to_location
+            serial_update_fields = [
+                "checked_out_to",
+                "current_location",
+            ]
+            # L34: Set as home location checkbox
+            if request.POST.get("set_home_location") == "1":
+                asset.home_location = to_location
+                serial_update_fields.append("home_location")
+            asset.save(update_fields=serial_update_fields)
+        else:
+            # --- Non-serialised check-in ---
+            Transaction.objects.create(
+                asset=asset,
+                user=request.user,
+                action="checkin",
+                from_location=asset.current_location,
+                to_location=to_location,
+                notes=notes,
+                **extra_kwargs,
+            )
+            asset.checked_out_to = None
+            asset.current_location = to_location
+            update_fields = [
+                "checked_out_to",
+                "current_location",
+            ]
+            # L34: Set as home location checkbox
+            if request.POST.get("set_home_location") == "1":
+                asset.home_location = to_location
+                update_fields.append("home_location")
+            asset.save(update_fields=update_fields)
 
         messages.success(
             request,
@@ -1144,14 +1708,23 @@ def asset_checkin(request, pk):
         return redirect("assets:asset_detail", pk=pk)
 
     locations = Location.objects.filter(is_active=True)
+    context = {
+        "asset": asset,
+        "locations": locations,
+        "home_location": asset.home_location,
+    }
+
+    if asset.is_serialised:
+        context["checked_out_serials"] = AssetSerial.objects.filter(
+            asset=asset,
+            checked_out_to__isnull=False,
+            is_archived=False,
+        )
+
     return render(
         request,
         "assets/asset_checkin.html",
-        {
-            "asset": asset,
-            "locations": locations,
-            "home_location": asset.home_location,
-        },
+        context,
     )
 
 
@@ -1193,11 +1766,24 @@ def asset_transfer(request, pk):
             if action_date:
                 if timezone.is_naive(action_date):
                     action_date = timezone.make_aware(action_date)
-                if action_date <= timezone.now():
-                    extra_kwargs = {
-                        "timestamp": action_date,
-                        "is_backdated": True,
-                    }
+                # S7.21.1: Reject future dates
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:asset_transfer", pk=pk)
+                # S7.21.2: Reject dates before asset creation
+                if asset.created_at and action_date < asset.created_at:
+                    messages.error(
+                        request,
+                        "Date cannot be before the asset was " "created.",
+                    )
+                    return redirect("assets:asset_transfer", pk=pk)
+                extra_kwargs = {
+                    "timestamp": action_date,
+                    "is_backdated": True,
+                }
 
         Transaction.objects.create(
             asset=asset,
@@ -1243,7 +1829,30 @@ def asset_relocate(request, pk):
         try:
             to_location = Location.objects.get(pk=location_id, is_active=True)
         except Location.DoesNotExist:
-            messages.error(request, "Invalid location selected.")
+            # S7.22.2: Check if the location exists but is
+            # inactive
+            try:
+                inactive_loc = Location.objects.get(
+                    pk=location_id, is_active=False
+                )
+                messages.error(
+                    request,
+                    f"Cannot relocate to '{inactive_loc.name}': "
+                    "this location is inactive.",
+                )
+            except Location.DoesNotExist:
+                messages.error(request, "Invalid location selected.")
+            return redirect("assets:asset_relocate", pk=pk)
+
+        # S7.22.1: Reject relocate to same location
+        if (
+            asset.current_location_id
+            and to_location.pk == asset.current_location_id
+        ):
+            messages.error(
+                request,
+                "Asset is already at this location.",
+            )
             return redirect("assets:asset_relocate", pk=pk)
 
         # Parse optional backdating (same pattern as transfer)
@@ -1272,8 +1881,29 @@ def asset_relocate(request, pk):
             notes=notes,
             **extra_kwargs,
         )
-        asset.current_location = to_location
-        asset.save(update_fields=["current_location"])
+
+        # S7.22.3: If checked out, update home_location AND
+        # current_location (track where asset is being relocated)
+        if asset.is_checked_out:
+            asset.home_location = to_location
+            asset.current_location = to_location
+            asset.save(
+                update_fields=[
+                    "home_location",
+                    "current_location",
+                ]
+            )
+        else:
+            asset.current_location = to_location
+            asset.save(update_fields=["current_location"])
+
+        # S7.22.5: Cascade relocate to serials at same location
+        if asset.is_serialised:
+            AssetSerial.objects.filter(
+                asset=asset,
+                current_location=old_location,
+                is_archived=False,
+            ).update(current_location=to_location)
 
         messages.success(
             request,
@@ -1352,12 +1982,18 @@ def transaction_list(request):
 
 @login_required
 def category_list(request):
-    """List all categories."""
+    """List all categories, scoped to managed departments for DMs."""
     categories = (
         Category.objects.select_related("department")
         .annotate(asset_count=Count("assets"))
         .order_by("department__name", "name")
     )
+    role = get_user_role(request.user)
+    if role == "department_manager":
+        managed_ids = request.user.managed_departments.values_list(
+            "pk", flat=True
+        )
+        categories = categories.filter(department_id__in=managed_ids)
     return render(
         request,
         "assets/category_list.html",
@@ -1380,11 +2016,13 @@ def location_list(request):
 
 @login_required
 def location_detail(request, pk):
-    """Display location detail with assets."""
+    """Display location detail with assets (including descendants)."""
     location = get_object_or_404(Location, pk=pk)
-    assets = Asset.objects.filter(current_location=location).select_related(
-        "category", "checked_out_to"
-    )
+    descendant_ids = [loc.pk for loc in location.get_descendants()]
+    all_location_ids = [location.pk] + descendant_ids
+    assets = Asset.objects.filter(
+        current_location_id__in=all_location_ids
+    ).select_related("category", "checked_out_to")
 
     paginator = Paginator(assets, 25)
     page_number = request.GET.get("page", 1)
@@ -1465,6 +2103,30 @@ def asset_label_zpl(request, pk):
 
 
 @login_required
+def clear_barcode(request, pk):
+    """Clear an asset's barcode (V163 — S2.4.2-05)."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    asset = get_object_or_404(Asset, pk=pk)
+    if request.method == "POST" and asset.barcode:
+        old_barcode = asset.barcode
+        # Use queryset.update() to bypass save() override which
+        # auto-regenerates blank barcodes
+        Asset.objects.filter(pk=pk).update(barcode="", barcode_image="")
+        Transaction.objects.create(
+            asset=asset,
+            user=request.user,
+            action="audit",
+            from_location=asset.current_location,
+            to_location=asset.current_location,
+            notes=f"Barcode cleared: {old_barcode}",
+        )
+        messages.success(request, f"Barcode '{old_barcode}' cleared.")
+    return redirect("assets:asset_detail", pk=pk)
+
+
+@login_required
 def barcode_pregenerate(request):
     """Pre-generate barcode labels for blank assets or print existing."""
     role = get_user_role(request.user)
@@ -1519,26 +2181,47 @@ def barcode_pregenerate(request):
             return redirect("assets:dashboard")
 
     if request.method == "POST":
+        import uuid
+
         try:
             quantity = int(request.POST.get("quantity", 10))
         except (ValueError, TypeError):
             quantity = 10
         quantity = min(max(quantity, 1), 100)  # Clamp 1-100
 
-        # Generate blank draft assets with barcodes
-        created_assets = []
-        for i in range(quantity):
-            asset = Asset(
-                name=f"Pre-generated #{i + 1}",
-                status="draft",
-                created_by=request.user,
-            )
-            asset.save()
-            created_assets.append(asset)
+        # V167: Resolve prefix from department or global setting
+        dept_id = request.POST.get("department", "")
+        prefix = getattr(settings, "BARCODE_PREFIX", "ASSET")
+        if dept_id:
+            try:
+                dept = Department.objects.get(pk=int(dept_id))
+                if dept.barcode_prefix:
+                    prefix = dept.barcode_prefix
+            except (Department.DoesNotExist, ValueError, TypeError):
+                pass
+
+        # V166: Generate barcodes in memory — no DB storage
+        # V170: Validate uniqueness against Asset + AssetSerial
+        generated_barcodes = []
+        max_retries = 10
+        for _i in range(quantity):
+            for _attempt in range(max_retries):
+                barcode_str = f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
+                # V170: Cross-table uniqueness check
+                if (
+                    not Asset.objects.filter(barcode=barcode_str).exists()
+                    and not AssetSerial.objects.filter(
+                        barcode=barcode_str
+                    ).exists()
+                    and barcode_str not in generated_barcodes
+                    and BARCODE_PATTERN.match(barcode_str)
+                ):
+                    generated_barcodes.append(barcode_str)
+                    break
 
         # Generate QR codes for labels
         label_assets = []
-        for asset in created_assets:
+        for bc in generated_barcodes:
             qr_data_uri = ""
             try:
                 import base64
@@ -1547,7 +2230,7 @@ def barcode_pregenerate(request):
                 import qrcode
 
                 qr = qrcode.QRCode(version=1, box_size=4, border=1)
-                qr.add_data(request.build_absolute_uri(f"/a/{asset.barcode}/"))
+                qr.add_data(request.build_absolute_uri(f"/a/{bc}/"))
                 qr.make(fit=True)
                 qr_img = qr.make_image(fill_color="black", back_color="white")
                 buffer = BytesIO()
@@ -1559,16 +2242,40 @@ def barcode_pregenerate(request):
                 )
             except ImportError:
                 pass
-            label_assets.append({"asset": asset, "qr_data_uri": qr_data_uri})
+            label_assets.append({"barcode": bc, "qr_data_uri": qr_data_uri})
 
-        messages.success(request, f"{quantity} barcode labels pre-generated.")
+        messages.success(
+            request,
+            f"{len(generated_barcodes)} barcode labels " f"pre-generated.",
+        )
         return render(
             request,
-            "assets/bulk_labels.html",
+            "assets/virtual_bulk_labels.html",
             {"label_assets": label_assets},
         )
 
-    return render(request, "assets/barcode_pregenerate.html")
+    departments = Department.objects.filter(is_active=True)
+    return render(
+        request,
+        "assets/barcode_pregenerate.html",
+        {"departments": departments},
+    )
+
+
+@login_required
+def virtual_barcode_list(request):
+    """List unassigned virtual barcodes."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+    virtual_barcodes = VirtualBarcode.objects.filter(
+        assigned_to_asset__isnull=True,
+    ).select_related("created_by")
+    return render(
+        request,
+        "assets/virtual_barcode_list.html",
+        {"virtual_barcodes": virtual_barcodes},
+    )
 
 
 # --- NFC Tag Management ---
@@ -1590,28 +2297,32 @@ def nfc_add(request, pk):
             messages.error(request, "Please enter an NFC tag ID.")
             return redirect("assets:asset_detail", pk=pk)
 
-        # Check for conflicts
-        existing = (
-            NFCTag.objects.filter(
-                tag_id__iexact=tag_id, removed_at__isnull=True
+        with transaction.atomic():
+            # Lock any existing active tag row to prevent races
+            existing = (
+                NFCTag.objects.select_for_update()
+                .filter(
+                    tag_id__iexact=tag_id,
+                    removed_at__isnull=True,
+                )
+                .select_related("asset")
+                .first()
             )
-            .select_related("asset")
-            .first()
-        )
-        if existing:
-            messages.error(
-                request,
-                f"NFC tag '{tag_id}' is already assigned to "
-                f"'{existing.asset.name}' ({existing.asset.barcode}).",
-            )
-            return redirect("assets:asset_detail", pk=pk)
+            if existing:
+                messages.error(
+                    request,
+                    f"NFC tag '{tag_id}' is already assigned to "
+                    f"'{existing.asset.name}' "
+                    f"({existing.asset.barcode}).",
+                )
+                return redirect("assets:asset_detail", pk=pk)
 
-        NFCTag.objects.create(
-            tag_id=tag_id,
-            asset=asset,
-            assigned_by=request.user,
-            notes=notes,
-        )
+            NFCTag.objects.create(
+                tag_id=tag_id,
+                asset=asset,
+                assigned_by=request.user,
+                notes=notes,
+            )
         messages.success(request, f"NFC tag '{tag_id}' assigned.")
         return redirect("assets:asset_detail", pk=pk)
 
@@ -1624,21 +2335,58 @@ def nfc_remove(request, pk, nfc_pk):
     role = get_user_role(request.user)
     if role == "viewer":
         raise PermissionDenied
-    nfc_tag = get_object_or_404(
-        NFCTag, pk=nfc_pk, asset_id=pk, removed_at__isnull=True
-    )
+    # Verify the tag exists (raises 404 if not found)
+    get_object_or_404(NFCTag, pk=nfc_pk, asset_id=pk, removed_at__isnull=True)
 
     if request.method == "POST":
-        nfc_tag.removed_at = timezone.now()
-        nfc_tag.removed_by = request.user
-        nfc_tag.notes = (
-            f"{nfc_tag.notes}\nRemoved: "
-            f"{request.POST.get('notes', '')}".strip()
-        )
-        nfc_tag.save()
-        messages.success(request, f"NFC tag '{nfc_tag.tag_id}' removed.")
+        with transaction.atomic():
+            # Lock the tag row to prevent concurrent removal
+            locked_tag = (
+                NFCTag.objects.select_for_update()
+                .filter(
+                    pk=nfc_pk,
+                    asset_id=pk,
+                    removed_at__isnull=True,
+                )
+                .first()
+            )
+            if locked_tag:
+                locked_tag.removed_at = timezone.now()
+                locked_tag.removed_by = request.user
+                locked_tag.notes = (
+                    f"{locked_tag.notes}\nRemoved: "
+                    f"{request.POST.get('notes', '')}".strip()
+                )
+                locked_tag.save()
+                messages.success(
+                    request,
+                    f"NFC tag '{locked_tag.tag_id}' removed.",
+                )
 
     return redirect("assets:asset_detail", pk=pk)
+
+
+@login_required
+def nfc_history(request, tag_uid):
+    """Show the full history of an NFC tag across all assets."""
+    tags = (
+        NFCTag.objects.filter(tag_id__iexact=tag_uid)
+        .select_related("asset", "assigned_by", "removed_by")
+        .order_by("-assigned_at")
+    )
+    if not tags.exists():
+        from django.http import Http404
+
+        raise Http404("NFC tag not found.")
+
+    return render(
+        request,
+        "assets/nfc_history.html",
+        {
+            "tag_uid": tag_uid,
+            "tags": tags,
+        },
+    )
 
 
 # --- Location CRUD ---
@@ -1715,6 +2463,21 @@ def location_deactivate(request, pk):
                 f"or its descendants. Transfer them first.",
             )
             return redirect("assets:location_detail", pk=pk)
+        # V747: Log note for assets using this as home_location
+        home_assets = Asset.objects.filter(home_location=location)
+        for home_asset in home_assets:
+            Transaction.objects.create(
+                asset=home_asset,
+                user=request.user,
+                action="note",
+                notes=(
+                    f"Home location '{location.name}' was "
+                    f"deactivated. Home location cleared."
+                ),
+            )
+        # Clear home_location from all affected assets
+        home_assets.update(home_location=None)
+
         location.is_active = False
         location.save(update_fields=["is_active"])
         messages.success(request, f"Location '{location.name}' deactivated.")
@@ -1734,6 +2497,12 @@ def category_create(request):
     if request.method == "POST":
         form = CategoryForm(request.POST)
         if form.is_valid():
+            # Dept managers can only create in their departments
+            if role == "department_manager":
+                dept = form.cleaned_data.get("department")
+                managed = request.user.managed_departments.all()
+                if dept not in managed:
+                    raise PermissionDenied
             form.save()
             messages.success(
                 request, f"Category '{form.instance.name}' created."
@@ -1752,6 +2521,11 @@ def category_edit(request, pk):
     if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
     category = get_object_or_404(Category, pk=pk)
+    # Dept managers can only edit categories in their departments
+    if role == "department_manager":
+        managed = request.user.managed_departments.all()
+        if category.department not in managed:
+            raise PermissionDenied
     if request.method == "POST":
         form = CategoryForm(request.POST, instance=category)
         if form.is_valid():
@@ -2008,6 +2782,23 @@ def stocktake_start(request):
             location=location,
             started_by=request.user,
         )
+        # M6: Snapshot expected assets at start time
+        # V236/V737: Include checked-out assets whose home_location
+        # matches so they appear flagged rather than missing.
+        expected = Asset.objects.filter(
+            Q(current_location=location)
+            | Q(
+                home_location=location,
+                checked_out_to__isnull=False,
+            ),
+            status__in=["active", "missing"],
+        ).distinct()
+        StocktakeItem.objects.bulk_create(
+            [
+                StocktakeItem(session=session, asset=a, status="expected")
+                for a in expected
+            ]
+        )
         messages.success(
             request,
             f"Stocktake started for '{location.name}'.",
@@ -2029,16 +2820,24 @@ def stocktake_detail(request, pk):
         StocktakeSession.objects.select_related("location", "started_by"),
         pk=pk,
     )
-    expected = session.expected_assets.select_related("category")
+    expected = session.expected_assets.select_related(
+        "category", "checked_out_to"
+    ).prefetch_related("images")
     confirmed_ids = set(session.confirmed_assets.values_list("pk", flat=True))
+
+    # Paginate expected assets (S7.9.4)
+    paginator = Paginator(expected, 25)
+    page_number = request.GET.get("page", 1)
+    page_obj = paginator.get_page(page_number)
 
     return render(
         request,
         "assets/stocktake_detail.html",
         {
             "session": session,
-            "expected": expected,
+            "expected": page_obj,
             "confirmed_ids": confirmed_ids,
+            "page_obj": page_obj,
         },
     )
 
@@ -2098,6 +2897,22 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
+                # G9: Update or create StocktakeItem
+                updated = StocktakeItem.objects.filter(
+                    session=session, asset=asset
+                ).update(
+                    status="confirmed",
+                    scanned_by=request.user,
+                    scanned_at=timezone.now(),
+                )
+                if not updated:
+                    StocktakeItem.objects.create(
+                        session=session,
+                        asset=asset,
+                        status="unexpected",
+                        scanned_by=request.user,
+                        scanned_at=timezone.now(),
+                    )
                 # V31: Show confirmation prompt instead of auto-transfer
                 if asset.current_location != session.location:
                     old_location_name = (
@@ -2147,6 +2962,22 @@ def stocktake_confirm(request, pk):
                     to_location=session.location,
                     notes=f"Confirmed during stocktake #{session.pk}",
                 )
+                # G9: Update or create StocktakeItem
+                updated = StocktakeItem.objects.filter(
+                    session=session, asset=found_asset
+                ).update(
+                    status="confirmed",
+                    scanned_by=request.user,
+                    scanned_at=timezone.now(),
+                )
+                if not updated:
+                    StocktakeItem.objects.create(
+                        session=session,
+                        asset=found_asset,
+                        status="unexpected",
+                        scanned_by=request.user,
+                        scanned_at=timezone.now(),
+                    )
                 # V31: Show confirmation prompt instead of auto-transfer
                 if found_asset.current_location != session.location:
                     old_location_name = (
@@ -2188,7 +3019,12 @@ def stocktake_confirm(request, pk):
                 qc_url = (
                     reverse("assets:quick_capture")
                     + "?"
-                    + urlencode({"code": code})
+                    + urlencode(
+                        {
+                            "code": code,
+                            "location": session.location.pk,
+                        }
+                    )
                 )
                 messages.warning(
                     request,
@@ -2224,8 +3060,25 @@ def stocktake_complete(request, pk):
             # Mark unconfirmed assets as missing
             mark_missing = request.POST.get("mark_missing") == "1"
             if mark_missing:
-                missing = session.missing_assets
+                missing = session.missing_assets.filter(
+                    checked_out_to__isnull=True
+                )
                 missing_count = missing.update(status="missing")
+                # M7: Update StocktakeItems and create Transactions
+                missing_items = session.items.filter(status="expected")
+                for item in missing_items.select_related("asset"):
+                    Transaction.objects.create(
+                        asset=item.asset,
+                        user=request.user,
+                        action="audit",
+                        from_location=session.location,
+                        to_location=session.location,
+                        notes=(
+                            f"Marked missing during "
+                            f"stocktake #{session.pk}"
+                        ),
+                    )
+                missing_items.update(status="missing")
                 messages.success(
                     request,
                     f"Stocktake completed. {missing_count} asset(s) "
@@ -2247,23 +3100,75 @@ def stocktake_summary(request, pk):
         StocktakeSession.objects.select_related("location", "started_by"),
         pk=pk,
     )
-    expected = session.expected_assets
-    confirmed_ids = set(session.confirmed_assets.values_list("pk", flat=True))
-    missing = expected.exclude(pk__in=confirmed_ids)
-    unexpected = session.unexpected_assets
+    # Use StocktakeItem data when available, fall back to M2M
+    items = session.items.all()
+    if items.exists():
+        total_expected = items.exclude(status="unexpected").count()
+        confirmed_count = items.filter(status="confirmed").count()
+        missing_qs = items.filter(status="missing").select_related("asset")
+        missing_assets = Asset.objects.filter(
+            pk__in=missing_qs.values_list("asset_id", flat=True)
+        )
+        missing_count = missing_qs.count()
+        unexpected_qs = items.filter(status="unexpected").select_related(
+            "asset"
+        )
+        unexpected_assets = Asset.objects.filter(
+            pk__in=unexpected_qs.values_list("asset_id", flat=True)
+        )
+        unexpected_count = unexpected_qs.count()
+    else:
+        # Backwards compatibility: use M2M and dynamic property
+        expected = session.expected_assets
+        confirmed_ids = set(
+            session.confirmed_assets.values_list("pk", flat=True)
+        )
+        missing_assets = expected.exclude(pk__in=confirmed_ids)
+        unexpected_assets = session.unexpected_assets
+        total_expected = expected.count()
+        confirmed_count = len(confirmed_ids)
+        missing_count = missing_assets.count()
+        unexpected_count = unexpected_assets.count()
 
     return render(
         request,
         "assets/stocktake_summary.html",
         {
             "session": session,
-            "total_expected": expected.count(),
-            "confirmed_count": len(confirmed_ids),
-            "missing_assets": missing,
-            "missing_count": missing.count(),
-            "unexpected_assets": unexpected,
-            "unexpected_count": unexpected.count(),
+            "total_expected": total_expected,
+            "confirmed_count": confirmed_count,
+            "missing_assets": missing_assets,
+            "missing_count": missing_count,
+            "unexpected_assets": unexpected_assets,
+            "unexpected_count": unexpected_count,
         },
+    )
+
+
+# --- Lost & Stolen Report (V467) ---
+
+
+@login_required
+def lost_stolen_report(request):
+    """V467: Dedicated report view for lost and stolen assets."""
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager", "member"):
+        raise PermissionDenied
+
+    assets = (
+        Asset.objects.filter(status__in=["lost", "stolen"])
+        .select_related(
+            "category",
+            "category__department",
+            "current_location",
+            "checked_out_to",
+        )
+        .order_by("status", "-updated_at")
+    )
+    return render(
+        request,
+        "assets/lost_stolen_report.html",
+        {"assets": assets, "total": assets.count()},
     )
 
 
@@ -2352,40 +3257,25 @@ def bulk_actions(request):
     select_all_matching = request.POST.get("select_all_matching") == "1"
 
     if select_all_matching:
-        # Re-run the filter query to get ALL matching asset IDs
-        queryset = Asset.objects.all()
-        filter_status = request.POST.get("filter_status", "")
-        if filter_status:
-            queryset = queryset.filter(status=filter_status)
-        filter_q = request.POST.get("filter_q", "")
-        if filter_q:
-            queryset = queryset.filter(
-                Q(name__icontains=filter_q)
-                | Q(description__icontains=filter_q)
-                | Q(barcode__icontains=filter_q)
-                | Q(tags__name__icontains=filter_q)
-            ).distinct()
-        filter_department = request.POST.get("filter_department", "")
-        if filter_department:
-            queryset = queryset.filter(
-                category__department_id=filter_department
-            )
-        filter_category = request.POST.get("filter_category", "")
-        if filter_category:
-            queryset = queryset.filter(category_id=filter_category)
-        filter_location = request.POST.get("filter_location", "")
-        if filter_location:
-            if filter_location == "checked_out":
-                queryset = queryset.filter(checked_out_to__isnull=False)
-            else:
-                queryset = queryset.filter(current_location_id=filter_location)
-        filter_tag = request.POST.get("filter_tag", "")
-        if filter_tag:
-            queryset = queryset.filter(tags__id=filter_tag)
-        filter_condition = request.POST.get("filter_condition", "")
-        if filter_condition:
-            queryset = queryset.filter(condition=filter_condition)
-        asset_ids = list(queryset.values_list("pk", flat=True).distinct())
+        # V271: Use shared builder instead of duplicating filter logic
+        from .services.bulk import (
+            build_asset_filter_queryset,
+            validate_filter_params,
+        )
+
+        raw_filters = {
+            "status": request.POST.get("filter_status", ""),
+            "q": request.POST.get("filter_q", ""),
+            "department": request.POST.get("filter_department", ""),
+            "category": request.POST.get("filter_category", ""),
+            "location": request.POST.get("filter_location", ""),
+            "tag": request.POST.get("filter_tag", ""),
+            "condition": request.POST.get("filter_condition", ""),
+            "is_kit": request.POST.get("filter_is_kit", ""),
+        }
+        filters = validate_filter_params(raw_filters)
+        queryset = build_asset_filter_queryset(filters)
+        asset_ids = list(queryset.values_list("pk", flat=True))
         asset_ids = [str(i) for i in asset_ids]
     else:
         asset_ids = request.POST.getlist("asset_ids")
@@ -2559,10 +3449,118 @@ def bulk_actions(request):
             {"label_assets": label_assets},
         )
 
+    elif action == "print_labels_zpl":
+        # V257: Zebra ZPL bulk label printing
+        assets = list(Asset.objects.filter(pk__in=asset_ids))
+        from .services.zebra import print_batch_labels
+
+        success, count = print_batch_labels(assets)
+        if success:
+            messages.success(
+                request,
+                f"{count} label(s) sent to Zebra printer.",
+            )
+        else:
+            messages.error(
+                request,
+                "Failed to send labels to Zebra printer. "
+                "Check printer configuration.",
+            )
+
     else:
         messages.error(request, "Unknown bulk action.")
 
     return redirect("assets:asset_list")
+
+
+# --- Print All Filtered Labels ---
+
+
+@login_required
+def print_all_filtered_labels(request):
+    """Generate printable labels for ALL assets matching current filters.
+
+    Accepts the same filter parameters as asset_list (via GET).
+    """
+    role = get_user_role(request.user)
+    if role == "viewer":
+        raise PermissionDenied
+
+    queryset = Asset.objects.with_related()
+
+    # Apply the same filters as asset_list
+    status = request.GET.get("status", "")
+    if status:
+        queryset = queryset.filter(status=status)
+
+    q = request.GET.get("q", "")
+    if q:
+        queryset = queryset.filter(
+            Q(name__icontains=q)
+            | Q(description__icontains=q)
+            | Q(barcode__icontains=q)
+            | Q(tags__name__icontains=q)
+            | Q(
+                nfc_tags__tag_id__icontains=q,
+                nfc_tags__removed_at__isnull=True,
+            )
+        ).distinct()
+
+    department = request.GET.get("department")
+    if department:
+        queryset = queryset.filter(category__department_id=department)
+
+    category = request.GET.get("category")
+    if category:
+        queryset = queryset.filter(category_id=category)
+
+    location = request.GET.get("location")
+    if location:
+        if location == "checked_out":
+            queryset = queryset.filter(checked_out_to__isnull=False)
+        else:
+            queryset = queryset.filter(current_location_id=location)
+
+    tag = request.GET.get("tag")
+    if tag:
+        queryset = queryset.filter(tags__id=tag)
+
+    condition = request.GET.get("condition")
+    if condition:
+        queryset = queryset.filter(condition=condition)
+
+    assets = queryset.order_by("name")
+
+    # Generate QR codes for each asset
+    label_assets = []
+    for asset in assets:
+        qr_data_uri = ""
+        try:
+            import base64
+            from io import BytesIO
+
+            import qrcode
+
+            qr = qrcode.QRCode(version=1, box_size=4, border=1)
+            qr.add_data(request.build_absolute_uri(f"/a/{asset.barcode}/"))
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            buffer = BytesIO()
+            qr_img.save(buffer, format="PNG")
+            buffer.seek(0)
+            qr_data_uri = (
+                f"data:image/png;base64,"
+                f"{base64.b64encode(buffer.getvalue()).decode()}"
+            )
+        except ImportError:
+            pass
+        label_assets.append({"asset": asset, "qr_data_uri": qr_data_uri})
+
+    return render(
+        request,
+        "assets/bulk_labels.html",
+        {"label_assets": label_assets},
+    )
 
 
 # --- Asset Merge ---
@@ -2721,7 +3719,11 @@ def ai_apply_suggestions(request, pk, image_pk):
                 )
                 asset.category = cat
             except Category.DoesNotExist:
-                pass
+                messages.warning(
+                    request,
+                    f"Category '{image.ai_category_suggestion}' "
+                    f"not found. Could not apply category suggestion.",
+                )
 
         if (
             request.POST.get("create_apply_category")
@@ -2766,6 +3768,11 @@ def ai_apply_suggestions(request, pk, image_pk):
                 asset.notes = image.ai_ocr_text
 
         asset.save()
+
+        # Track that suggestions were applied (L36)
+        image.ai_suggestions_applied = True
+        image.save(update_fields=["ai_suggestions_applied"])
+
         messages.success(request, "AI suggestions applied.")
 
     return redirect("assets:asset_detail", pk=pk)
@@ -2829,6 +3836,15 @@ def asset_handover(request, pk):
         )
         return redirect("assets:asset_detail", pk=pk)
 
+    # S7.20.4: Block handover on lost/stolen assets
+    if asset.status in ("lost", "stolen"):
+        messages.error(
+            request,
+            f"Cannot hand over a {asset.status} asset. "
+            "Recover the asset first.",
+        )
+        return redirect("assets:asset_detail", pk=pk)
+
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -2843,6 +3859,17 @@ def asset_handover(request, pk):
         except User.DoesNotExist:
             messages.error(request, "Invalid borrower selected.")
             return redirect("assets:asset_handover", pk=pk)
+
+        # S7.20.2: Reject handover to the same borrower
+        if (
+            asset.checked_out_to_id
+            and asset.checked_out_to_id == new_borrower.pk
+        ):
+            messages.error(
+                request,
+                "Asset is already checked out to this person.",
+            )
+            return redirect("assets:asset_detail", pk=pk)
 
         to_location = None
         if location_id:
@@ -2863,19 +3890,29 @@ def asset_handover(request, pk):
             if action_date:
                 if timezone.is_naive(action_date):
                     action_date = timezone.make_aware(action_date)
-                if action_date <= timezone.now():
-                    timestamp = action_date
+                # S7.21.1: Reject future dates
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:asset_handover", pk=pk)
+                timestamp = action_date
 
         from .services.transactions import create_handover
 
-        create_handover(
-            asset=asset,
-            new_borrower=new_borrower,
-            performed_by=request.user,
-            to_location=to_location,
-            notes=notes,
-            timestamp=timestamp,
-        )
+        try:
+            create_handover(
+                asset=asset,
+                new_borrower=new_borrower,
+                performed_by=request.user,
+                to_location=to_location,
+                notes=notes,
+                timestamp=timestamp,
+            )
+        except (ValueError, ValidationError) as exc:
+            messages.error(request, str(exc))
+            return redirect("assets:asset_detail", pk=pk)
 
         messages.success(
             request,
@@ -3037,11 +4074,18 @@ def holdlist_list(request):
     if project_filter:
         qs = qs.filter(project_id=project_filter)
     statuses = HoldListStatus.objects.all()
+
+    # L24: Pagination
+    paginator = Paginator(qs, 25)
+    page_number = request.GET.get("page", 1)
+    page_obj = paginator.get_page(page_number)
+
     return render(
         request,
         "assets/holdlist_list.html",
         {
-            "hold_lists": qs,
+            "hold_lists": page_obj,
+            "page_obj": page_obj,
             "statuses": statuses,
             "current_status": status_filter,
         },
@@ -3051,16 +4095,34 @@ def holdlist_list(request):
 @login_required
 def holdlist_detail(request, pk):
     """Show hold list with items."""
+    from collections import OrderedDict
+
     from assets.models import HoldList
 
     hold_list = get_object_or_404(
         HoldList.objects.select_related("project", "department", "status"),
         pk=pk,
     )
-    items = hold_list.items.select_related("asset", "serial", "pulled_by")
-    from assets.services.holdlists import detect_overlaps
+    items = hold_list.items.select_related(
+        "asset", "asset__current_location", "serial", "pulled_by"
+    )
+    from assets.services.holdlists import detect_overlaps, get_effective_dates
 
     overlaps = detect_overlaps(hold_list)
+    effective_start, effective_end = get_effective_dates(hold_list)
+
+    # Group items by location for pull view
+    items_by_location = OrderedDict()
+    for item in items:
+        loc_name = (
+            item.asset.current_location.name
+            if item.asset.current_location
+            else "Unknown Location"
+        )
+        if loc_name not in items_by_location:
+            items_by_location[loc_name] = []
+        items_by_location[loc_name].append(item)
+
     return render(
         request,
         "assets/holdlist_detail.html",
@@ -3068,6 +4130,9 @@ def holdlist_detail(request, pk):
             "hold_list": hold_list,
             "items": items,
             "overlaps": overlaps,
+            "effective_start": effective_start,
+            "effective_end": effective_end,
+            "items_by_location": items_by_location,
         },
     )
 
@@ -3136,6 +4201,19 @@ def holdlist_edit(request, pk):
     ):
         raise PermissionDenied
 
+    # Locked hold lists can only be edited by managers/admins
+    if hold_list.is_locked and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        messages.error(
+            request,
+            "This hold list is locked and cannot be edited.",
+        )
+        if request.method == "POST":
+            return redirect("assets:holdlist_detail", pk=pk)
+        return redirect("assets:holdlist_detail", pk=pk)
+
     if request.method == "POST":
         hold_list.name = request.POST.get("name", hold_list.name)
         project_id = request.POST.get("project")
@@ -3175,7 +4253,7 @@ def holdlist_edit(request, pk):
 @login_required
 def holdlist_add_item(request, pk):
     """Add an item to a hold list."""
-    from assets.models import HoldList
+    from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
     if request.method == "POST":
@@ -3186,13 +4264,48 @@ def holdlist_add_item(request, pk):
             asset = get_object_or_404(Asset, pk=asset_id)
             qty = int(request.POST.get("quantity", 1))
             notes = request.POST.get("notes", "")
+            override_overlap = request.POST.get("override_overlap")
             try:
                 add_item(
-                    hold_list, asset, request.user, quantity=qty, notes=notes
+                    hold_list,
+                    asset,
+                    request.user,
+                    quantity=qty,
+                    notes=notes,
                 )
                 messages.success(
                     request, f"Added '{asset.name}' to hold list."
                 )
+                # Check for overlapping holds and warn
+                if hold_list.start_date and hold_list.end_date:
+                    overlapping = (
+                        HoldListItem.objects.filter(
+                            asset=asset,
+                            hold_list__start_date__lte=(hold_list.end_date),
+                            hold_list__end_date__gte=(hold_list.start_date),
+                        )
+                        .exclude(hold_list=hold_list)
+                        .exclude(hold_list__status__is_terminal=True)
+                        .select_related("hold_list")
+                    )
+                    if overlapping.exists():
+                        if override_overlap:
+                            messages.warning(
+                                request,
+                                f"Overlap override acknowledged: "
+                                f"'{asset.name}' is also on other "
+                                f"hold lists.",
+                            )
+                        else:
+                            for oi in overlapping:
+                                hl = oi.hold_list
+                                messages.warning(
+                                    request,
+                                    f"Overlap: '{asset.name}' is "
+                                    f'also on "{hl.name}" '
+                                    f"({hl.start_date} - "
+                                    f"{hl.end_date}).",
+                                )
             except Exception as e:
                 messages.error(request, str(e))
     return redirect("assets:holdlist_detail", pk=pk)
@@ -3216,6 +4329,27 @@ def holdlist_remove_item(request, pk, item_pk):
 
 
 @login_required
+def holdlist_edit_item(request, pk, item_pk):
+    """V459: Edit an existing hold list item's quantity and notes."""
+    from assets.models import HoldList, HoldListItem
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    item = get_object_or_404(HoldListItem, pk=item_pk, hold_list=hold_list)
+    if request.method == "POST":
+        quantity = request.POST.get("quantity")
+        notes = request.POST.get("notes", "")
+        if quantity:
+            try:
+                item.quantity = max(1, int(quantity))
+            except (ValueError, TypeError):
+                pass
+        item.notes = notes
+        item.save()
+        messages.success(request, "Item updated.")
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
 def holdlist_pick_sheet(request, pk):
     """Download pick sheet PDF for a hold list."""
     from assets.models import HoldList
@@ -3228,12 +4362,43 @@ def holdlist_pick_sheet(request, pk):
     items = hold_list.items.select_related(
         "asset", "asset__category", "asset__current_location"
     )
-    pdf_bytes = generate_pick_sheet_pdf(hold_list, items)
+    pdf_bytes = generate_pick_sheet_pdf(
+        hold_list, items, generated_by=request.user
+    )
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = (
         f'attachment; filename="pick-sheet-{hold_list.pk}.pdf"'
     )
     return response
+
+
+@login_required
+def holdlist_update_pull_status(request, pk, item_pk):
+    """Update pull status of a hold list item."""
+    from assets.models import HoldList, HoldListItem
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    item = get_object_or_404(HoldListItem, pk=item_pk, hold_list=hold_list)
+    if request.method == "POST":
+        new_status = request.POST.get("pull_status", "")
+        if new_status in ("pending", "pulled", "unavailable"):
+            if new_status == "pulled":
+                from assets.services.holdlists import fulfil_item
+
+                fulfil_item(item, request.user)
+            else:
+                from assets.services.holdlists import (
+                    update_pull_status,
+                )
+
+                update_pull_status(item, new_status, request.user)
+            messages.success(
+                request,
+                f"Item '{item.asset.name}' marked as {new_status}.",
+            )
+        else:
+            messages.error(request, "Invalid pull status.")
+    return redirect("assets:holdlist_detail", pk=pk)
 
 
 @login_required
@@ -3284,6 +4449,152 @@ def project_edit(request, pk):
         {
             "project": project,
             "editing": True,
+        },
+    )
+
+
+@login_required
+def project_detail(request, pk):
+    """Show project detail with associated hold lists."""
+    from assets.models import HoldList, Project
+
+    project = get_object_or_404(Project, pk=pk)
+    hold_lists = HoldList.objects.filter(project=project).select_related(
+        "department", "status"
+    )
+    return render(
+        request,
+        "assets/project_detail.html",
+        {
+            "project": project,
+            "hold_lists": hold_lists,
+        },
+    )
+
+
+@login_required
+def project_delete(request, pk):
+    """Delete a project. Only creator, dept manager, or admin."""
+    from assets.models import Project
+
+    project = get_object_or_404(Project, pk=pk)
+    role = get_user_role(request.user)
+    if project.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        project.delete()
+        messages.success(request, f"Project '{project.name}' deleted.")
+        return redirect("assets:project_list")
+    return redirect("assets:project_list")
+
+
+@login_required
+def holdlist_delete(request, pk):
+    """Delete a hold list."""
+    from assets.models import HoldList
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    role = get_user_role(request.user)
+    if hold_list.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
+
+    if request.method == "POST":
+        hold_list.delete()
+        messages.success(request, f"Hold list '{hold_list.name}' deleted.")
+        return redirect("assets:holdlist_list")
+    return redirect("assets:holdlist_list")
+
+
+@login_required
+def holdlist_lock(request, pk):
+    """Lock a hold list."""
+    from assets.models import HoldList
+    from assets.services.holdlists import lock_hold_list
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        lock_hold_list(hold_list, request.user)
+        messages.success(request, "Hold list locked.")
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def holdlist_unlock(request, pk):
+    """Unlock a hold list."""
+    from assets.models import HoldList
+    from assets.services.holdlists import unlock_hold_list
+
+    hold_list = get_object_or_404(HoldList, pk=pk)
+    if request.method == "POST":
+        unlock_hold_list(hold_list, request.user)
+        messages.success(request, "Hold list unlocked.")
+    return redirect("assets:holdlist_detail", pk=pk)
+
+
+@login_required
+def holdlist_fulfil(request, pk):
+    """Fulfil/bulk checkout a hold list's items."""
+    from django.contrib.auth import get_user_model
+
+    from assets.models import HoldList
+    from assets.services.transactions import create_checkout
+
+    User = get_user_model()
+
+    hold_list = get_object_or_404(
+        HoldList.objects.select_related("project", "department", "status"),
+        pk=pk,
+    )
+    items = hold_list.items.select_related(
+        "asset", "asset__current_location", "serial", "pulled_by"
+    )
+
+    # V449: POST handler for bulk fulfil/checkout
+    if request.method == "POST":
+        borrower_id = request.POST.get("borrower")
+        try:
+            borrower = User.objects.get(pk=borrower_id)
+        except (User.DoesNotExist, ValueError, TypeError):
+            messages.error(request, "Invalid borrower selected.")
+            return redirect("assets:holdlist_fulfil", pk=pk)
+
+        fulfilled = 0
+        for item in items:
+            asset = item.asset
+            if asset.available_count > 0:
+                try:
+                    create_checkout(
+                        asset=asset,
+                        borrower=borrower,
+                        performed_by=request.user,
+                        notes=f"Fulfilled from hold list: {hold_list.name}",
+                    )
+                    item.pull_status = "pulled"
+                    item.pulled_by = request.user
+                    item.pulled_at = timezone.now()
+                    item.save()
+                    fulfilled += 1
+                except Exception:
+                    pass
+        messages.success(
+            request,
+            f"Fulfilled {fulfilled} item(s) to {borrower.get_display_name}.",
+        )
+        return redirect("assets:holdlist_detail", pk=pk)
+
+    return render(
+        request,
+        "assets/holdlist_fulfil.html",
+        {
+            "hold_list": hold_list,
+            "items": items,
         },
     )
 

@@ -22,7 +22,7 @@ class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     barcode_prefix = models.CharField(
-        max_length=10,
+        max_length=20,
         blank=True,
         help_text="Barcode prefix for assets in this department",
     )
@@ -108,6 +108,11 @@ class Location(models.Model):
                 fields=["name", "parent"],
                 name="unique_location_name_per_parent",
             ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(parent__isnull=True),
+                name="unique_top_level_location_name",
+            ),
         ]
 
     def __str__(self):
@@ -146,12 +151,15 @@ class Location(models.Model):
                 )
 
     def get_descendants(self):
-        """Return all descendant locations."""
+        """Return all descendant locations using iterative batch queries."""
         descendants = []
-        children = list(self.children.all())
-        for child in children:
-            descendants.append(child)
-            descendants.extend(child.get_descendants())
+        current_level = list(self.children.all())
+        while current_level:
+            descendants.extend(current_level)
+            current_ids = [loc.pk for loc in current_level]
+            current_level = list(
+                Location.objects.filter(parent_id__in=current_ids)
+            )
         return descendants
 
 
@@ -159,13 +167,36 @@ class AssetManager(models.Manager):
     """Custom manager with shared queryset builder for Asset."""
 
     def with_related(self):
-        """Apply the standard select_related and prefetch_related calls."""
-        return self.select_related(
-            "category",
-            "category__department",
-            "current_location",
-            "checked_out_to",
-        ).prefetch_related("tags")
+        """Apply the standard select_related and prefetch_related calls.
+
+        Includes an ``_has_checked_out_serial`` annotation so that
+        ``is_checked_out`` can avoid per-row serial queries.
+        """
+        return (
+            self.select_related(
+                "category",
+                "category__department",
+                "current_location",
+                "checked_out_to",
+            )
+            .prefetch_related(
+                "tags",
+                models.Prefetch(
+                    "images",
+                    queryset=AssetImage.objects.filter(is_primary=True),
+                    to_attr="primary_images",
+                ),
+            )
+            .annotate(
+                _has_checked_out_serial=models.Exists(
+                    AssetSerial.objects.filter(
+                        asset=models.OuterRef("pk"),
+                        checked_out_to__isnull=False,
+                        is_archived=False,
+                    )
+                )
+            )
+        )
 
 
 class Asset(models.Model):
@@ -246,6 +277,15 @@ class Asset(models.Model):
         blank=True,
         help_text="Details about loss or theft circumstances",
     )
+    is_public = models.BooleanField(
+        default=False,
+        help_text="Whether this asset is visible in public listings",
+    )
+    public_description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Description shown in public listings",
+    )
     barcode_image = models.ImageField(
         upload_to="barcodes/", blank=True, null=True
     )
@@ -290,6 +330,16 @@ class Asset(models.Model):
             models.Index(fields=["status"], name="idx_asset_status"),
             models.Index(fields=["created_at"], name="idx_asset_created_at"),
             models.Index(fields=["condition"], name="idx_asset_condition"),
+            models.Index(
+                fields=["is_public"],
+                condition=models.Q(is_public=True),
+                name="idx_asset_is_public",
+            ),
+            models.Index(fields=["is_kit"], name="idx_asset_is_kit"),
+            models.Index(
+                fields=["is_serialised"],
+                name="idx_asset_is_serialised",
+            ),
         ]
         permissions = [
             ("can_checkout_asset", "Can check out assets"),
@@ -297,7 +347,14 @@ class Asset(models.Model):
             ("can_print_labels", "Can print asset labels"),
             ("can_merge_assets", "Can merge duplicate assets"),
             ("can_export_assets", "Can export asset data"),
-            ("can_handover_asset", "Can hand over assets between borrowers"),
+            (
+                "can_handover_asset",
+                "Can hand over assets between borrowers",
+            ),
+            (
+                "override_hold_checkout",
+                "Can override hold list checkout block",
+            ),
         ]
 
     def __str__(self):
@@ -307,6 +364,24 @@ class Asset(models.Model):
         return reverse("assets:asset_detail", kwargs={"pk": self.pk})
 
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
+
+        # S2.2.3-11: When marking a checked-out asset as lost/stolen,
+        # set current_location to the checkout destination (last known
+        # location).
+        if (
+            not is_new
+            and self.status in ("lost", "stolen")
+            and self.checked_out_to_id
+        ):
+            last_checkout = (
+                Transaction.objects.filter(asset=self, action="checkout")
+                .order_by("-timestamp")
+                .first()
+            )
+            if last_checkout and last_checkout.to_location:
+                self.current_location = last_checkout.to_location
+
         if not self.barcode:
             self.barcode = self._generate_barcode()
         max_attempts = 5
@@ -321,6 +396,27 @@ class Asset(models.Model):
                 self.barcode = self._generate_barcode()
         if not self.barcode_image:
             self._generate_barcode_image()
+        # Link any matching VirtualBarcode when a new asset is created
+        if is_new and self.barcode:
+            VirtualBarcode.objects.filter(
+                barcode=self.barcode,
+                assigned_to_asset__isnull=True,
+            ).update(
+                assigned_to_asset=self,
+                assigned_at=timezone.now(),
+            )
+
+        # S7.17.2: When asset marked lost/stolen, update hold list
+        # items to unavailable
+        if self.status in ("lost", "stolen") and self.pk:
+            from django.apps import apps
+
+            HLItem = apps.get_model("assets", "HoldListItem")
+            HLItem.objects.filter(
+                asset=self,
+            ).exclude(
+                pull_status="unavailable",
+            ).update(pull_status="unavailable")
 
     def clean(self):
         super().clean()
@@ -380,7 +476,18 @@ class Asset(models.Model):
 
     @property
     def primary_image(self):
-        """Get the primary image for this asset."""
+        """Get the primary image for this asset.
+
+        Uses the prefetched ``primary_images`` attribute when available
+        (set by ``AssetManager.with_related()``) to avoid N+1 queries.
+        Falls back to a database query when the prefetch is absent.
+        """
+        # Use prefetched primary_images from with_related() if available
+        if hasattr(self, "primary_images"):
+            if self.primary_images:
+                return self.primary_images[0]
+            return None
+        # Fallback for assets not loaded via with_related()
         return (
             self.images.filter(is_primary=True).first() or self.images.first()
         )
@@ -392,13 +499,25 @@ class Asset(models.Model):
 
     @property
     def is_checked_out(self):
-        """Return whether the asset is currently checked out."""
+        """Return whether the asset has any units checked out.
+
+        Uses the ``_has_checked_out_serial`` annotation from
+        ``with_related()`` when available to avoid N+1 queries.
+
+        V500: For non-serialised assets, True when checked_out_to
+        is set OR when transaction-tracked quantity is outstanding.
+        """
         if self.is_serialised:
+            # Use annotation from with_related() if available
+            if hasattr(self, "_has_checked_out_serial"):
+                return self._has_checked_out_serial
             return self.serials.filter(
                 checked_out_to__isnull=False,
                 is_archived=False,
             ).exists()
-        return self.checked_out_to is not None
+        if self.checked_out_to is not None:
+            return True
+        return self.available_count < self.quantity
 
     @property
     def effective_quantity(self):
@@ -453,13 +572,36 @@ class Asset(models.Model):
 
     @property
     def available_count(self):
-        """Number of units available for checkout."""
+        """Number of units available for checkout.
+
+        V500: For non-serialised assets, tracks outstanding quantity
+        via checkout/checkin transaction sums. Falls back to
+        checked_out_to when no transactions exist (backward compat).
+        """
         if self.is_serialised:
             return self.serials.filter(
                 status="active",
                 checked_out_to__isnull=True,
                 is_archived=False,
             ).count()
+        from django.db.models import Sum
+
+        checkout_sum = (
+            self.transactions.filter(action="checkout").aggregate(
+                total=Sum("quantity")
+            )["total"]
+            or 0
+        )
+        checkin_sum = (
+            self.transactions.filter(action="checkin").aggregate(
+                total=Sum("quantity")
+            )["total"]
+            or 0
+        )
+        outstanding = checkout_sum - checkin_sum
+        if outstanding > 0:
+            return max(0, self.quantity - outstanding)
+        # No transaction-tracked checkouts; fall back to FK
         if self.checked_out_to is not None:
             return max(0, self.quantity - 1)
         return self.quantity
@@ -547,6 +689,10 @@ class AssetImage(models.Model):
         default=False,
         help_text="True when AI suggests a department"
         " not in the provided list",
+    )
+    ai_suggestions_applied = models.BooleanField(
+        default=False,
+        help_text="True when AI suggestions have been applied" " to the asset",
     )
 
     class Meta:
@@ -645,6 +791,14 @@ class NFCTag(models.Model):
     asset = models.ForeignKey(
         Asset, on_delete=models.CASCADE, related_name="nfc_tags"
     )
+    serial = models.ForeignKey(
+        "AssetSerial",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="nfc_tags",
+        help_text="Specific serial unit (V479: COULD)",
+    )
     assigned_at = models.DateTimeField(auto_now_add=True)
     assigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -709,6 +863,7 @@ class Transaction(models.Model):
         ("audit", "Audit"),
         ("handover", "Handover"),
         ("kit_return", "Kit Return"),
+        ("note", "Note"),
     ]
 
     asset = models.ForeignKey(
@@ -744,7 +899,7 @@ class Transaction(models.Model):
         related_name="borrower_transactions",
         help_text="The person the asset is checked out to",
     )
-    due_date = models.DateField(
+    due_date = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Expected return date for checkouts",
@@ -901,6 +1056,86 @@ class AssetSerial(models.Model):
                     }
                 )
 
+    def save(self, *args, **kwargs):
+        # Capture barcode before save for disposal tracking
+        _barcode_before = self.barcode
+        super().save(*args, **kwargs)
+        # S7.10.5: Clear barcode on disposal to free for reuse
+        # S7.16.9: Auto-unpin from kit components on disposal
+        if self.status == "disposed":
+            if _barcode_before:
+                # S7.19.3: Create a disposal note transaction with
+                # serial_barcode snapshot so scan lookup can still
+                # find disposed serials by their old barcode
+                if not Transaction.objects.filter(
+                    serial=self,
+                    serial_barcode=_barcode_before,
+                ).exists():
+                    Transaction.objects.create(
+                        asset=self.asset,
+                        serial=self,
+                        user_id=self.asset.created_by_id,
+                        action="note",
+                        serial_barcode=_barcode_before,
+                        notes=(f"Serial #{self.serial_number} " f"disposed."),
+                    )
+                AssetSerial.objects.filter(pk=self.pk).update(barcode=None)
+                # Keep in-memory barcode for scan lookup to show
+                # disposed message (S7.19.3)
+            AssetKit.objects.filter(serial=self).update(serial=None)
+
+        # S7.19.2: When all serials are disposed, auto-update
+        # parent asset status to disposed
+        if self.asset_id and self.status == "disposed":
+            parent = self.asset
+            non_disposed = (
+                parent.serials.filter(
+                    is_archived=False,
+                )
+                .exclude(status="disposed")
+                .exists()
+            )
+            if not non_disposed:
+                # All active serials are disposed — update parent
+                has_active_serials = parent.serials.filter(
+                    is_archived=False,
+                ).exists()
+                if has_active_serials:
+                    Asset.objects.filter(pk=parent.pk).update(
+                        status="disposed"
+                    )
+
+
+class VirtualBarcode(models.Model):
+    """Tracks pre-printed barcodes not yet assigned to assets."""
+
+    barcode = models.CharField(max_length=50, unique=True)
+    barcode_image = models.ImageField(
+        upload_to="barcodes/virtual/", blank=True, null=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="virtual_barcodes",
+    )
+    assigned_to_asset = models.OneToOneField(
+        Asset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="virtual_barcode_source",
+    )
+    assigned_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        status = "assigned" if self.assigned_to_asset else "unassigned"
+        return f"{self.barcode} ({status})"
+
 
 class AssetKit(models.Model):
     """Links component assets into a kit."""
@@ -989,6 +1224,13 @@ class StocktakeSession(models.Model):
         on_delete=models.PROTECT,
         related_name="stocktake_sessions",
     )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stocktake_sessions",
+    )
     started_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1026,11 +1268,23 @@ class StocktakeSession(models.Model):
 
     @property
     def expected_assets(self):
-        """Assets expected at this location (active and missing per spec)."""
+        """Assets expected at this location (active and missing per spec).
+
+        V236/V737: Also includes checked-out assets whose home_location
+        matches the stocktake location, so they appear in the expected
+        list flagged as "checked out" rather than being counted as
+        missing.
+        """
+        from django.db.models import Q
+
         return Asset.objects.filter(
-            current_location=self.location,
+            Q(current_location=self.location)
+            | Q(
+                home_location=self.location,
+                checked_out_to__isnull=False,
+            ),
             status__in=["active", "missing"],
-        )
+        ).distinct()
 
     @property
     def missing_assets(self):
@@ -1043,6 +1297,62 @@ class StocktakeSession(models.Model):
     def unexpected_assets(self):
         """Assets confirmed but not expected at this location."""
         return self.confirmed_assets.exclude(current_location=self.location)
+
+
+class StocktakeItem(models.Model):
+    """Per-item record within a stocktake session (G9 — S3.1.9)."""
+
+    STATUS_CHOICES = [
+        ("expected", "Expected"),
+        ("confirmed", "Confirmed"),
+        ("missing", "Missing"),
+        ("unexpected", "Unexpected"),
+    ]
+
+    session = models.ForeignKey(
+        StocktakeSession,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.CASCADE,
+        related_name="stocktake_items",
+    )
+    serial = models.ForeignKey(
+        "AssetSerial",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stocktake_items",
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="expected"
+    )
+    scanned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    scanned_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "asset", "serial"],
+                name="unique_stocktake_item",
+            ),
+        ]
+        ordering = ["asset__name"]
+
+    def __str__(self):
+        return (
+            f"{self.asset.name} — "
+            f"{self.get_status_display()} "
+            f"(session #{self.session_id})"
+        )
 
 
 def validate_logo_file_size(value):
@@ -1097,13 +1407,13 @@ class SiteBranding(models.Model):
         help_text="Accent brand colour (hex)",
     )
     color_mode = models.CharField(
-        max_length=5,
+        max_length=10,
         choices=[
             ("light", "Light"),
             ("dark", "Dark"),
-            ("auto", "Auto"),
+            ("system", "System"),
         ],
-        default="auto",
+        default="system",
         help_text="Default colour mode for the site",
     )
 
@@ -1150,7 +1460,7 @@ class SiteBranding(models.Model):
         instance = cache.get("site_branding")
         if instance is None:
             instance = cls.objects.first()
-            cache.set("site_branding", instance, timeout=3600)
+            cache.set("site_branding", instance, timeout=None)
         return instance
 
 
@@ -1238,16 +1548,14 @@ class HoldList(models.Model):
     name = models.CharField(max_length=200)
     project = models.ForeignKey(
         Project,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="hold_lists",
     )
     department = models.ForeignKey(
         Department,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.PROTECT,
         related_name="hold_lists",
     )
     status = models.ForeignKey(
@@ -1260,8 +1568,7 @@ class HoldList(models.Model):
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
+        on_delete=models.PROTECT,
         related_name="created_hold_lists",
     )
     is_locked = models.BooleanField(default=False)
@@ -1314,7 +1621,7 @@ class HoldListItem(models.Model):
     )
     serial = models.ForeignKey(
         AssetSerial,
-        on_delete=models.SET_NULL,
+        on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name="hold_list_items",
@@ -1340,6 +1647,7 @@ class HoldListItem(models.Model):
         null=True,
         related_name="added_hold_items",
     )
+    added_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [

@@ -27,12 +27,16 @@ def analyse_image(self, image_id: int):
     except AssetImage.DoesNotExist:
         return
 
-    # Check daily limit
+    # Check daily limit (resets at midnight in configured TIME_ZONE)
+    import datetime
+
     from django.conf import settings
-    from django.utils import timezone as tz
 
     daily_limit = getattr(settings, "AI_ANALYSIS_DAILY_LIMIT", 100)
-    today_start = tz.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_local = timezone.localdate()  # Uses settings.TIME_ZONE
+    today_start = timezone.make_aware(
+        datetime.datetime.combine(today_local, datetime.time.min)
+    )
     today_count = AssetImage.objects.filter(
         ai_processed_at__gte=today_start,
         ai_processing_status="completed",
@@ -50,6 +54,34 @@ def analyse_image(self, image_id: int):
     try:
         image_file = image.image
         image_bytes = image_file.read()
+
+        # Check image dimensions for memory safety (S7.11.8)
+        try:
+            from io import BytesIO
+
+            from PIL import Image as PILImage
+
+            pil_img = PILImage.open(BytesIO(image_bytes))
+            width, height = pil_img.size
+            pixel_count = width * height
+            # 48 megapixels is the safety limit
+            max_pixels = getattr(settings, "AI_MAX_PIXELS", 48_000_000)
+            if pixel_count > max_pixels:
+                image.ai_processing_status = "failed"
+                image.ai_error_message = (
+                    f"Image too large for AI analysis "
+                    f"({width}x{height} = {pixel_count:,} pixels). "
+                    f"Maximum is {max_pixels:,} pixels."
+                )
+                image.save(
+                    update_fields=[
+                        "ai_processing_status",
+                        "ai_error_message",
+                    ]
+                )
+                return
+        except Exception:
+            pass  # If we can't check dimensions, proceed anyway
 
         # Determine media type
         name = image_file.name.lower()

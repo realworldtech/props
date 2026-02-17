@@ -38,12 +38,16 @@ class AssetForm(forms.ModelForm):
             "status",
             "category",
             "current_location",
+            "home_location",
             "quantity",
             "condition",
             "tags",
             "notes",
             "purchase_price",
             "estimated_value",
+            "is_public",
+            "public_description",
+            "lost_stolen_notes",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -62,6 +66,11 @@ class AssetForm(forms.ModelForm):
             "category": forms.HiddenInput(attrs={"id": "id_category"}),
             "current_location": forms.HiddenInput(
                 attrs={"id": "id_current_location"}
+            ),
+            "home_location": forms.Select(
+                attrs={
+                    "class": _CSS,
+                }
             ),
             "quantity": forms.NumberInput(
                 attrs={
@@ -102,6 +111,27 @@ class AssetForm(forms.ModelForm):
                     "placeholder": "0.00",
                 }
             ),
+            "is_public": forms.CheckboxInput(
+                attrs={
+                    "class": "form-checkbox rounded text-primary",
+                    "x-model": "isPublic",
+                }
+            ),
+            "public_description": forms.Textarea(
+                attrs={
+                    "class": _CSS,
+                    "rows": 3,
+                    "placeholder": "Public-facing description",
+                    "x-show": "isPublic",
+                }
+            ),
+            "lost_stolen_notes": forms.Textarea(
+                attrs={
+                    "class": _CSS,
+                    "rows": 2,
+                    "placeholder": "Notes about lost/stolen status",
+                }
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -112,6 +142,10 @@ class AssetForm(forms.ModelForm):
             "department"
         )
         self.fields["current_location"].queryset = Location.objects.filter(
+            is_active=True
+        )
+        self.fields["home_location"].required = False
+        self.fields["home_location"].queryset = Location.objects.filter(
             is_active=True
         )
 

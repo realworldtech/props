@@ -208,10 +208,30 @@
             {{ form.notes }}
         </div>
 
+        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5" x-data="{ isPublic: {{ form.is_public.value|yesno:'true,false' }} }">
+            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Public Visibility</h2>
+            <div class="flex items-center gap-3">
+                {{ form.is_public }}
+                <label for="{{ form.is_public.id_for_label }}" class="text-sm font-medium text-cream/70">Make this asset publicly visible</label>
+            </div>
+            <div x-show="isPublic" x-cloak>
+                <label for="{{ form.public_description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Public Description</label>
+                {{ form.public_description }}
+                <p class="text-xs text-cream/40 mt-1">This description will be shown on the public catalogue page.</p>
+            </div>
+        </div>
+
         <div class="flex gap-3">
             <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 {% if asset %}Update Asset{% else %}Create Asset{% endif %}
             </button>
+            {% if asset and asset.status == 'draft' %}
+            <button type="submit" name="publish" value="1" id="publish-draft-btn"
+                class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-base font-semibold btn-press transition-all"
+                title="Set status to Active and save">
+                Publish
+            </button>
+            {% endif %}
             <a href="{% if asset %}{% url 'assets:asset_detail' asset.pk %}{% else %}{% url 'assets:asset_list' %}{% endif %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors">
                 Cancel
             </a>

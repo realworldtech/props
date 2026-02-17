@@ -1,13 +1,17 @@
 """Admin configuration for accounts app."""
 
+import logging
+
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 from .models import CustomUser
+
+logger = logging.getLogger(__name__)
 
 
 @admin.register(CustomUser)
@@ -121,3 +125,56 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
     @display(description="Active", boolean=True)
     def display_active(self, obj):
         return obj.is_active
+
+    def save_model(self, request, obj, form, change):
+        """Override to set email_verified=True for admin-created users."""
+        if not change:
+            # New user being created via admin
+            obj.email_verified = True
+        super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        """Warn about SET_NULL effects before deleting a user."""
+        from assets.models import Asset, NFCTag, Transaction
+
+        affected = []
+        display_name = obj.display_name or obj.get_full_name() or obj.username
+
+        txn_count = Transaction.objects.filter(user=obj).count()
+        if txn_count:
+            affected.append(f"{txn_count} transaction(s) will lose their user")
+
+        asset_count = Asset.objects.filter(created_by=obj).count()
+        if asset_count:
+            affected.append(f"{asset_count} asset(s) will lose their creator")
+
+        nfc_assigned = NFCTag.objects.filter(assigned_by=obj).count()
+        nfc_removed = NFCTag.objects.filter(removed_by=obj).count()
+        nfc_total = nfc_assigned + nfc_removed
+        if nfc_total:
+            affected.append(
+                f"{nfc_total} NFC tag record(s) will lose " f"user references"
+            )
+
+        checkout_count = Asset.objects.filter(checked_out_to=obj).count()
+        if checkout_count:
+            affected.append(
+                f"{checkout_count} asset(s) currently checked out "
+                f"to this user will be unlinked"
+            )
+
+        if affected:
+            summary = "; ".join(affected)
+            messages.warning(
+                request,
+                f"Deleting user '{display_name}': {summary}. "
+                f"These fields will be set to NULL.",
+            )
+            logger.warning(
+                "User deletion: %s (pk=%s) — %s",
+                display_name,
+                obj.pk,
+                summary,
+            )
+
+        super().delete_model(request, obj)

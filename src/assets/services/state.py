@@ -28,9 +28,27 @@ def validate_transition(asset: Asset, new_status: str) -> None:
     # Lost/stolen ARE allowed on checked-out assets since the asset
     # is out of physical control.
     if new_status in ("retired", "disposed") and asset.is_checked_out:
+        borrower = asset.checked_out_to
+        borrower_name = (
+            borrower.get_full_name() or borrower.username
+            if borrower
+            else "unknown"
+        )
         raise ValidationError(
             f"Cannot change status to '{new_status}' while the asset "
-            f"is checked out. Check it in first."
+            f"is checked out to {borrower_name}. Check it in first."
+        )
+
+    # S7.17.3: Recovering from lost/stolen requires a location
+    if (
+        asset.status in ("lost", "stolen")
+        and new_status == "active"
+        and not asset.current_location
+    ):
+        raise ValidationError(
+            "A location must be set when recovering a lost/stolen "
+            "asset. Please assign a location before changing status "
+            "to active."
         )
 
     # Mandatory notes for lost/stolen transitions

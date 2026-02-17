@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import time
 
 from django.conf import settings
 
@@ -15,14 +16,15 @@ def generate_zpl(
 ) -> str:
     """Generate ZPL II markup for a 62mm x 29mm label.
 
-    Includes Code128 barcode and human-readable text.
+    Includes Code128 barcode, QR code, and human-readable text.
+    The QR code encodes the asset's URL path (/a/{barcode}/).
     """
     # Truncate name to fit label width (~30 chars at font size used)
     name_truncated = asset_name[:30]
     cat_truncated = category_name[:25] if category_name else ""
 
     zpl = "^XA\n"
-    # Label size: 62mm x 29mm ≈ 492 x 232 dots at 203dpi
+    # Label size: 62mm x 29mm = 492 x 232 dots at 203dpi
     zpl += "^PW492\n"
     zpl += "^LL232\n"
 
@@ -39,14 +41,30 @@ def generate_zpl(
     # Human-readable barcode text below the barcode
     zpl += f"^FO20,195^A0N,22,22^FD{barcode_text}^FS\n"
 
+    # QR code on the right side encoding the asset URL
+    asset_url = f"/a/{barcode_text}/"
+    zpl += f"^FO350,20^BQN,2,4^FDQA,{asset_url}^FS\n"
+
     zpl += "^XZ\n"
     return zpl
+
+
+def _send_zpl(host: str, port: int, zpl: str) -> None:
+    """Send ZPL data to printer via TCP socket.
+
+    Raises OSError or socket.timeout on failure.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(10)
+        sock.connect((host, port))
+        sock.sendall(zpl.encode("utf-8"))
 
 
 def print_zpl(zpl: str) -> bool:
     """Send ZPL data to a Zebra network printer via TCP.
 
     Uses ZEBRA_PRINTER_HOST and ZEBRA_PRINTER_PORT from settings.
+    Retries once on connection failure before giving up.
     Returns True on success, False on failure.
     """
     host = getattr(settings, "ZEBRA_PRINTER_HOST", "")
@@ -57,15 +75,29 @@ def print_zpl(zpl: str) -> bool:
         return False
 
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(10)
-            sock.connect((host, port))
-            sock.sendall(zpl.encode("utf-8"))
+        _send_zpl(host, port, zpl)
         logger.info("ZPL sent to %s:%s", host, port)
         return True
-    except (OSError, socket.timeout) as e:
-        logger.error("Failed to print to %s:%s: %s", host, port, e)
-        return False
+    except (socket.error, ConnectionError) as e:
+        logger.warning(
+            "First attempt failed for %s:%s: %s — retrying",
+            host,
+            port,
+            e,
+        )
+        time.sleep(1)
+        try:
+            _send_zpl(host, port, zpl)
+            logger.info("ZPL sent to %s:%s on retry", host, port)
+            return True
+        except (OSError, socket.timeout) as e2:
+            logger.error(
+                "Failed to print to %s:%s after retry: %s",
+                host,
+                port,
+                e2,
+            )
+            return False
 
 
 def generate_batch_zpl(assets: list) -> str:

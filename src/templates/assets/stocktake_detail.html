@@ -33,7 +33,16 @@
     {% if session.status == 'in_progress' %}
     <!-- Scan Input -->
     <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
-        <h2 class="text-lg font-medium text-cream/90 mb-4">Scan or Enter Asset Code</h2>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-medium text-cream/90">Scan or Enter Asset Code</h2>
+            <a href="{% url 'assets:quick_capture' %}?location={{ session.location.pk }}"
+               class="inline-flex items-center gap-1.5 text-sm text-spotlight-400 hover:text-spotlight-300 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Quick Capture
+            </a>
+        </div>
         <form method="post" action="{% url 'assets:stocktake_confirm' session.pk %}" class="flex gap-3">
             {% csrf_token %}
             <input type="text" name="code" id="scan-input" autofocus
@@ -72,12 +81,21 @@
                     {% endif %}
                     {% endif %}
                 </div>
+                <!-- V233: Primary image thumbnail -->
+                <div class="flex-shrink-0 w-10 h-10 rounded bg-stage-700 overflow-hidden">
+                    {% for img in asset.images.all %}{% if img.is_primary %}
+                    <img src="{{ img.image.url }}" class="w-full h-full object-cover" alt="{{ asset.name }}"
+                         onerror="this.style.display='none'">
+                    {% endif %}{% endfor %}
+                </div>
                 <div class="flex-1 min-w-0">
                     <div class="text-cream font-medium {% if asset.pk in confirmed_ids %}text-emerald-300{% endif %}">{{ asset.name }}</div>
                     <div class="text-cream/40 text-xs font-mono">{{ asset.barcode }}</div>
                 </div>
                 {% if asset.pk in confirmed_ids %}
                 <span class="text-emerald-400 text-xs font-medium">Confirmed</span>
+                {% elif asset.checked_out_to %}
+                <span class="text-blue-400 text-xs font-medium">Checked Out to {{ asset.checked_out_to.get_display_name }}</span>
                 {% else %}
                 <span class="text-cream/30 text-xs">Pending</span>
                 {% endif %}
@@ -87,6 +105,17 @@
         {% else %}
         <div class="px-6 py-8 text-center">
             <p class="text-cream/40 text-sm">No assets expected at this location.</p>
+        </div>
+        {% endif %}
+        {% if page_obj.has_other_pages %}
+        <div class="px-6 py-4 border-t border-white/5 flex items-center justify-center gap-2">
+            <span class="text-cream/50 text-sm">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded bg-stage-700 text-cream/70 text-sm hover:bg-stage-600">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded bg-stage-700 text-cream/70 text-sm hover:bg-stage-600">Next</a>
+            {% endif %}
         </div>
         {% endif %}
     </div>

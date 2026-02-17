@@ -64,6 +64,7 @@
                             <th class="text-left px-4 py-3 text-cream/50 font-medium">Name</th>
                             <th class="text-left px-4 py-3 text-cream/50 font-medium hidden sm:table-cell">Barcode</th>
                             <th class="text-left px-4 py-3 text-cream/50 font-medium hidden sm:table-cell">Category</th>
+                            <th class="text-left px-4 py-3 text-cream/50 font-medium hidden sm:table-cell">Condition</th>
                             <th class="text-left px-4 py-3 text-cream/50 font-medium">Status</th>
                         </tr>
                     </thead>
@@ -75,6 +76,7 @@
                             </td>
                             <td class="px-4 py-3 font-mono text-cream/50 hidden sm:table-cell">{{ asset.barcode }}</td>
                             <td class="px-4 py-3 text-cream/50 hidden sm:table-cell">{% if asset.category %}{{ asset.category.name }}{% else %}-{% endif %}</td>
+                            <td class="px-4 py-3 text-cream/50 hidden sm:table-cell">{{ asset.get_condition_display }}</td>
                             <td class="px-4 py-3">
                                 {% if asset.is_checked_out %}
                                 <span class="text-xs text-purple-400">Checked out to {{ asset.checked_out_to.get_display_name }}</span>

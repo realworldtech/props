@@ -5,13 +5,21 @@ from io import BytesIO
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
+from django.db.models import Sum
+
 from ..models import Asset
+
+# Threshold above which .iterator() is used for memory efficiency
+ITERATOR_THRESHOLD = 1000
+ITERATOR_CHUNK_SIZE = 1000
 
 
 def export_assets_xlsx(queryset=None) -> BytesIO:
     """Export assets to an Excel workbook.
 
     Returns a BytesIO containing the .xlsx file.
+    Uses .iterator() for exports exceeding 1,000 assets to
+    avoid memory pressure.
     """
     if queryset is None:
         queryset = Asset.objects.select_related(
@@ -34,10 +42,12 @@ def export_assets_xlsx(queryset=None) -> BytesIO:
 
     from django.conf import settings
 
+    total_count = queryset.count()
+
     ws_summary.append([f"{settings.SITE_NAME} Asset Export"])
     ws_summary["A1"].font = Font(bold=True, size=14)
     ws_summary.append([])
-    ws_summary.append(["Total Assets", queryset.count()])
+    ws_summary.append(["Total Assets", total_count])
     ws_summary.append(["Active", queryset.filter(status="active").count()])
     ws_summary.append(["Draft", queryset.filter(status="draft").count()])
     ws_summary.append(
@@ -48,13 +58,14 @@ def export_assets_xlsx(queryset=None) -> BytesIO:
     )
 
     ws_summary.append([])
-    # Calculate totals
-    total_purchase = sum(
-        float(a.purchase_price) for a in queryset if a.purchase_price
+    # Calculate totals using database aggregation (avoids loading
+    # all rows into Python memory)
+    agg = queryset.aggregate(
+        total_purchase=Sum("purchase_price"),
+        total_estimated=Sum("estimated_value"),
     )
-    total_estimated = sum(
-        float(a.estimated_value) for a in queryset if a.estimated_value
-    )
+    total_purchase = float(agg["total_purchase"] or 0)
+    total_estimated = float(agg["total_estimated"] or 0)
     ws_summary.append(["Total Purchase Price", f"${total_purchase:,.2f}"])
     ws_summary.append(["Total Estimated Value", f"${total_estimated:,.2f}"])
 
@@ -83,7 +94,15 @@ def export_assets_xlsx(queryset=None) -> BytesIO:
         cell.font = header_font
         cell.fill = header_fill
 
-    for asset in queryset.iterator(chunk_size=200):
+    # Use .iterator() for large datasets to reduce memory pressure
+    use_iterator = total_count > ITERATOR_THRESHOLD
+    asset_iter = (
+        queryset.iterator(chunk_size=ITERATOR_CHUNK_SIZE)
+        if use_iterator
+        else queryset
+    )
+
+    for asset in asset_iter:
         location_display = ""
         if asset.checked_out_to:
             location_display = (
@@ -91,6 +110,8 @@ def export_assets_xlsx(queryset=None) -> BytesIO:
             )
         elif asset.current_location:
             location_display = str(asset.current_location)
+        elif asset.status == "active":
+            location_display = "Unknown"
 
         ws_assets.append(
             [

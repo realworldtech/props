@@ -119,6 +119,10 @@ def profile_view(request):
     borrowed_assets = user.borrowed_assets.select_related(
         "category", "current_location"
     )
+    # V300: Department memberships for dept managers
+    from assets.models import Department
+
+    managed_departments = Department.objects.filter(managers=user)
 
     return render(
         request,
@@ -127,6 +131,7 @@ def profile_view(request):
             "profile_user": user,
             "recent_transactions": recent_transactions,
             "borrowed_assets": borrowed_assets,
+            "managed_departments": managed_departments,
         },
     )
 
@@ -157,7 +162,16 @@ def register_view(request):
                     {"email": form.cleaned_data["email"]},
                 )
             user = form.save()
-            _send_verification_email(user, request)
+            try:
+                _send_verification_email(user, request)
+            except OSError:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    "Failed to send verification email to %s",
+                    user.email,
+                )
             return render(
                 request,
                 "registration/register_confirm.html",
@@ -305,13 +319,23 @@ def resend_verification_view(request):
     )
 
 
+def _can_approve_users(user):
+    """Check if a user can approve/reject registrations.
+
+    Returns True for system admins or users with the explicit
+    ``can_approve_users`` permission (V422 / S2.15.6-05).
+    """
+    from assets.services.permissions import get_user_role
+
+    if get_user_role(user) == "system_admin":
+        return True
+    return user.has_perm("accounts.can_approve_users")
+
+
 @login_required
 def approval_queue_view(request):
     """Display pending user approvals (S2.15.4-01). System Admins only."""
-    from assets.services.permissions import get_user_role
-
-    role = get_user_role(request.user)
-    if role != "system_admin":
+    if not _can_approve_users(request.user):
         return HttpResponseForbidden("Permission denied")
 
     tab = request.GET.get("tab", "pending")
@@ -337,17 +361,25 @@ def approval_queue_view(request):
         )
 
     from django.contrib.auth.models import Group
+    from django.core.paginator import Paginator
 
     groups = Group.objects.exclude(name="System Admin").order_by("name")
     from assets.models import Department
 
     departments = Department.objects.filter(is_active=True).order_by("name")
 
+    paginator = Paginator(users, 25)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
     return render(
         request,
         "accounts/approval_queue.html",
         {
-            "users": users,
+            "users": page_obj,
+            "page_obj": page_obj,
+            "paginator": paginator,
+            "is_paginated": page_obj.has_other_pages(),
             "tab": tab,
             "groups": groups,
             "departments": departments,
@@ -358,10 +390,7 @@ def approval_queue_view(request):
 @login_required
 def approve_user_view(request, user_pk):
     """Approve a pending user (S2.15.4-05). System Admins only."""
-    from assets.services.permissions import get_user_role
-
-    role = get_user_role(request.user)
-    if role != "system_admin":
+    if not _can_approve_users(request.user):
         return HttpResponseForbidden("Permission denied")
 
     if request.method != "POST":
@@ -373,9 +402,36 @@ def approve_user_view(request, user_pk):
 
     from assets.models import Department
 
+    # S7.13-07: Guard against concurrent approval
+    if pending_user.is_active:
+        messages.info(
+            request,
+            f"{pending_user.get_display_name()} is already approved.",
+        )
+        return redirect("accounts:approval_queue")
+
     # Get form data
     group_name = request.POST.get("role", "Member")
     dept_ids = request.POST.getlist("departments")
+
+    # S7.13-06: Re-validate department is_active server-side
+    if group_name == "Department Manager" and dept_ids:
+        inactive_depts = Department.objects.filter(
+            pk__in=dept_ids, is_active=False
+        )
+        if inactive_depts.exists():
+            inactive_names = ", ".join(
+                inactive_depts.values_list("name", flat=True)
+            )
+            messages.error(
+                request,
+                f"Cannot assign inactive department(s): " f"{inactive_names}.",
+            )
+            dept_ids = list(
+                Department.objects.filter(
+                    pk__in=dept_ids, is_active=True
+                ).values_list("pk", flat=True)
+            )
 
     # 1. Activate user
     pending_user.is_active = True
@@ -403,7 +459,7 @@ def approve_user_view(request, user_pk):
     if group_name == "Department Manager" and dept_ids:
         for dept_id in dept_ids:
             try:
-                dept = Department.objects.get(pk=dept_id)
+                dept = Department.objects.get(pk=dept_id, is_active=True)
                 dept.managers.add(pending_user)
             except Department.DoesNotExist:
                 pass
@@ -431,10 +487,7 @@ def approve_user_view(request, user_pk):
 @login_required
 def reject_user_view(request, user_pk):
     """Reject a pending user (S2.15.5-01). System Admins only."""
-    from assets.services.permissions import get_user_role
-
-    role = get_user_role(request.user)
-    if role != "system_admin":
+    if not _can_approve_users(request.user):
         return HttpResponseForbidden("Permission denied")
 
     if request.method != "POST":
