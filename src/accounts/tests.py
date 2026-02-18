@@ -5,7 +5,9 @@ from unittest.mock import patch
 import pytest
 
 from django.conf import settings
+from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
@@ -1409,9 +1411,8 @@ class TestCustomUserAdminLayout:
     def test_changelist_shows_department_column(
         self, admin_client, user, department
     ):
-        """S2.13.5-05 SHOULD: Changelist shows department."""
-        user.requested_department = department
-        user.save()
+        """S2.13.5-05 SHOULD: Changelist shows managed departments."""
+        department.managers.add(user)
         url = reverse("admin:accounts_customuser_changelist")
         response = admin_client.get(url)
         content = response.content.decode()
@@ -1485,13 +1486,12 @@ class TestCustomUserAdminLayout:
         assert user.username in content
 
     def test_filter_by_department(self, admin_client, user, department):
-        """S2.13.5-06 MUST: Filter by department narrows list."""
-        user.requested_department = department
-        user.save()
+        """S2.13.5-06 MUST: Filter by managed department narrows list."""
+        department.managers.add(user)
         url = reverse("admin:accounts_customuser_changelist")
         response = admin_client.get(
             url,
-            {"requested_department__id__exact": str(department.pk)},
+            {"managed_departments__id__exact": str(department.pk)},
         )
         assert response.status_code == 200
         content = response.content.decode()
@@ -1520,7 +1520,7 @@ class TestCustomUserAdminLayout:
         filter_strs = [str(f) for f in admin_obj.list_filter]
         has_dept = any("department" in s.lower() for s in filter_strs)
         assert has_dept, (
-            "list_filter must include department " "(requested_department)"
+            "list_filter must include department " "(managed_departments)"
         )
 
     # --- S2.13.5-07: Search fields (MUST) ---
@@ -1975,11 +1975,11 @@ class TestBulkUserActions:
 
     # --- S2.13.5-10: assign_department (intermediate form) ---
 
-    def test_assign_department_sets_department_on_selected_users(
+    def test_assign_department_adds_users_to_department_managers(
         self, admin_client, target_users, department
     ):
-        """S2.13.5-10: assign_department sets department on all
-        selected users."""
+        """S2.13.5-10/S2.13.5-02: assign_department adds selected
+        users to Department.managers M2M."""
         admin_client.post(
             reverse(self.CHANGELIST_URL),
             {
@@ -1991,10 +1991,9 @@ class TestBulkUserActions:
         )
 
         for u in target_users:
-            u.refresh_from_db()
-            assert u.requested_department == department, (
-                f"User {u.username} should have department "
-                f"set to {department.name}"
+            assert department in u.managed_departments.all(), (
+                f"User {u.username} should be a manager of "
+                f"{department.name}"
             )
 
     def test_assign_department_does_not_affect_unselected(
@@ -2012,8 +2011,78 @@ class TestBulkUserActions:
             },
         )
 
-        bystander_user.refresh_from_db()
-        assert bystander_user.requested_department is None
+        assert department not in bystander_user.managed_departments.all()
+
+    # --- S2.13.5-10: remove_from_department (intermediate form) ---
+
+    def test_remove_from_department_removes_users_from_managers(
+        self, admin_client, target_users, department
+    ):
+        """S2.13.5-10/S2.13.5-02: remove_from_department removes
+        selected users from Department.managers M2M."""
+        for u in target_users:
+            department.managers.add(u)
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_from_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        for u in target_users:
+            assert department not in u.managed_departments.all(), (
+                f"User {u.username} should no longer be a manager of "
+                f"{department.name}"
+            )
+
+    def test_remove_from_department_does_not_affect_unselected(
+        self, admin_client, target_users, bystander_user, department
+    ):
+        """S2.13.5-10: remove_from_department must not modify
+        unselected users."""
+        for u in target_users:
+            department.managers.add(u)
+        department.managers.add(bystander_user)
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_from_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        assert department in bystander_user.managed_departments.all()
+
+    def test_remove_from_department_creates_log_entries(
+        self, admin_client, admin_user, target_users, department
+    ):
+        """S2.13.5-12 MUST: remove_from_department creates LogEntry
+        audit records."""
+        for u in target_users:
+            department.managers.add(u)
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_from_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        User = get_user_model()
+        ct = ContentType.objects.get_for_model(User)
+        for u in target_users:
+            assert LogEntry.objects.filter(
+                content_type=ct,
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            ).exists(), f"LogEntry should exist for user {u.username}"
 
     # --- S2.13.5-11 MUST: set_is_superuser (superuser-only) ---
 

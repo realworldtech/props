@@ -41,7 +41,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
         "is_staff",
         "is_superuser",
         "groups",
-        "requested_department",
+        "managed_departments",
     ]
     search_fields = [
         "username",
@@ -135,10 +135,11 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             return ", ".join(g.name for g in groups)
         return "-"
 
-    @display(description="Department")
+    @display(description="Departments")
     def display_department(self, obj):
-        if obj.requested_department:
-            return obj.requested_department.name
+        depts = obj.managed_departments.all()
+        if depts:
+            return ", ".join(d.name for d in depts)
         return "-"
 
     @display(description="Staff", boolean=True)
@@ -157,6 +158,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
         "set_is_superuser",
         "clear_is_superuser",
         "assign_department",
+        "remove_from_department",
     ]
 
     def _log_change(self, request, user, message):
@@ -321,22 +323,21 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             },
         )
 
-    @action(description="Assign department")
+    @action(description="Assign to department")
     def assign_department(self, request, queryset):
         if "apply" in request.POST:
             dept_id = request.POST.get("department")
             dept = Department.objects.get(pk=dept_id)
             for user in queryset:
-                user.requested_department = dept
-                user.save(update_fields=["requested_department"])
+                dept.managers.add(user)
                 self._log_change(
                     request,
                     user,
-                    f"Set department to {dept.name} via bulk action",
+                    f"Added to department {dept.name} via bulk action",
                 )
             messages.success(
                 request,
-                f"Department assigned to {queryset.count()} user(s).",
+                f"{queryset.count()} user(s) added to {dept.name}.",
             )
             return None
         return TemplateResponse(
@@ -347,7 +348,36 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
                 "departments": Department.objects.all(),
                 "action": "assign_department",
                 "opts": self.model._meta,
-                "title": "Assign department to users",
+                "title": "Assign users to department",
+            },
+        )
+
+    @action(description="Remove from department")
+    def remove_from_department(self, request, queryset):
+        if "apply" in request.POST:
+            dept_id = request.POST.get("department")
+            dept = Department.objects.get(pk=dept_id)
+            for user in queryset:
+                dept.managers.remove(user)
+                self._log_change(
+                    request,
+                    user,
+                    f"Removed from department {dept.name} " f"via bulk action",
+                )
+            messages.success(
+                request,
+                f"{queryset.count()} user(s) removed from " f"{dept.name}.",
+            )
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/remove_department.html",
+            {
+                "users": queryset,
+                "departments": Department.objects.all(),
+                "action": "remove_from_department",
+                "opts": self.model._meta,
+                "title": "Remove users from department",
             },
         )
 
