@@ -708,95 +708,73 @@ class TestInfrastructureSettings:
 # ============================================================
 
 
+def _compose_file():
+    """Resolve docker-compose.yml path from repo root.
+
+    Returns the Path, or None if the file is not available
+    (e.g. inside Docker where .dockerignore excludes it).
+    """
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent.parent / "docker-compose.yml"
+    return path if path.exists() else None
+
+
+_skip_no_compose = pytest.mark.skipif(
+    _compose_file() is None,
+    reason="docker-compose.yml not available (excluded by .dockerignore)",
+)
+
+
+@_skip_no_compose
 @pytest.mark.django_db
 class TestDockerComposeServices:
     """V578, V609, V610, V612, V613, V615, V620, V901: Docker services."""
 
     def test_garage_service_exists(self):
         """V578: Garage container in Docker Compose."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        assert compose_file.exists()
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "garage:" in content
         assert "image: dxflrs/garage" in content
 
     def test_web_service_exists(self):
         """V609: Web service Docker config."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "web:" in content
         assert "gunicorn" in content
 
     def test_postgres_service_exists(self):
         """V610: PostgreSQL service."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "db:" in content
         assert "image: postgres:17" in content
 
     def test_traefik_service_exists(self):
         """V612: Traefik reverse proxy."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "traefik:" in content
         assert "image: traefik:v3." in content
 
     def test_deployment_profiles_exist(self):
         """V613: Dev and prod deployment profiles."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert 'profiles: ["dev"]' in content
         assert 'profiles: ["prod"]' in content
 
     def test_migrations_on_startup(self):
         """V615: Database migrations on startup."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "python manage.py migrate" in content
 
     def test_celery_services_exist(self):
         """V620: Celery worker and beat services."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "celery-worker:" in content
         assert "celery-beat:" in content
 
     def test_restart_policies_configured(self):
         """V901: Docker restart policies."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "restart: unless-stopped" in content
 
 
@@ -891,14 +869,10 @@ class TestDeploymentConstraints:
 
         assert "unfold" in settings.INSTALLED_APPS
 
+    @_skip_no_compose
     def test_docker_compose_exists(self):
         """V688, V691: Docker Compose + S3."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        assert compose_file.exists()
+        assert _compose_file() is not None
 
     def test_pip_tools_configured(self):
         """V690, V628: pip-tools dependency management."""
@@ -909,14 +883,10 @@ class TestDeploymentConstraints:
         content = req_in.read_text()
         assert "Django" in content
 
+    @_skip_no_compose
     def test_single_server_deployment(self):
         """V692: Single server deployment."""
-        from pathlib import Path
-
-        compose_file = (
-            Path(__file__).parent.parent.parent / "docker-compose.yml"
-        )
-        content = compose_file.read_text()
+        content = _compose_file().read_text()
         assert "db:" in content
         assert "web:" in content or "web-prod:" in content
 

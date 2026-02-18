@@ -17631,14 +17631,27 @@ class TestV598AdminHoldListFilter:
 class TestV611DockerHealthChecks:
     """V611: Docker health checks for web and celery services."""
 
+    @staticmethod
+    def _compose_path():
+        from pathlib import Path
+
+        p = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        return p if p.exists() else None
+
+    @pytest.mark.skipif(
+        not (
+            __import__("pathlib").Path(__file__).parent.parent.parent
+            / "docker-compose.yml"
+        ).exists(),
+        reason="docker-compose.yml not available",
+    )
     def test_docker_compose_web_healthcheck(self):
         """docker-compose.yml web service should have healthcheck."""
         import re
+        from pathlib import Path
 
-        with open("docker-compose.yml") as f:
-            content = f.read()
-        # Find "  web:" section and look for healthcheck before
-        # the next top-level service
+        compose = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        content = compose.read_text()
         match = re.search(
             r"^\s{2}web:\s*\n((?:\s{4,}.+\n)*)",
             content,
@@ -17649,12 +17662,20 @@ class TestV611DockerHealthChecks:
             1
         ), "web service missing healthcheck"
 
+    @pytest.mark.skipif(
+        not (
+            __import__("pathlib").Path(__file__).parent.parent.parent
+            / "docker-compose.yml"
+        ).exists(),
+        reason="docker-compose.yml not available",
+    )
     def test_docker_compose_celery_healthcheck(self):
         """docker-compose.yml celery-worker should have healthcheck."""
         import re
+        from pathlib import Path
 
-        with open("docker-compose.yml") as f:
-            content = f.read()
+        compose = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        content = compose.read_text()
         match = re.search(
             r"^\s{2}celery-worker:\s*\n((?:\s{4,}.+\n)*)",
             content,
