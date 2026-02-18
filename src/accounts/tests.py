@@ -783,6 +783,133 @@ class TestApprovalRoleAssignment:
         assert not pending.groups.filter(name="Member").exists()
 
 
+class TestApprovalFormTemplateIntegration:
+    """Form values rendered in the template must match the view contract.
+
+    These tests render the actual approval queue page, parse the HTML,
+    and verify the form fields send values the view can process. This
+    catches mismatches between template option values and view lookups
+    (e.g. sending group.pk when the view expects group.name).
+    """
+
+    def test_role_select_sends_group_names(self, admin_client, admin_user, db):
+        """Role <select> option values must be group names, not PKs."""
+        from html.parser import HTMLParser
+
+        from django.contrib.auth.models import Group
+
+        # The view shows all groups except System Admin
+        all_group_names = set(
+            Group.objects.exclude(name="System Admin").values_list(
+                "name", flat=True
+            )
+        )
+
+        pending = User.objects.create_user(
+            username="formtest",
+            email="formtest@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        response = admin_client.get(reverse("accounts:approval_queue"))
+        content = response.content.decode()
+
+        # Extract option values from role select
+        class OptionParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.in_role_select = False
+                self.values = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs_dict = dict(attrs)
+                if tag == "select" and attrs_dict.get("name") == "role":
+                    self.in_role_select = True
+                elif tag == "option" and self.in_role_select:
+                    self.values.append(attrs_dict.get("value", ""))
+
+            def handle_endtag(self, tag):
+                if tag == "select" and self.in_role_select:
+                    self.in_role_select = False
+
+        parser = OptionParser()
+        parser.feed(content)
+
+        assert parser.values, "No role options found in HTML"
+        for val in parser.values:
+            assert val in all_group_names, (
+                f"Role option value '{val}' is not a valid "
+                f"group name. The view looks up groups by "
+                f"name, so the template must send names, "
+                f"not PKs. Valid: {all_group_names}"
+            )
+
+    @patch("accounts.views._send_approval_email")
+    def test_rendered_form_submit_assigns_role(
+        self, mock_email, admin_client, admin_user, db
+    ):
+        """Submit the first role option from the rendered page."""
+        from html.parser import HTMLParser
+
+        from django.contrib.auth.models import Group
+
+        Group.objects.get_or_create(name="Member")
+
+        pending = User.objects.create_user(
+            username="roundtrip",
+            email="roundtrip@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        # Render the page and extract the first role option
+        response = admin_client.get(reverse("accounts:approval_queue"))
+        content = response.content.decode()
+
+        class FirstOptionParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.in_role = False
+                self.first_value = None
+
+            def handle_starttag(self, tag, attrs):
+                d = dict(attrs)
+                if tag == "select" and d.get("name") == "role":
+                    self.in_role = True
+                elif (
+                    tag == "option"
+                    and self.in_role
+                    and self.first_value is None
+                ):
+                    self.first_value = d.get("value", "")
+
+            def handle_endtag(self, tag):
+                if tag == "select" and self.in_role:
+                    self.in_role = False
+
+        parser = FirstOptionParser()
+        parser.feed(content)
+        role_value = parser.first_value
+
+        # POST with the actual value the template renders
+        response = admin_client.post(
+            reverse("accounts:approve_user", args=[pending.pk]),
+            {"role": role_value},
+        )
+        assert response.status_code == 302
+        pending.refresh_from_db()
+        assert pending.is_active is True
+        assert pending.groups.filter(name=role_value).exists(), (
+            f"User should be in group '{role_value}' but is in "
+            f"{list(pending.groups.values_list('name', flat=True))}"
+        )
+
+
 class TestApprovalEmailFailure:
     """Approval/rejection must succeed even when email fails."""
 
