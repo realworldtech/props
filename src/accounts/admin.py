@@ -195,6 +195,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/assign_groups.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "groups": Group.objects.all(),
                 "action": "assign_groups",
@@ -225,6 +226,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/remove_groups.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "groups": Group.objects.all(),
                 "action": "remove_groups",
@@ -282,6 +284,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/confirm_superuser.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "action": "set_is_superuser",
                 "action_label": "grant superuser status to",
@@ -315,6 +318,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/confirm_superuser.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "action": "clear_is_superuser",
                 "action_label": "remove superuser status from",
@@ -344,6 +348,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/assign_department.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "departments": Department.objects.all(),
                 "action": "assign_department",
@@ -373,6 +378,7 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             request,
             "admin/accounts/remove_department.html",
             {
+                **self.admin_site.each_context(request),
                 "users": queryset,
                 "departments": Department.objects.all(),
                 "action": "remove_from_department",

@@ -519,6 +519,7 @@ class AssetAdmin(ModelAdmin):
             request,
             "admin/assets/bulk_transfer.html",
             {
+                **self.admin_site.each_context(request),
                 "assets": queryset,
                 "locations": locations,
                 "action": "bulk_transfer",
@@ -546,6 +547,7 @@ class AssetAdmin(ModelAdmin):
             request,
             "admin/assets/bulk_change_category.html",
             {
+                **self.admin_site.each_context(request),
                 "assets": queryset,
                 "categories": categories,
                 "action": "bulk_change_category",
@@ -585,6 +587,7 @@ class AssetAdmin(ModelAdmin):
             request,
             "admin/assets/merge_assets.html",
             {
+                **self.admin_site.each_context(request),
                 "assets": queryset,
                 "action": "merge_assets",
                 "opts": self.model._meta,
