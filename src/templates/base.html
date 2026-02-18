@@ -138,9 +138,9 @@
                             <span>{{ user.get_display_name }}</span>
                         </a>
                         {% if user.is_staff %}
-                        <a href="{% url 'admin:index' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Admin</a>
+                        <a href="{% url 'admin:index' %}" hx-boost="false" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Admin</a>
                         {% endif %}
-                        <a href="{% url 'accounts:logout' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Logout</a>
+                        <a href="{% url 'accounts:logout' %}" hx-boost="false" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Logout</a>
 
                         <button onclick="toggleMobileMenu()" class="md:hidden p-2 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,9 +195,9 @@
                         <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
                             <a href="{% url 'accounts:profile' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Profile</a>
                             {% if user.is_staff %}
-                            <a href="{% url 'admin:index' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Admin</a>
+                            <a href="{% url 'admin:index' %}" hx-boost="false" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Admin</a>
                             {% endif %}
-                            <a href="{% url 'accounts:logout' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Logout</a>
+                            <a href="{% url 'accounts:logout' %}" hx-boost="false" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Logout</a>
                         </div>
                     </div>
                 </div>
