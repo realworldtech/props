@@ -134,6 +134,10 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
+# WhiteNoise: don't crash on CSS references it can't resolve
+# (Tailwind CSS 4's @import "tailwindcss" is not a file path)
+WHITENOISE_MANIFEST_STRICT = False
+
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

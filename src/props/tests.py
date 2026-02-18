@@ -1031,3 +1031,35 @@ class TestAccessibilityAndCodeQuality:
         content = pyproject.read_text()
         assert "[tool.black]" in content
         assert "[tool.isort]" in content
+
+
+class TestWhiteNoiseConfiguration:
+    """WhiteNoise must handle Tailwind CSS 4 @import syntax."""
+
+    def test_manifest_strict_disabled(self):
+        """WHITENOISE_MANIFEST_STRICT must be False.
+
+        Tailwind CSS 4 uses @import "tailwindcss" which is a
+        package reference, not a file path. WhiteNoise's
+        CompressedManifestStaticFilesStorage tries to resolve it
+        as css/tailwindcss and crashes during collectstatic if
+        strict mode is enabled.
+        """
+        from django.conf import settings
+
+        assert hasattr(settings, "WHITENOISE_MANIFEST_STRICT")
+        assert settings.WHITENOISE_MANIFEST_STRICT is False
+
+    def test_whitenoise_storage_configured(self):
+        """Production staticfiles backend is WhiteNoise.
+
+        Both USE_S3 and non-S3 paths must use
+        CompressedManifestStaticFilesStorage, which requires
+        WHITENOISE_MANIFEST_STRICT=False for Tailwind CSS 4.
+        """
+        # In tests, conftest overrides to plain storage,
+        # but the settings module itself should reference WhiteNoise
+        import props.settings as prod_settings
+
+        settings_source = open(prod_settings.__file__).read()
+        assert "CompressedManifestStaticFilesStorage" in settings_source
