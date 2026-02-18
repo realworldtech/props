@@ -990,6 +990,17 @@ class SiteBrandingAdmin(ModelAdmin):
         "color_mode",
     ]
 
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name in (
+            "primary_color",
+            "secondary_color",
+            "accent_color",
+        ):
+            from unfold.widgets import UnfoldAdminColorInputWidget
+
+            kwargs["widget"] = UnfoldAdminColorInputWidget
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
     def has_add_permission(self, request):
         if SiteBranding.objects.exists():
             return False
