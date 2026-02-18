@@ -1063,3 +1063,32 @@ class TestWhiteNoiseConfiguration:
 
         settings_source = open(prod_settings.__file__).read()
         assert "CompressedManifestStaticFilesStorage" in settings_source
+
+
+@pytest.mark.django_db
+class TestMigrations:
+    """Ensure all model changes have corresponding migrations."""
+
+    def test_no_missing_migrations(self):
+        """makemigrations --check must report no pending changes.
+
+        If this fails, a model was changed without generating a
+        migration. Run: python manage.py makemigrations
+        """
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        try:
+            call_command(
+                "makemigrations",
+                "--check",
+                "--dry-run",
+                stdout=out,
+            )
+        except SystemExit:
+            pytest.fail(
+                f"Missing migrations detected: {out.getvalue()}"
+                f"\nRun: python manage.py makemigrations"
+            )
