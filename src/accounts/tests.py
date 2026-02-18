@@ -1582,6 +1582,173 @@ class TestCustomUserAdminLayout:
         )
 
 
+@pytest.mark.django_db
+class TestGroupAdminLayout:
+    """S2.13.5-09: Group admin uses UnfoldAdmin with user count."""
+
+    # --- S2.13.5-09 MUST: Group admin uses UnfoldAdmin ---
+
+    def test_group_admin_registered(self):
+        """S2.13.5-09 MUST: Group model has a custom admin registered."""
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+
+        assert (
+            Group in site._registry
+        ), "Group must be registered in the admin site"
+
+    def test_group_admin_uses_unfold(self):
+        """S2.13.5-09 MUST: Group admin uses UnfoldAdmin as base class
+        (per S2.13.1-01)."""
+        from unfold.admin import ModelAdmin as UnfoldModelAdmin
+
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+
+        admin_obj = site._registry[Group]
+        assert isinstance(admin_obj, UnfoldModelAdmin), (
+            "Group admin must use UnfoldAdmin (unfold ModelAdmin) "
+            f"as base class, got {type(admin_obj).__mro__}"
+        )
+
+    # --- S2.13.5-09 MUST: list view accessible ---
+
+    def test_group_changelist_accessible(self, admin_client):
+        """S2.13.5-09 MUST: Group changelist is accessible to admin."""
+        url = reverse("admin:auth_group_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+
+    # --- S2.13.5-09 MUST: user count annotation + display ---
+
+    def test_user_count_in_list_display(self):
+        """S2.13.5-09 MUST: list_display includes user_count."""
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+
+        admin_obj = site._registry[Group]
+        # Check that there is a user_count column in list_display
+        # It might be a method name or a field name
+        list_display = admin_obj.list_display
+        has_user_count = any(
+            "user_count" in str(col) or "member_count" in str(col)
+            for col in list_display
+        )
+        assert has_user_count, (
+            "Group admin list_display must include a user count column, "
+            f"got {list_display}"
+        )
+
+    def test_user_count_accuracy_populated_group(self, admin_client, db):
+        """S2.13.5-09 MUST: Group with 3 users shows count of 3."""
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+        from django.test import RequestFactory
+
+        from accounts.models import CustomUser
+
+        group = Group.objects.create(name="Test Populated Group")
+        for i in range(3):
+            u = CustomUser.objects.create_user(
+                username=f"counttest{i}",
+                email=f"counttest{i}@example.com",
+                password="testpass123!",
+            )
+            u.groups.add(group)
+
+        # Verify via annotated queryset
+        admin_obj = site._registry[Group]
+        factory = RequestFactory()
+        request = factory.get(reverse("admin:auth_group_changelist"))
+        request.user = CustomUser.objects.filter(is_superuser=True).first()
+        qs = admin_obj.get_queryset(request)
+        annotated = qs.get(pk=group.pk)
+        assert hasattr(
+            annotated, "user_count"
+        ), "Queryset must annotate user_count"
+        assert (
+            annotated.user_count == 3
+        ), f"Expected user_count=3, got {annotated.user_count}"
+
+    def test_user_count_accuracy_empty_group(self, admin_client, db):
+        """S2.13.5-09 MUST: Group with 0 users shows count of 0."""
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+        from django.test import RequestFactory
+
+        from accounts.models import CustomUser
+
+        group = Group.objects.create(name="Empty Test Group")
+
+        # Verify via annotated queryset
+        admin_obj = site._registry[Group]
+        factory = RequestFactory()
+        request = factory.get(reverse("admin:auth_group_changelist"))
+        request.user = CustomUser.objects.filter(is_superuser=True).first()
+        qs = admin_obj.get_queryset(request)
+        annotated = qs.get(pk=group.pk)
+        assert hasattr(
+            annotated, "user_count"
+        ), "Queryset must annotate user_count"
+        assert (
+            annotated.user_count == 0
+        ), f"Expected user_count=0, got {annotated.user_count}"
+
+    def test_queryset_annotates_user_count(self, admin_client, db):
+        """S2.13.5-09 MUST: queryset is annotated with user count."""
+        from django.contrib.admin.sites import site
+        from django.contrib.auth.models import Group
+        from django.test import RequestFactory
+
+        from accounts.models import CustomUser
+
+        group = Group.objects.create(name="Annotated Count Group")
+        for i in range(2):
+            u = CustomUser.objects.create_user(
+                username=f"annottest{i}",
+                email=f"annottest{i}@example.com",
+                password="testpass123!",
+            )
+            u.groups.add(group)
+
+        admin_obj = site._registry[Group]
+        factory = RequestFactory()
+        request = factory.get(reverse("admin:auth_group_changelist"))
+        # Superuser needed for admin access
+        superuser = CustomUser.objects.filter(is_superuser=True).first()
+        request.user = superuser
+
+        qs = admin_obj.get_queryset(request)
+        annotated_group = qs.get(pk=group.pk)
+        assert hasattr(
+            annotated_group, "user_count"
+        ), "Group queryset must be annotated with 'user_count'"
+        assert (
+            annotated_group.user_count == 2
+        ), f"Expected user_count=2, got {annotated_group.user_count}"
+
+    # --- S2.13.5-09 SHOULD: link to filtered user list ---
+
+    def test_filtered_user_list_link(self, admin_client, db):
+        """S2.13.5-09 SHOULD: Group list row contains link to
+        filtered user changelist."""
+        from django.contrib.auth.models import Group
+
+        group = Group.objects.create(name="Linked Group")
+
+        url = reverse("admin:auth_group_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+
+        # Expected link pattern: user changelist filtered by group ID
+        expected_filter = f"groups__id__exact={group.pk}"
+        assert expected_filter in content, (
+            f"Group changelist must contain a link to filtered user "
+            f"list with '{expected_filter}', but it was not found "
+            f"in the response"
+        )
+
+
 # ============================================================
 # BATCH 5: S2.10.5 USER PROFILE GAP TESTS
 # ============================================================

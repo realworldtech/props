@@ -7,6 +7,10 @@ from unfold.decorators import display
 
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.models import Group
+from django.db.models import Count
+from django.urls import reverse
+from django.utils.html import format_html
 
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 from .models import CustomUser
@@ -192,3 +196,30 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             )
 
         super().delete_model(request, obj)
+
+
+# Unregister the default Group admin and register with UnfoldAdmin
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class CustomGroupAdmin(ModelAdmin):
+    list_display = ["name", "display_user_count", "display_users_link"]
+    search_fields = ["name"]
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(user_count=Count("user"))
+
+    @display(description="Users", ordering="user_count")
+    def display_user_count(self, obj):
+        return obj.user_count
+
+    @display(description="View Users")
+    def display_users_link(self, obj):
+        url = reverse("admin:accounts_customuser_changelist")
+        return format_html(
+            '<a href="{}?groups__id__exact={}">View users</a>',
+            url,
+            obj.pk,
+        )
