@@ -724,6 +724,65 @@ class TestApprovalQueue:
         assert pending.approved_at is not None
 
 
+class TestApprovalRoleAssignment:
+    """Approval must assign the selected role, not silently fail."""
+
+    @patch("accounts.views._send_approval_email")
+    def test_approve_assigns_department_manager_role(
+        self, mock_email, admin_client, admin_user, department, db
+    ):
+        """Role select sends group name; view must match it."""
+        from django.contrib.auth.models import Group
+
+        group, _ = Group.objects.get_or_create(name="Department Manager")
+        pending = User.objects.create_user(
+            username="deptmgr",
+            email="deptmgr@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        response = admin_client.post(
+            reverse("accounts:approve_user", args=[pending.pk]),
+            {
+                "role": "Department Manager",
+                "departments": [department.pk],
+            },
+        )
+        assert response.status_code == 302
+        pending.refresh_from_db()
+        assert pending.is_active is True
+        assert pending.groups.filter(name="Department Manager").exists()
+        assert department.managers.filter(pk=pending.pk).exists()
+
+    @patch("accounts.views._send_approval_email")
+    def test_approve_assigns_viewer_role(
+        self, mock_email, admin_client, admin_user, db
+    ):
+        """Non-default role is correctly assigned."""
+        from django.contrib.auth.models import Group
+
+        Group.objects.get_or_create(name="Viewer")
+        pending = User.objects.create_user(
+            username="vieweruser",
+            email="viewer@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        admin_client.post(
+            reverse("accounts:approve_user", args=[pending.pk]),
+            {"role": "Viewer"},
+        )
+        pending.refresh_from_db()
+        assert pending.groups.filter(name="Viewer").exists()
+        assert not pending.groups.filter(name="Member").exists()
+
+
 class TestApprovalEmailFailure:
     """Approval/rejection must succeed even when email fails."""
 

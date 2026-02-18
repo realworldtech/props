@@ -78,7 +78,7 @@
                                                 <select name="role" id="role-select-{{ pending.pk }}" onchange="toggleDeptSelect({{ pending.pk }})"
                                                         class="w-full form-input rounded-lg px-3 py-2 text-sm text-stage-900 dark:text-cream bg-white/50 dark:bg-stage-800/50">
                                                     {% for group in groups %}
-                                                    <option value="{{ group.pk }}">{{ group.name }}</option>
+                                                    <option value="{{ group.name }}">{{ group.name }}</option>
                                                     {% endfor %}
                                                 </select>
                                             </div>

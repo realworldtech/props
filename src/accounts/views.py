@@ -453,7 +453,16 @@ def approve_user_view(request, user_pk):
         pending_user.groups.clear()
         pending_user.groups.add(group)
     except Group.DoesNotExist:
-        pass
+        logger.error(
+            "Approval role '%s' not found for user %s",
+            group_name,
+            pending_user.pk,
+        )
+        messages.error(
+            request,
+            f"Role '{group_name}' does not exist. "
+            f"User was activated but no role was assigned.",
+        )
 
     # 3. If Department Manager, add to dept managers M2M
     if group_name == "Department Manager" and dept_ids:
