@@ -20983,3 +20983,37 @@ class TestSiteBrandingAdminFields:
         assert "secondary_color" in content
         assert "accent_color" in content
         assert "color_mode" in content
+
+
+class TestSiteBrandingColorPickerWidget:
+    """S4.6.2-04: Colour fields should use UnfoldAdminColorInputWidget."""
+
+    def test_color_fields_render_as_color_input(self, admin_client):
+        """Colour fields must render with type='color' HTML input."""
+        response = admin_client.get("/admin/assets/sitebranding/add/")
+        assert response.status_code == 200
+        content = response.content.decode()
+        for field in ["primary_color", "secondary_color", "accent_color"]:
+            assert (
+                'type="color"' in content
+                and 'name="{}"'.format(field) in content
+            ), f"{field} should render as a color picker input"
+
+    def test_color_picker_saves_value(self, admin_client):
+        """Colour value submitted via picker persists correctly."""
+        response = admin_client.post(
+            "/admin/assets/sitebranding/add/",
+            {
+                "primary_color": "#BC2026",
+                "secondary_color": "#4A708B",
+                "accent_color": "#2D7A6D",
+                "color_mode": "system",
+            },
+            follow=True,
+        )
+        assert response.status_code == 200
+        branding = SiteBranding.objects.first()
+        assert branding is not None
+        assert branding.primary_color == "#BC2026"
+        assert branding.secondary_color == "#4A708B"
+        assert branding.accent_color == "#2D7A6D"
