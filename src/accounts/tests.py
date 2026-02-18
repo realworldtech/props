@@ -1750,6 +1750,460 @@ class TestGroupAdminLayout:
 
 
 # ============================================================
+# BATCH 4c: S2.13.5-10/11/12 BULK USER MANAGEMENT ACTIONS
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestBulkUserActions:
+    """S2.13.5-10: Bulk actions on CustomUser admin changelist.
+
+    These tests are written BEFORE implementation exists and
+    should FAIL until the 7 bulk actions are implemented.
+    """
+
+    CHANGELIST_URL = "admin:accounts_customuser_changelist"
+
+    @pytest.fixture
+    def target_users(self, db, password):
+        """Create two target users for bulk operations."""
+        u1 = User.objects.create_user(
+            username="bulk_target1",
+            email="bulk1@example.com",
+            password=password,
+        )
+        u2 = User.objects.create_user(
+            username="bulk_target2",
+            email="bulk2@example.com",
+            password=password,
+        )
+        return [u1, u2]
+
+    @pytest.fixture
+    def bystander_user(self, db, password):
+        """A user NOT selected in the bulk action."""
+        return User.objects.create_user(
+            username="bystander",
+            email="bystander@example.com",
+            password=password,
+        )
+
+    @pytest.fixture
+    def staff_client(self, client, db, password):
+        """A staff (non-superuser) client for permission tests."""
+        staff = User.objects.create_user(
+            username="staffonly",
+            email="staffonly@example.com",
+            password=password,
+            is_staff=True,
+            is_superuser=False,
+        )
+        client.login(username=staff.username, password=password)
+        return client
+
+    # --- S2.13.5-10: assign_groups (intermediate form) ---
+
+    def test_assign_groups_adds_groups_to_selected_users(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-10: assign_groups adds selected groups to
+        all selected users."""
+        from django.contrib.auth.models import Group
+
+        g1, _ = Group.objects.get_or_create(name="Member")
+        g2, _ = Group.objects.get_or_create(name="Viewer")
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g1.pk, g2.pk],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.groups.filter(
+                name="Member"
+            ).exists(), f"User {u.username} should be in Member group"
+            assert u.groups.filter(
+                name="Viewer"
+            ).exists(), f"User {u.username} should be in Viewer group"
+
+    def test_assign_groups_does_not_affect_unselected(
+        self, admin_client, target_users, bystander_user
+    ):
+        """S2.13.5-10: assign_groups must not modify unselected
+        users."""
+        from django.contrib.auth.models import Group
+
+        g, _ = Group.objects.get_or_create(name="Member")
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g.pk],
+            },
+        )
+
+        bystander_user.refresh_from_db()
+        assert not bystander_user.groups.filter(name="Member").exists()
+
+    # --- S2.13.5-10: remove_groups (intermediate form) ---
+
+    def test_remove_groups_removes_groups_from_selected_users(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-10: remove_groups removes selected groups from
+        all selected users."""
+        from django.contrib.auth.models import Group
+
+        g, _ = Group.objects.get_or_create(name="Member")
+        for u in target_users:
+            u.groups.add(g)
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g.pk],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert not u.groups.filter(name="Member").exists(), (
+                f"User {u.username} should no longer be " f"in Member group"
+            )
+
+    def test_remove_groups_does_not_affect_unselected(
+        self, admin_client, target_users, bystander_user
+    ):
+        """S2.13.5-10: remove_groups must not modify unselected
+        users."""
+        from django.contrib.auth.models import Group
+
+        g, _ = Group.objects.get_or_create(name="Member")
+        bystander_user.groups.add(g)
+        for u in target_users:
+            u.groups.add(g)
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g.pk],
+            },
+        )
+
+        bystander_user.refresh_from_db()
+        assert bystander_user.groups.filter(name="Member").exists()
+
+    # --- S2.13.5-10: set_is_staff (direct) ---
+
+    def test_set_is_staff_sets_flag_on_selected_users(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-10: set_is_staff sets is_staff=True on selected
+        users."""
+        for u in target_users:
+            assert u.is_staff is False
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_staff",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert (
+                u.is_staff is True
+            ), f"User {u.username} should have is_staff=True"
+
+    def test_set_is_staff_does_not_affect_unselected(
+        self, admin_client, target_users, bystander_user
+    ):
+        """S2.13.5-10: set_is_staff must not modify unselected
+        users."""
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_staff",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        bystander_user.refresh_from_db()
+        assert bystander_user.is_staff is False
+
+    # --- S2.13.5-10: clear_is_staff (direct) ---
+
+    def test_clear_is_staff_clears_flag_on_selected_users(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-10: clear_is_staff sets is_staff=False on
+        selected users."""
+        for u in target_users:
+            u.is_staff = True
+            u.save(update_fields=["is_staff"])
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "clear_is_staff",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert (
+                u.is_staff is False
+            ), f"User {u.username} should have is_staff=False"
+
+    # --- S2.13.5-10: assign_department (intermediate form) ---
+
+    def test_assign_department_sets_department_on_selected_users(
+        self, admin_client, target_users, department
+    ):
+        """S2.13.5-10: assign_department sets department on all
+        selected users."""
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.requested_department == department, (
+                f"User {u.username} should have department "
+                f"set to {department.name}"
+            )
+
+    def test_assign_department_does_not_affect_unselected(
+        self, admin_client, target_users, bystander_user, department
+    ):
+        """S2.13.5-10: assign_department must not modify
+        unselected users."""
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        bystander_user.refresh_from_db()
+        assert bystander_user.requested_department is None
+
+    # --- S2.13.5-11 MUST: set_is_superuser (superuser-only) ---
+
+    def test_set_is_superuser_works_for_superuser(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-11 MUST: Superuser can set is_superuser=True
+        on selected users."""
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.is_superuser is True, (
+                f"User {u.username} should have " f"is_superuser=True"
+            )
+
+    def test_set_is_superuser_denied_for_non_superuser(
+        self, staff_client, target_users
+    ):
+        """S2.13.5-11 MUST: Non-superuser staff cannot execute
+        set_is_superuser."""
+        staff_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.is_superuser is False, (
+                f"User {u.username} must NOT have "
+                f"is_superuser set by non-superuser"
+            )
+
+    # --- S2.13.5-11 MUST: clear_is_superuser (superuser-only) ---
+
+    def test_clear_is_superuser_works_for_superuser(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-11 MUST: Superuser can set is_superuser=False
+        on selected users."""
+        for u in target_users:
+            u.is_superuser = True
+            u.save(update_fields=["is_superuser"])
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "clear_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.is_superuser is False, (
+                f"User {u.username} should have " f"is_superuser=False"
+            )
+
+    def test_clear_is_superuser_denied_for_non_superuser(
+        self, staff_client, target_users
+    ):
+        """S2.13.5-11 MUST: Non-superuser staff cannot execute
+        clear_is_superuser."""
+        for u in target_users:
+            u.is_superuser = True
+            u.save(update_fields=["is_superuser"])
+
+        staff_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "clear_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            u.refresh_from_db()
+            assert u.is_superuser is True, (
+                f"User {u.username} must still have "
+                f"is_superuser=True (non-superuser cannot clear)"
+            )
+
+    # --- S2.13.5-12 MUST: LogEntry audit records ---
+
+    def test_set_is_staff_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: set_is_staff creates LogEntry for
+        each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_staff",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after set_is_staff"
+            )
+            assert (
+                "staff" in log.first().change_message.lower()
+            ), "LogEntry change_message must mention 'staff'"
+
+    def test_assign_groups_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: assign_groups creates LogEntry for
+        each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.auth.models import Group
+
+        g, _ = Group.objects.get_or_create(name="Member")
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g.pk],
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after assign_groups"
+            )
+
+    def test_set_is_superuser_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: set_is_superuser creates LogEntry
+        for each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "set_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after set_is_superuser"
+            )
+            assert (
+                "superuser" in log.first().change_message.lower()
+            ), "LogEntry change_message must mention 'superuser'"
+
+
+# ============================================================
 # BATCH 5: S2.10.5 USER PROFILE GAP TESTS
 # ============================================================
 

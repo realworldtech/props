@@ -3,14 +3,19 @@
 import logging
 
 from unfold.admin import ModelAdmin
-from unfold.decorators import display
+from unfold.decorators import action, display
 
 from django.contrib import admin, messages
+from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import Group
+from django.contrib.contenttypes.models import ContentType
 from django.db.models import Count
+from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils.html import format_html
+
+from assets.models import Department
 
 from .forms import CustomUserChangeForm, CustomUserCreationForm
 from .models import CustomUser
@@ -143,6 +148,208 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
     @display(description="Active", boolean=True)
     def display_active(self, obj):
         return obj.is_active
+
+    actions = [
+        "assign_groups",
+        "remove_groups",
+        "set_is_staff",
+        "clear_is_staff",
+        "set_is_superuser",
+        "clear_is_superuser",
+        "assign_department",
+    ]
+
+    def _log_change(self, request, user, message):
+        """Create a LogEntry for a bulk action change."""
+        ct = ContentType.objects.get_for_model(user)
+        LogEntry.objects.create(
+            user_id=request.user.pk,
+            content_type_id=ct.pk,
+            object_id=str(user.pk),
+            object_repr=str(user),
+            action_flag=CHANGE,
+            change_message=message,
+        )
+
+    @action(description="Assign groups")
+    def assign_groups(self, request, queryset):
+        if "apply" in request.POST:
+            group_ids = request.POST.getlist("groups")
+            groups = Group.objects.filter(pk__in=group_ids)
+            for user in queryset:
+                user.groups.add(*groups)
+                self._log_change(
+                    request,
+                    user,
+                    "Added groups via bulk action: "
+                    + ", ".join(g.name for g in groups),
+                )
+            messages.success(
+                request,
+                f"Groups assigned to {queryset.count()} user(s).",
+            )
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/assign_groups.html",
+            {
+                "users": queryset,
+                "groups": Group.objects.all(),
+                "action": "assign_groups",
+                "opts": self.model._meta,
+                "title": "Assign groups to users",
+            },
+        )
+
+    @action(description="Remove groups")
+    def remove_groups(self, request, queryset):
+        if "apply" in request.POST:
+            group_ids = request.POST.getlist("groups")
+            groups = Group.objects.filter(pk__in=group_ids)
+            for user in queryset:
+                user.groups.remove(*groups)
+                self._log_change(
+                    request,
+                    user,
+                    "Removed groups via bulk action: "
+                    + ", ".join(g.name for g in groups),
+                )
+            messages.success(
+                request,
+                f"Groups removed from {queryset.count()} user(s).",
+            )
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/remove_groups.html",
+            {
+                "users": queryset,
+                "groups": Group.objects.all(),
+                "action": "remove_groups",
+                "opts": self.model._meta,
+                "title": "Remove groups from users",
+            },
+        )
+
+    @action(description="Set is_staff")
+    def set_is_staff(self, request, queryset):
+        count = 0
+        for user in queryset:
+            user.is_staff = True
+            user.save(update_fields=["is_staff"])
+            self._log_change(
+                request, user, "Set is_staff to True via bulk action"
+            )
+            count += 1
+        messages.success(request, f"{count} user(s) updated.")
+
+    @action(description="Clear is_staff")
+    def clear_is_staff(self, request, queryset):
+        count = 0
+        for user in queryset:
+            user.is_staff = False
+            user.save(update_fields=["is_staff"])
+            self._log_change(
+                request, user, "Set is_staff to False via bulk action"
+            )
+            count += 1
+        messages.success(request, f"{count} user(s) updated.")
+
+    @action(description="Set is_superuser")
+    def set_is_superuser(self, request, queryset):
+        if not request.user.is_superuser:
+            messages.error(
+                request,
+                "Only superusers can perform this action.",
+            )
+            return None
+        if "apply" in request.POST:
+            count = 0
+            for user in queryset:
+                user.is_superuser = True
+                user.save(update_fields=["is_superuser"])
+                self._log_change(
+                    request,
+                    user,
+                    "Set is_superuser to True via bulk action",
+                )
+                count += 1
+            messages.success(request, f"{count} user(s) updated.")
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/confirm_superuser.html",
+            {
+                "users": queryset,
+                "action": "set_is_superuser",
+                "action_label": "grant superuser status to",
+                "opts": self.model._meta,
+                "title": "Confirm set superuser",
+            },
+        )
+
+    @action(description="Clear is_superuser")
+    def clear_is_superuser(self, request, queryset):
+        if not request.user.is_superuser:
+            messages.error(
+                request,
+                "Only superusers can perform this action.",
+            )
+            return None
+        if "apply" in request.POST:
+            count = 0
+            for user in queryset:
+                user.is_superuser = False
+                user.save(update_fields=["is_superuser"])
+                self._log_change(
+                    request,
+                    user,
+                    "Set is_superuser to False via bulk action",
+                )
+                count += 1
+            messages.success(request, f"{count} user(s) updated.")
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/confirm_superuser.html",
+            {
+                "users": queryset,
+                "action": "clear_is_superuser",
+                "action_label": "remove superuser status from",
+                "opts": self.model._meta,
+                "title": "Confirm clear superuser",
+            },
+        )
+
+    @action(description="Assign department")
+    def assign_department(self, request, queryset):
+        if "apply" in request.POST:
+            dept_id = request.POST.get("department")
+            dept = Department.objects.get(pk=dept_id)
+            for user in queryset:
+                user.requested_department = dept
+                user.save(update_fields=["requested_department"])
+                self._log_change(
+                    request,
+                    user,
+                    f"Set department to {dept.name} via bulk action",
+                )
+            messages.success(
+                request,
+                f"Department assigned to {queryset.count()} user(s).",
+            )
+            return None
+        return TemplateResponse(
+            request,
+            "admin/accounts/assign_department.html",
+            {
+                "users": queryset,
+                "departments": Department.objects.all(),
+                "action": "assign_department",
+                "opts": self.model._meta,
+                "title": "Assign department to users",
+            },
+        )
 
     def save_model(self, request, obj, form, change):
         """Override to set email_verified=True for admin-created users."""
