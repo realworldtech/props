@@ -37,7 +37,7 @@ RUN ARCH="$(dpkg --print-architecture)" && \
     curl -sLo /usr/local/bin/tailwindcss \
         "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-${TW_ARCH}" && \
     chmod +x /usr/local/bin/tailwindcss && \
-    tailwindcss -i src/static/css/input.css -o src/static/css/tailwind.css --minify && \
+    tailwindcss -i src/tailwind/input.css -o src/static/css/tailwind.css --minify && \
     rm /usr/local/bin/tailwindcss
 
 # Collect static files

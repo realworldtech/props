@@ -1033,36 +1033,92 @@ class TestAccessibilityAndCodeQuality:
         assert "[tool.isort]" in content
 
 
-class TestWhiteNoiseConfiguration:
-    """WhiteNoise must handle Tailwind CSS 4 @import syntax."""
+class TestTailwindCSSBuild:
+    """Tailwind CSS source must not be in static directory."""
 
-    def test_manifest_strict_disabled(self):
-        """WHITENOISE_MANIFEST_STRICT must be False.
+    def test_input_css_not_in_static(self):
+        """input.css must NOT be in src/static/ directory.
 
-        Tailwind CSS 4 uses @import "tailwindcss" which is a
-        package reference, not a file path. WhiteNoise's
-        CompressedManifestStaticFilesStorage tries to resolve it
-        as css/tailwindcss and crashes during collectstatic if
-        strict mode is enabled.
+        Tailwind CSS 4's @import "tailwindcss" is a package
+        reference, not a file path. If input.css is collected
+        by collectstatic, WhiteNoise's post-processing tries
+        to resolve it as css/tailwindcss and crashes the
+        production container on startup.
+
+        The source file lives in src/tailwind/input.css and
+        the compiled output goes to src/static/css/tailwind.css.
         """
+        from pathlib import Path
+
+        static_input = (
+            Path(__file__).parent.parent / "static" / "css" / "input.css"
+        )
+        assert not static_input.exists(), (
+            "input.css must not be in static/css/ — "
+            "WhiteNoise cannot resolve @import 'tailwindcss'. "
+            "Move it to src/tailwind/input.css"
+        )
+
+    def test_tailwind_source_exists(self):
+        """Tailwind source file must exist at src/tailwind/input.css."""
+        from pathlib import Path
+
+        tailwind_input = (
+            Path(__file__).parent.parent / "tailwind" / "input.css"
+        )
+        assert (
+            tailwind_input.exists()
+        ), "Tailwind source file missing at src/tailwind/input.css"
+
+    def test_compiled_tailwind_exists(self):
+        """Compiled tailwind.css must exist in static/css/."""
+        from pathlib import Path
+
+        compiled = (
+            Path(__file__).parent.parent / "static" / "css" / "tailwind.css"
+        )
+        assert compiled.exists(), (
+            "Compiled tailwind.css missing from static/css/ — "
+            "run: scripts/build-css.sh"
+        )
+
+    def test_collectstatic_with_whitenoise_succeeds(self):
+        """collectstatic must succeed with WhiteNoise storage.
+
+        This is the actual production failure test — it uses
+        WhiteNoise's CompressedManifestStaticFilesStorage and
+        verifies collectstatic completes without crashing on
+        unresolvable CSS references.
+        """
+        import tempfile
+        from io import StringIO
+
         from django.conf import settings
+        from django.core.management import call_command
 
-        assert hasattr(settings, "WHITENOISE_MANIFEST_STRICT")
-        assert settings.WHITENOISE_MANIFEST_STRICT is False
+        original_storages = settings.STORAGES.copy()
+        original_static_root = settings.STATIC_ROOT
 
-    def test_whitenoise_storage_configured(self):
-        """Production staticfiles backend is WhiteNoise.
-
-        Both USE_S3 and non-S3 paths must use
-        CompressedManifestStaticFilesStorage, which requires
-        WHITENOISE_MANIFEST_STRICT=False for Tailwind CSS 4.
-        """
-        # In tests, conftest overrides to plain storage,
-        # but the settings module itself should reference WhiteNoise
-        import props.settings as prod_settings
-
-        settings_source = open(prod_settings.__file__).read()
-        assert "CompressedManifestStaticFilesStorage" in settings_source
+        try:
+            settings.STORAGES = {
+                **settings.STORAGES,
+                "staticfiles": {
+                    "BACKEND": "whitenoise.storage."
+                    "CompressedManifestStaticFilesStorage",
+                },
+            }
+            with tempfile.TemporaryDirectory() as tmpdir:
+                settings.STATIC_ROOT = tmpdir
+                out = StringIO()
+                call_command(
+                    "collectstatic",
+                    "--noinput",
+                    "--clear",
+                    stdout=out,
+                )
+        finally:
+            settings.STORAGES = original_storages
+            settings.STATIC_ROOT = original_static_root
 
 
 @pytest.mark.django_db

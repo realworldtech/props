@@ -7,7 +7,7 @@ TAILWIND_VERSION="v4.1.18"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${PROJECT_ROOT}/bin"
 CLI="${BIN_DIR}/tailwindcss"
-INPUT="${PROJECT_ROOT}/src/static/css/input.css"
+INPUT="${PROJECT_ROOT}/src/tailwind/input.css"
 OUTPUT="${PROJECT_ROOT}/src/static/css/tailwind.css"
 
 # Detect platform
