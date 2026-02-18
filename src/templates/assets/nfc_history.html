@@ -6,40 +6,40 @@
 <div class="max-w-3xl mx-auto space-y-6">
     <div>
         <h1 class="font-display text-2xl font-bold">NFC Tag History</h1>
-        <p class="text-cream/50 mt-1">Tag ID: <span class="font-mono">{{ tag_uid }}</span></p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">Tag ID: <span class="font-mono">{{ tag_uid }}</span></p>
     </div>
 
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <table class="w-full text-sm">
             <thead>
-                <tr class="border-b border-white/10">
-                    <th class="px-4 py-3 text-left text-cream/70 font-medium">Asset</th>
-                    <th class="px-4 py-3 text-left text-cream/70 font-medium">Assigned</th>
-                    <th class="px-4 py-3 text-left text-cream/70 font-medium">Removed</th>
-                    <th class="px-4 py-3 text-left text-cream/70 font-medium">Status</th>
-                    <th class="px-4 py-3 text-left text-cream/70 font-medium">Notes</th>
+                <tr class="border-b border-stage-200 dark:border-white/10">
+                    <th class="px-4 py-3 text-left text-stage-600 dark:text-cream/70 font-medium">Asset</th>
+                    <th class="px-4 py-3 text-left text-stage-600 dark:text-cream/70 font-medium">Assigned</th>
+                    <th class="px-4 py-3 text-left text-stage-600 dark:text-cream/70 font-medium">Removed</th>
+                    <th class="px-4 py-3 text-left text-stage-600 dark:text-cream/70 font-medium">Status</th>
+                    <th class="px-4 py-3 text-left text-stage-600 dark:text-cream/70 font-medium">Notes</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
+            <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                 {% for tag in tags %}
-                <tr class="hover:bg-white/5 transition-colors">
+                <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:asset_detail' tag.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-300 font-medium">
+                        <a href="{% url 'assets:asset_detail' tag.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 font-medium">
                             {{ tag.asset.name }}
                         </a>
-                        <span class="text-cream/40 text-xs block font-mono">{{ tag.asset.barcode }}</span>
+                        <span class="text-stage-500 dark:text-cream/40 text-xs block font-mono">{{ tag.asset.barcode }}</span>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {{ tag.assigned_at|date:"d M Y H:i" }}
                         {% if tag.assigned_by %}
-                            <span class="text-cream/40 text-xs block">by {{ tag.assigned_by.display_name|default:tag.assigned_by.username }}</span>
+                            <span class="text-stage-500 dark:text-cream/40 text-xs block">by {{ tag.assigned_by.display_name|default:tag.assigned_by.username }}</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {% if tag.removed_at %}
                             {{ tag.removed_at|date:"d M Y H:i" }}
                             {% if tag.removed_by %}
-                                <span class="text-cream/40 text-xs block">by {{ tag.removed_by.display_name|default:tag.removed_by.username }}</span>
+                                <span class="text-stage-500 dark:text-cream/40 text-xs block">by {{ tag.removed_by.display_name|default:tag.removed_by.username }}</span>
                             {% endif %}
                         {% else %}
                             &mdash;
@@ -56,7 +56,7 @@
                             </span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/50 text-xs max-w-xs truncate">
+                    <td class="px-4 py-3 text-stage-500 dark:text-cream/50 text-xs max-w-xs truncate">
                         {{ tag.notes|default:"" }}
                     </td>
                 </tr>
@@ -66,7 +66,7 @@
     </div>
 
     <div class="text-center">
-        <a href="{% url 'assets:scan' %}" class="text-spotlight-400 hover:text-spotlight-300 text-sm">
+        <a href="{% url 'assets:scan' %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 text-sm">
             Back to Scan
         </a>
     </div>

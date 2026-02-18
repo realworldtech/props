@@ -7,16 +7,16 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="font-display text-3xl font-bold">Assets</h1>
-            <p class="text-cream/50 mt-1">{{ page_obj.paginator.count }} asset{{ page_obj.paginator.count|pluralize }}</p>
+            <p class="text-stage-500 dark:text-cream/50 mt-1">{{ page_obj.paginator.count }} asset{{ page_obj.paginator.count|pluralize }}</p>
         </div>
         <div class="flex gap-3">
-            <a href="{% url 'assets:export_assets' %}?{{ request.GET.urlencode }}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <a href="{% url 'assets:export_assets' %}?{{ request.GET.urlencode }}" class="flex items-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                 </svg>
                 Export
             </a>
-            <a href="{% url 'assets:print_all_filtered_labels' %}?{{ request.GET.urlencode }}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <a href="{% url 'assets:print_all_filtered_labels' %}?{{ request.GET.urlencode }}" class="flex items-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
                 </svg>
@@ -35,9 +35,9 @@
     <form method="get" class="space-y-4" id="filter-form">
         <div class="flex gap-3">
             <div class="relative flex-1">
-                <svg class="w-4 h-4 text-cream/30 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <svg class="w-4 h-4 text-stage-500 dark:text-cream/30 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 <input type="text" name="q" value="{{ q }}" placeholder="Search name, description, barcode, tags..."
-                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-cream"
+                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-stage-900 dark:text-cream"
                     hx-get="{% url 'assets:asset_list' %}"
                     hx-trigger="input changed delay:300ms, search"
                     hx-target="#asset-results"
@@ -50,51 +50,51 @@
         </div>
 
         <div class="flex flex-wrap gap-3 items-center">
-            <select name="status" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="status" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Statuses</option>
                 {% for value, label in statuses %}
                 <option value="{{ value }}" {% if value == current_status %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <select name="department" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="department" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Departments</option>
                 {% for dept in departments %}
                 <option value="{{ dept.pk }}" {% if request.GET.department == dept.pk|stringformat:"d" %}selected{% endif %}>{{ dept.name }}</option>
                 {% endfor %}
             </select>
-            <select name="category" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="category" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Categories</option>
                 {% for cat in categories %}
                 <option value="{{ cat.pk }}" {% if request.GET.category == cat.pk|stringformat:"d" %}selected{% endif %}>{{ cat.name }}</option>
                 {% endfor %}
             </select>
-            <select name="location" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="location" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Locations</option>
                 <option value="checked_out" {% if request.GET.location == "checked_out" %}selected{% endif %}>Checked Out</option>
                 {% for loc in locations %}
                 <option value="{{ loc.pk }}" {% if request.GET.location == loc.pk|stringformat:"d" %}selected{% endif %}>{{ loc.name }}</option>
                 {% endfor %}
             </select>
-            <select name="tag" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="tag" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Tags</option>
                 {% for t in tags %}
                 <option value="{{ t.pk }}" {% if request.GET.tag == t.pk|stringformat:"d" %}selected{% endif %}>{{ t.name }}</option>
                 {% endfor %}
             </select>
-            <select name="condition" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="condition" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Conditions</option>
                 {% for value, label in conditions %}
                 <option value="{{ value }}" {% if request.GET.condition == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <select name="is_kit" class="form-input rounded-lg px-3 py-2 text-cream text-sm" onchange="this.form.submit()">
+            <select name="is_kit" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                 <option value="">All Types</option>
                 <option value="1" {% if request.GET.is_kit == "1" %}selected{% endif %}>Kits Only</option>
                 <option value="0" {% if request.GET.is_kit == "0" %}selected{% endif %}>Non-Kits Only</option>
             </select>
 
             {% if q or request.GET.department or request.GET.category or request.GET.location or request.GET.tag or request.GET.condition or request.GET.is_kit or current_status != "active" %}
-            <a href="{% url 'assets:asset_list' %}" class="text-cream/40 hover:text-cream text-sm transition-colors">Clear filters</a>
+            <a href="{% url 'assets:asset_list' %}" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Clear filters</a>
             {% endif %}
         </div>
 
@@ -103,21 +103,21 @@
             <div class="flex items-center gap-2">
                 <!-- View mode toggle -->
                 <input type="hidden" name="view" id="view-input" value="{{ view_mode }}">
-                <button type="submit" onclick="document.getElementById('view-input').value='list'" class="p-2 rounded-lg transition-colors {% if view_mode == 'list' %}bg-stage-700 text-cream{% else %}text-cream/40 hover:text-cream{% endif %}" title="List view">
+                <button type="submit" onclick="document.getElementById('view-input').value='list'" class="p-2 rounded-lg transition-colors {% if view_mode == 'list' %}bg-stage-100 dark:bg-stage-700 text-stage-900 dark:text-cream{% else %}text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream{% endif %}" title="List view">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
                 </button>
-                <button type="submit" onclick="document.getElementById('view-input').value='grid'" class="p-2 rounded-lg transition-colors {% if view_mode == 'grid' %}bg-stage-700 text-cream{% else %}text-cream/40 hover:text-cream{% endif %}" title="Grid view">
+                <button type="submit" onclick="document.getElementById('view-input').value='grid'" class="p-2 rounded-lg transition-colors {% if view_mode == 'grid' %}bg-stage-100 dark:bg-stage-700 text-stage-900 dark:text-cream{% else %}text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream{% endif %}" title="Grid view">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
                 </button>
             </div>
             <div class="flex items-center gap-2">
-                <span class="text-cream/40 text-sm">Show</span>
-                <select name="page_size" class="form-input rounded-lg px-2 py-1 text-cream text-sm" onchange="this.form.submit()">
+                <span class="text-stage-500 dark:text-cream/40 text-sm">Show</span>
+                <select name="page_size" class="form-input rounded-lg px-2 py-1 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
                     <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
                     <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
                     <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
                 </select>
-                <span class="text-cream/40 text-sm">per page</span>
+                <span class="text-stage-500 dark:text-cream/40 text-sm">per page</span>
             </div>
         </div>
     </form>

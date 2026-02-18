@@ -12,7 +12,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="font-display text-3xl font-bold">Categories</h1>
-            <p class="text-cream/50 mt-1">{{ categories|length }} categor{{ categories|length|pluralize:"y,ies" }}</p>
+            <p class="text-stage-500 dark:text-cream/50 mt-1">{{ categories|length }} categor{{ categories|length|pluralize:"y,ies" }}</p>
         </div>
         <a href="{% url 'assets:category_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -24,33 +24,33 @@
     {% regroup categories by department as dept_groups %}
     {% for dept in dept_groups %}
     <div class="space-y-4">
-        <h2 class="font-display text-xl font-semibold text-cream/80 border-b border-white/10 pb-2">
+        <h2 class="font-display text-xl font-semibold text-stage-700 dark:text-cream/80 border-b border-stage-200 dark:border-white/10 pb-2">
             {% if dept.grouper %}{{ dept.grouper.name }}{% else %}No Department{% endif %}
         </h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {% for category in dept.list %}
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 card-hover">
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
                 <div class="flex items-start justify-between">
                     <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-lg bg-stage-700 flex items-center justify-center flex-shrink-0">
-                            <span class="material-symbols-outlined {% if category.icon %}text-spotlight-400{% else %}text-cream/30{% endif %}" style="font-size:20px">{{ category.icon|default:"category" }}</span>
+                        <div class="w-10 h-10 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center flex-shrink-0">
+                            <span class="material-symbols-outlined {% if category.icon %}text-spotlight-400{% else %}text-stage-500 dark:text-cream/30{% endif %}" style="font-size:20px">{{ category.icon|default:"category" }}</span>
                         </div>
                         <div>
-                        <h3 class="font-medium text-cream">{{ category.name }}</h3>
+                        <h3 class="font-medium text-stage-900 dark:text-cream">{{ category.name }}</h3>
                         {% if category.department %}
-                        <p class="text-xs text-cream/40 mt-0.5">{{ category.department.name }}</p>
+                        <p class="text-xs text-stage-500 dark:text-cream/40 mt-0.5">{{ category.department.name }}</p>
                         {% endif %}
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <span class="text-sm text-cream/40 bg-stage-700 px-2.5 py-0.5 rounded-full">{{ category.asset_count }}</span>
-                        <a href="{% url 'assets:category_edit' category.pk %}" class="text-cream/30 hover:text-cream transition-colors" title="Edit">
+                        <span class="text-sm text-stage-500 dark:text-cream/40 bg-stage-100 dark:bg-stage-700 px-2.5 py-0.5 rounded-full">{{ category.asset_count }}</span>
+                        <a href="{% url 'assets:category_edit' category.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </a>
                     </div>
                 </div>
                 {% if category.description %}
-                <p class="text-sm text-cream/50 mt-2 line-clamp-2">{{ category.description }}</p>
+                <p class="text-sm text-stage-500 dark:text-cream/50 mt-2 line-clamp-2">{{ category.description }}</p>
                 {% endif %}
             </div>
             {% endfor %}
@@ -59,11 +59,11 @@
     {% endfor %}
     {% else %}
     <div class="text-center py-16">
-        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-16 h-16 mx-auto text-stage-200 dark:text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/>
         </svg>
-        <h3 class="text-lg font-medium text-cream/70">No categories yet</h3>
-        <p class="text-cream/40 text-sm mt-1">Categories can be created in the admin panel.</p>
+        <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70">No categories yet</h3>
+        <p class="text-stage-500 dark:text-cream/40 text-sm mt-1">Categories can be created in the admin panel.</p>
     </div>
     {% endif %}
 </div>

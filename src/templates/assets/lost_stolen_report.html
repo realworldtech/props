@@ -6,14 +6,14 @@
 <div class="space-y-6">
     <div>
         <h1 class="font-display text-3xl font-bold">Lost & Stolen Assets</h1>
-        <p class="text-cream/50 mt-1">{{ total }} asset{{ total|pluralize }} currently marked as lost or stolen</p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">{{ total }} asset{{ total|pluralize }} currently marked as lost or stolen</p>
     </div>
 
     {% if assets %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <table class="w-full text-sm">
             <thead>
-                <tr class="border-b border-white/5 text-left text-cream/50">
+                <tr class="border-b border-stage-200 dark:border-white/5 text-left text-stage-500 dark:text-cream/50">
                     <th class="px-4 py-3">Asset</th>
                     <th class="px-4 py-3">Status</th>
                     <th class="px-4 py-3">Category</th>
@@ -24,12 +24,12 @@
             </thead>
             <tbody>
                 {% for asset in assets %}
-                <tr class="border-b border-white/5 hover:bg-white/[0.02]">
+                <tr class="border-b border-stage-200 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:asset_detail' asset.pk %}" class="text-spotlight-400 hover:text-spotlight-300">
+                        <a href="{% url 'assets:asset_detail' asset.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300">
                             {{ asset.name }}
                         </a>
-                        <div class="font-mono text-cream/40 text-xs">{{ asset.barcode }}</div>
+                        <div class="font-mono text-stage-500 dark:text-cream/40 text-xs">{{ asset.barcode }}</div>
                     </td>
                     <td class="px-4 py-3">
                         <span class="inline-block px-2 py-0.5 rounded-full text-xs
@@ -38,23 +38,23 @@
                             {{ asset.get_status_display }}
                         </span>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {% if asset.category %}{{ asset.category.name }}{% else %}&mdash;{% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {% if asset.current_location %}{{ asset.current_location.name }}{% else %}&mdash;{% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {% if asset.checked_out_to %}{{ asset.checked_out_to.get_display_name }}{% else %}&mdash;{% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/50 text-xs">{{ asset.updated_at|date:"d M Y H:i" }}</td>
+                    <td class="px-4 py-3 text-stage-500 dark:text-cream/50 text-xs">{{ asset.updated_at|date:"d M Y H:i" }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     {% else %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-8 text-center text-cream/50">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-8 text-center text-stage-500 dark:text-cream/50">
         <p>No assets are currently marked as lost or stolen.</p>
     </div>
     {% endif %}

@@ -23,23 +23,23 @@
 <div class="max-w-lg mx-auto space-y-6">
     <div class="text-center">
         <h1 class="font-display text-3xl font-bold">Scan Asset</h1>
-        <p class="text-cream/50 mt-1">Scan a barcode or NFC tag to look up an asset</p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">Scan a barcode or NFC tag to look up an asset</p>
     </div>
 
     <!-- Camera Scanner -->
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-4">
         <div class="flex items-center gap-3">
             <svg class="w-5 h-5 text-spotlight-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
-            <label class="block text-sm font-medium text-cream/70">Camera Scanner</label>
+            <label class="block text-sm font-medium text-stage-600 dark:text-cream/70">Camera Scanner</label>
         </div>
 
-        <div id="reader" class="rounded-xl overflow-hidden bg-stage-900/50"></div>
+        <div id="reader" class="rounded-xl overflow-hidden bg-gray-50 dark:bg-stage-900/50"></div>
 
-        <div id="scanner-status" class="text-sm text-cream/50 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-cream/30"></span>
+        <div id="scanner-status" class="text-sm text-stage-500 dark:text-cream/50 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-stage-500 dark:bg-cream/30"></span>
             Tap "Start Camera" to scan a barcode
         </div>
 
@@ -51,7 +51,7 @@
                 </svg>
                 Start Camera
             </button>
-            <button type="button" id="stop-btn" onclick="stopScanner()" class="hidden flex-1 flex items-center justify-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-3 rounded-lg font-medium btn-press transition-all">
+            <button type="button" id="stop-btn" onclick="stopScanner()" class="hidden flex-1 flex items-center justify-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-3 rounded-lg font-medium btn-press transition-all">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
@@ -62,11 +62,11 @@
     </div>
 
     <!-- Manual Entry -->
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
-        <label for="scan-input" class="block text-sm font-medium text-cream/70">Enter barcode or NFC tag ID</label>
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-4">
+        <label for="scan-input" class="block text-sm font-medium text-stage-600 dark:text-cream/70">Enter barcode or NFC tag ID</label>
         <div class="flex gap-3">
             <input type="text" id="scan-input" placeholder="Scan or type code..."
-                class="form-input flex-1 rounded-lg px-4 py-3 text-cream text-lg font-mono"
+                class="form-input flex-1 rounded-lg px-4 py-3 text-stage-900 dark:text-cream text-lg font-mono"
                 autofocus>
             <button type="button" onclick="doLookup()" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-3 rounded-lg font-medium btn-press transition-all">
                 Look Up
@@ -75,7 +75,7 @@
     </div>
 
     <!-- NFC Scan Button -->
-    <button type="button" id="nfc-btn" onclick="startNFCScan()" class="w-full bg-stage-700 hover:bg-stage-600 text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2 hidden">
+    <button type="button" id="nfc-btn" onclick="startNFCScan()" class="w-full bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2 hidden">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
         </svg>
@@ -89,21 +89,21 @@
                 <svg class="w-6 h-6 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                 </svg>
-                <h3 class="text-lg font-medium text-emerald-300">Asset Found</h3>
+                <h3 class="text-lg font-medium text-emerald-600 dark:text-emerald-300">Asset Found</h3>
                 <span class="draft-badge text-xs bg-spotlight-500/20 text-spotlight-400 px-2 py-0.5 rounded-full hidden">Draft</span>
             </div>
             <dl class="space-y-2 text-sm mb-4">
                 <div class="flex justify-between">
-                    <dt class="text-cream/50">Name</dt>
-                    <dd class="text-cream font-medium result-name"></dd>
+                    <dt class="text-stage-500 dark:text-cream/50">Name</dt>
+                    <dd class="text-stage-900 dark:text-cream font-medium result-name"></dd>
                 </div>
                 <div class="flex justify-between">
-                    <dt class="text-cream/50">Barcode</dt>
-                    <dd class="font-mono text-cream/70 result-barcode"></dd>
+                    <dt class="text-stage-500 dark:text-cream/50">Barcode</dt>
+                    <dd class="font-mono text-stage-600 dark:text-cream/70 result-barcode"></dd>
                 </div>
                 <div class="flex justify-between result-location-row hidden">
-                    <dt class="text-cream/50">Location</dt>
-                    <dd class="text-cream/70 result-location"></dd>
+                    <dt class="text-stage-500 dark:text-cream/50">Location</dt>
+                    <dd class="text-stage-600 dark:text-cream/70 result-location"></dd>
                 </div>
             </dl>
             <a href="#" class="result-link inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -117,8 +117,8 @@
             <svg class="w-10 h-10 mx-auto text-spotlight-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <h3 class="text-lg font-medium text-spotlight-300 mb-2">Not Found</h3>
-            <p class="text-cream/50 text-sm mb-4">No asset matches "<span class="font-mono result-code"></span>"</p>
+            <h3 class="text-lg font-medium text-spotlight-600 dark:text-spotlight-300 mb-2">Not Found</h3>
+            <p class="text-stage-500 dark:text-cream/50 text-sm mb-4">No asset matches "<span class="font-mono result-code"></span>"</p>
             <a href="#" class="result-capture-link inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -129,7 +129,7 @@
     </template>
 
     <template id="tpl-error">
-        <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-300 text-sm">
+        <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-600 dark:text-red-300 text-sm">
             An error occurred. Please try again.
         </div>
     </template>
@@ -140,13 +140,13 @@
     <!-- Loading -->
     <div id="scan-loading" class="hidden text-center py-8">
         <div class="inline-block w-8 h-8 border-2 border-spotlight-500/30 border-t-spotlight-500 rounded-full animate-spin"></div>
-        <p class="text-cream/50 text-sm mt-3">Looking up...</p>
+        <p class="text-stage-500 dark:text-cream/50 text-sm mt-3">Looking up...</p>
     </div>
 
     <!-- Quick links -->
     <div class="flex justify-center gap-6 text-sm">
-        <a href="{% url 'assets:quick_capture' %}" class="text-cream/50 hover:text-cream transition-colors">Quick Capture</a>
-        <a href="{% url 'assets:asset_list' %}" class="text-cream/50 hover:text-cream transition-colors">Browse Assets</a>
+        <a href="{% url 'assets:quick_capture' %}" class="text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">Quick Capture</a>
+        <a href="{% url 'assets:asset_list' %}" class="text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">Browse Assets</a>
     </div>
 </div>
 

@@ -7,7 +7,7 @@
     <div>
         <h1 class="font-display text-3xl font-bold">{% if location %}Edit Location{% else %}Create Location{% endif %}</h1>
         {% if location %}
-        <p class="text-cream/50 mt-1">{{ location.name }}</p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">{{ location.name }}</p>
         {% endif %}
     </div>
 
@@ -16,8 +16,8 @@
 
         {% if form.errors %}
         <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-            <p class="text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
-            <ul class="text-red-300/70 text-sm space-y-1">
+            <p class="text-red-600 dark:text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
+            <ul class="text-red-600 dark:text-red-300/70 text-sm space-y-1">
                 {% for field, errors in form.errors.items %}
                     {% for error in errors %}
                     <li>{{ field|title }}: {{ error }}</li>
@@ -27,32 +27,32 @@
         </div>
         {% endif %}
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Location Details</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Location Details</h2>
 
             <div>
-                <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Name *</label>
                 {{ form.name }}
             </div>
 
             <div>
-                <label for="{{ form.address.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Address</label>
+                <label for="{{ form.address.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Address</label>
                 {{ form.address }}
             </div>
 
             <div>
-                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Description</label>
+                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Description</label>
                 {{ form.description }}
             </div>
 
             <div>
-                <label for="{{ form.parent.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Parent Location</label>
+                <label for="{{ form.parent.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Parent Location</label>
                 {{ form.parent }}
             </div>
 
             <div class="flex items-center gap-3">
                 {{ form.is_active }}
-                <label for="{{ form.is_active.id_for_label }}" class="text-sm font-medium text-cream/70">Active</label>
+                <label for="{{ form.is_active.id_for_label }}" class="text-sm font-medium text-stage-600 dark:text-cream/70">Active</label>
             </div>
         </div>
 
@@ -60,7 +60,7 @@
             <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 {% if location %}Update Location{% else %}Create Location{% endif %}
             </button>
-            <a href="{% url 'assets:location_list' %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+            <a href="{% url 'assets:location_list' %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
                 Cancel
             </a>
         </div>

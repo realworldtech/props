@@ -14,7 +14,7 @@
     <div>
         <h1 class="font-display text-3xl font-bold">{% if category %}Edit Category{% else %}Create Category{% endif %}</h1>
         {% if category %}
-        <p class="text-cream/50 mt-1">{{ category.name }}</p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">{{ category.name }}</p>
         {% endif %}
     </div>
 
@@ -23,8 +23,8 @@
 
         {% if form.errors %}
         <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-            <p class="text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
-            <ul class="text-red-300/70 text-sm space-y-1">
+            <p class="text-red-600 dark:text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
+            <ul class="text-red-600 dark:text-red-300/70 text-sm space-y-1">
                 {% for field, errors in form.errors.items %}
                     {% for error in errors %}
                     <li>{{ field|title }}: {{ error }}</li>
@@ -34,41 +34,41 @@
         </div>
         {% endif %}
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Category Details</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Category Details</h2>
 
             <div>
-                <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Name *</label>
                 {{ form.name }}
             </div>
 
             <div>
-                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Description</label>
+                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Description</label>
                 {{ form.description }}
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-cream/70 mb-1.5">Icon</label>
+                    <label class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Icon</label>
                     {{ form.icon }}
                     <!-- Icon picker UI -->
                     <div class="flex items-center gap-3 mb-3" id="icon-selected-row">
-                        <div id="icon-preview" class="w-10 h-10 rounded-lg bg-stage-700 flex items-center justify-center text-cream/50">
+                        <div id="icon-preview" class="w-10 h-10 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center text-stage-500 dark:text-cream/50">
                             <span class="material-symbols-outlined" id="icon-preview-symbol">category</span>
                         </div>
-                        <span id="icon-selected-name" class="text-sm text-cream/60 font-mono"></span>
-                        <button type="button" id="icon-clear-btn" class="hidden text-cream/40 hover:text-cream text-xs transition-colors">(clear)</button>
+                        <span id="icon-selected-name" class="text-sm text-stage-500 dark:text-cream/60 font-mono"></span>
+                        <button type="button" id="icon-clear-btn" class="hidden text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-xs transition-colors">(clear)</button>
                     </div>
-                    <button type="button" id="icon-picker-toggle" class="text-sm text-spotlight-400 hover:text-spotlight-300 transition-colors">Choose icon...</button>
-                    <div id="icon-picker" class="hidden mt-2 bg-stage-700 border border-white/10 rounded-lg p-3 space-y-2">
-                        <input type="text" id="icon-search" class="form-input w-full rounded-lg px-3 py-1.5 text-cream text-sm" placeholder="Search icons..." autocomplete="off">
+                    <button type="button" id="icon-picker-toggle" class="text-sm text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">Choose icon...</button>
+                    <div id="icon-picker" class="hidden mt-2 bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10 rounded-lg p-3 space-y-2">
+                        <input type="text" id="icon-search" class="form-input w-full rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm" placeholder="Search icons..." autocomplete="off">
                         <div id="icon-grid" class="grid grid-cols-6 gap-1 max-h-48 overflow-y-auto"></div>
                     </div>
                 </div>
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
-                        <label for="{{ form.department.id_for_label }}" class="block text-sm font-medium text-cream/70">Department *</label>
-                        <button type="button" id="add-dept-btn" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-xs font-bold transition-colors" title="Create new department">+</button>
+                        <label for="{{ form.department.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70">Department *</label>
+                        <button type="button" id="add-dept-btn" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new department">+</button>
                     </div>
                     {{ form.department }}
                 </div>
@@ -79,7 +79,7 @@
             <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 {% if category %}Update Category{% else %}Create Category{% endif %}
             </button>
-            <a href="{% url 'assets:category_list' %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+            <a href="{% url 'assets:category_list' %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
                 Cancel
             </a>
         </div>
@@ -90,18 +90,18 @@
 <div id="dept-modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="dept-modal-backdrop"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-        <div class="bg-stage-800 border border-white/10 rounded-xl shadow-2xl w-full max-w-sm pointer-events-auto">
-            <div class="flex items-center justify-between p-5 border-b border-white/5">
-                <h3 class="text-lg font-medium text-cream">Create Department</h3>
-                <button type="button" id="dept-modal-close" class="text-cream/40 hover:text-cream transition-colors">&times;</button>
+        <div class="bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-xl shadow-2xl w-full max-w-sm pointer-events-auto">
+            <div class="flex items-center justify-between p-5 border-b border-stage-200 dark:border-white/5">
+                <h3 class="text-lg font-medium text-stage-900 dark:text-cream">Create Department</h3>
+                <button type="button" id="dept-modal-close" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream transition-colors">&times;</button>
             </div>
             <div class="p-5">
-                <label for="dept-name-input" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
-                <input type="text" id="dept-name-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Department name">
+                <label for="dept-name-input" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Name *</label>
+                <input type="text" id="dept-name-input" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Department name">
                 <p id="dept-error" class="hidden mt-2 text-red-400 text-sm"></p>
             </div>
-            <div class="flex justify-end gap-3 p-5 border-t border-white/5">
-                <button type="button" id="dept-cancel-btn" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
+            <div class="flex justify-end gap-3 p-5 border-t border-stage-200 dark:border-white/5">
+                <button type="button" id="dept-cancel-btn" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
                 <button type="button" id="dept-save-btn" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
             </div>
         </div>
@@ -177,7 +177,7 @@
     var currentIcon = hiddenInput.value || '';
     if (currentIcon) {
         preview.textContent = currentIcon;
-        preview.classList.remove('text-cream/50');
+        preview.classList.remove('text-stage-500', 'dark:text-cream/50');
         preview.classList.add('text-spotlight-400');
         selectedName.textContent = currentIcon;
         clearBtn.classList.remove('hidden');
@@ -206,7 +206,7 @@
         hiddenInput.value = '';
         currentIcon = '';
         preview.textContent = 'category';
-        preview.classList.add('text-cream/50');
+        preview.classList.add('text-stage-500', 'dark:text-cream/50');
         preview.classList.remove('text-spotlight-400');
         selectedName.textContent = '';
         clearBtn.classList.add('hidden');
@@ -218,11 +218,11 @@
         icons.forEach(function(name) {
             var btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'w-9 h-9 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors' +
+            btn.className = 'w-9 h-9 rounded-lg flex items-center justify-center hover:bg-stage-100 dark:hover:bg-white/10 transition-colors' +
                 (name === currentIcon ? ' bg-spotlight-500/20 ring-1 ring-spotlight-500' : '');
             btn.title = name;
             var icon = document.createElement('span');
-            icon.className = 'material-symbols-outlined text-cream/70 hover:text-cream';
+            icon.className = 'material-symbols-outlined text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream';
             icon.style.fontSize = '20px';
             icon.textContent = name;
             btn.appendChild(icon);
@@ -231,7 +231,7 @@
         });
         if (icons.length === 0) {
             var empty = document.createElement('div');
-            empty.className = 'col-span-6 text-center text-sm text-cream/40 py-2';
+            empty.className = 'col-span-6 text-center text-sm text-stage-500 dark:text-cream/40 py-2';
             empty.textContent = 'No matching icons';
             iconGrid.appendChild(empty);
         }
@@ -241,7 +241,7 @@
         hiddenInput.value = name;
         currentIcon = name;
         preview.textContent = name;
-        preview.classList.remove('text-cream/50');
+        preview.classList.remove('text-stage-500', 'dark:text-cream/50');
         preview.classList.add('text-spotlight-400');
         selectedName.textContent = name;
         clearBtn.classList.remove('hidden');

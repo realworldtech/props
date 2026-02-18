@@ -7,17 +7,17 @@
     <!-- Header -->
     <div>
         <h1 class="font-display text-3xl font-bold">Approval Queue</h1>
-        <p class="text-cream/50 mt-1">Review and manage pending user registrations</p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">Review and manage pending user registrations</p>
     </div>
 
     <!-- Tab Navigation -->
-    <div class="flex gap-1 border-b border-white/10">
+    <div class="flex gap-1 border-b border-stage-200 dark:border-white/10">
         <a href="?tab=pending"
-           class="px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px {% if tab == 'pending' %}border-spotlight-500 text-spotlight-400{% else %}border-transparent text-cream/50 hover:text-cream/70{% endif %}">
+           class="px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px {% if tab == 'pending' %}border-spotlight-500 text-spotlight-400{% else %}border-transparent text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70{% endif %}">
             Pending
         </a>
         <a href="?tab=history"
-           class="px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px {% if tab == 'history' %}border-spotlight-500 text-spotlight-400{% else %}border-transparent text-cream/50 hover:text-cream/70{% endif %}">
+           class="px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px {% if tab == 'history' %}border-spotlight-500 text-spotlight-400{% else %}border-transparent text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70{% endif %}">
             History
         </a>
     </div>
@@ -25,32 +25,32 @@
     {% if tab == 'pending' %}
     <!-- Pending Tab -->
     {% if users %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead>
-                    <tr class="border-b border-white/10">
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Display Name</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Email</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden md:table-cell">Phone</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden lg:table-cell">Requested Department</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden sm:table-cell">Registration Date</th>
-                        <th class="text-right py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Actions</th>
+                    <tr class="border-b border-stage-200 dark:border-white/10">
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Display Name</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Email</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden md:table-cell">Phone</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden lg:table-cell">Requested Department</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden sm:table-cell">Registration Date</th>
+                        <th class="text-right py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/5">
+                <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                     {% for pending in users %}
-                    <tr class="hover:bg-white/5 transition-colors">
-                        <td class="py-3 px-4 text-sm text-cream">
+                    <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
+                        <td class="py-3 px-4 text-sm text-stage-900 dark:text-cream">
                             <span class="inline-flex items-center gap-2">
                                 {% include "includes/avatar.html" with email=pending.email size=32 alt=pending.get_display_name %}
                                 {{ pending.get_display_name }}
                             </span>
                         </td>
-                        <td class="py-3 px-4 text-sm text-cream/70">{{ pending.email }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/70 hidden md:table-cell">{{ pending.phone|default:"-" }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/70 hidden lg:table-cell">{{ pending.requested_department|default:"-" }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/50 hidden sm:table-cell">{{ pending.date_joined|date:"d M Y H:i" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-600 dark:text-cream/70">{{ pending.email }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-600 dark:text-cream/70 hidden md:table-cell">{{ pending.phone|default:"-" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-600 dark:text-cream/70 hidden lg:table-cell">{{ pending.requested_department|default:"-" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-500 dark:text-cream/50 hidden sm:table-cell">{{ pending.date_joined|date:"d M Y H:i" }}</td>
                         <td class="py-3 px-4 text-right">
                             <div class="flex items-center justify-end gap-2">
                                 <button onclick="document.getElementById('approve-{{ pending.pk }}').classList.toggle('hidden'); document.getElementById('reject-{{ pending.pk }}').classList.add('hidden');"
@@ -68,29 +68,29 @@
                     <tr>
                         <td colspan="6" class="p-0">
                             <div id="approve-{{ pending.pk }}" class="hidden px-4 py-4">
-                                <div class="bg-stage-700/50 rounded-xl p-4 border border-emerald-500/10">
+                                <div class="bg-stage-100/50 dark:bg-stage-700/50 rounded-xl p-4 border border-emerald-500/10">
                                     <form method="post" action="{% url 'accounts:approve_user' pending.pk %}">
                                         {% csrf_token %}
                                         <h4 class="text-sm font-medium text-emerald-400 mb-3">Approve {{ pending.get_display_name }}</h4>
                                         <div class="grid sm:grid-cols-2 gap-4 mb-4">
                                             <div>
-                                                <label class="block text-xs text-cream/50 mb-1.5">Role</label>
+                                                <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1.5">Role</label>
                                                 <select name="role" id="role-select-{{ pending.pk }}" onchange="toggleDeptSelect({{ pending.pk }})"
-                                                        class="w-full form-input rounded-lg px-3 py-2 text-sm text-cream bg-stage-800/50">
+                                                        class="w-full form-input rounded-lg px-3 py-2 text-sm text-stage-900 dark:text-cream bg-white/50 dark:bg-stage-800/50">
                                                     {% for group in groups %}
                                                     <option value="{{ group.pk }}">{{ group.name }}</option>
                                                     {% endfor %}
                                                 </select>
                                             </div>
                                             <div id="dept-select-wrapper-{{ pending.pk }}" class="hidden">
-                                                <label class="block text-xs text-cream/50 mb-1.5">Departments</label>
+                                                <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1.5">Departments</label>
                                                 <select name="departments" multiple
-                                                        class="w-full form-input rounded-lg px-3 py-2 text-sm text-cream bg-stage-800/50 min-h-[80px]">
+                                                        class="w-full form-input rounded-lg px-3 py-2 text-sm text-stage-900 dark:text-cream bg-white/50 dark:bg-stage-800/50 min-h-[80px]">
                                                     {% for dept in departments %}
                                                     <option value="{{ dept.pk }}">{{ dept.name }}</option>
                                                     {% endfor %}
                                                 </select>
-                                                <p class="text-xs text-cream/30 mt-1">Hold Ctrl/Cmd to select multiple</p>
+                                                <p class="text-xs text-stage-500 dark:text-cream/30 mt-1">Hold Ctrl/Cmd to select multiple</p>
                                             </div>
                                         </div>
                                         <div class="flex gap-2">
@@ -98,7 +98,7 @@
                                                 Confirm Approval
                                             </button>
                                             <button type="button" onclick="document.getElementById('approve-{{ pending.pk }}').classList.add('hidden')"
-                                                    class="px-4 py-2 text-sm font-medium text-cream/50 hover:text-cream transition-colors">
+                                                    class="px-4 py-2 text-sm font-medium text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">
                                                 Cancel
                                             </button>
                                         </div>
@@ -111,14 +111,14 @@
                     <tr>
                         <td colspan="6" class="p-0">
                             <div id="reject-{{ pending.pk }}" class="hidden px-4 py-4">
-                                <div class="bg-stage-700/50 rounded-xl p-4 border border-red-500/10">
+                                <div class="bg-stage-100/50 dark:bg-stage-700/50 rounded-xl p-4 border border-red-500/10">
                                     <form method="post" action="{% url 'accounts:reject_user' pending.pk %}">
                                         {% csrf_token %}
                                         <h4 class="text-sm font-medium text-red-400 mb-3">Reject {{ pending.get_display_name }}</h4>
                                         <div class="mb-4">
-                                            <label class="block text-xs text-cream/50 mb-1.5">Rejection Reason</label>
+                                            <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1.5">Rejection Reason</label>
                                             <textarea name="rejection_reason" required rows="3"
-                                                      class="w-full form-input rounded-lg px-3 py-2 text-sm text-cream bg-stage-800/50"
+                                                      class="w-full form-input rounded-lg px-3 py-2 text-sm text-stage-900 dark:text-cream bg-white/50 dark:bg-stage-800/50"
                                                       placeholder="Provide a reason for rejecting this registration..."></textarea>
                                         </div>
                                         <div class="flex gap-2">
@@ -126,7 +126,7 @@
                                                 Confirm Rejection
                                             </button>
                                             <button type="button" onclick="document.getElementById('reject-{{ pending.pk }}').classList.add('hidden')"
-                                                    class="px-4 py-2 text-sm font-medium text-cream/50 hover:text-cream transition-colors">
+                                                    class="px-4 py-2 text-sm font-medium text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">
                                                 Cancel
                                             </button>
                                         </div>
@@ -141,38 +141,38 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-white/5 p-12 text-center">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-stage-200 dark:border-white/5 p-12 text-center">
         <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
             <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
         </div>
-        <h3 class="font-display text-lg font-semibold text-cream mb-2">All caught up</h3>
-        <p class="text-cream/50 text-sm">There are no pending user registrations to review.</p>
+        <h3 class="font-display text-lg font-semibold text-stage-900 dark:text-cream mb-2">All caught up</h3>
+        <p class="text-stage-500 dark:text-cream/50 text-sm">There are no pending user registrations to review.</p>
     </div>
     {% endif %}
 
     {% elif tab == 'history' %}
     <!-- History Tab -->
     {% if users %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead>
-                    <tr class="border-b border-white/10">
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Display Name</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Email</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider">Status</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden md:table-cell">Approved/Rejected By</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden sm:table-cell">Date</th>
-                        <th class="text-left py-3 px-4 text-xs font-medium text-cream/40 uppercase tracking-wider hidden lg:table-cell">Rejection Reason</th>
+                    <tr class="border-b border-stage-200 dark:border-white/10">
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Display Name</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Email</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Status</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden md:table-cell">Approved/Rejected By</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden sm:table-cell">Date</th>
+                        <th class="text-left py-3 px-4 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider hidden lg:table-cell">Rejection Reason</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/5">
+                <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                     {% for pending in users %}
-                    <tr class="hover:bg-white/5 transition-colors">
-                        <td class="py-3 px-4 text-sm text-cream">{{ pending.get_display_name }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/70">{{ pending.email }}</td>
+                    <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
+                        <td class="py-3 px-4 text-sm text-stage-900 dark:text-cream">{{ pending.get_display_name }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-600 dark:text-cream/70">{{ pending.email }}</td>
                         <td class="py-3 px-4 text-sm">
                             {% if pending.is_active %}
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400">
@@ -184,9 +184,9 @@
                             </span>
                             {% endif %}
                         </td>
-                        <td class="py-3 px-4 text-sm text-cream/70 hidden md:table-cell">{{ pending.approved_by|default:"-" }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/50 hidden sm:table-cell">{{ pending.approved_at|default:pending.date_joined|date:"d M Y H:i" }}</td>
-                        <td class="py-3 px-4 text-sm text-cream/50 hidden lg:table-cell">{{ pending.rejection_reason|default:"-" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-600 dark:text-cream/70 hidden md:table-cell">{{ pending.approved_by|default:"-" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-500 dark:text-cream/50 hidden sm:table-cell">{{ pending.approved_at|default:pending.date_joined|date:"d M Y H:i" }}</td>
+                        <td class="py-3 px-4 text-sm text-stage-500 dark:text-cream/50 hidden lg:table-cell">{{ pending.rejection_reason|default:"-" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -194,14 +194,14 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-white/5 p-12 text-center">
-        <div class="w-16 h-16 rounded-2xl bg-stage-700 flex items-center justify-center mx-auto mb-4">
-            <svg class="w-8 h-8 text-cream/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-stage-200 dark:border-white/5 p-12 text-center">
+        <div class="w-16 h-16 rounded-2xl bg-stage-100 dark:bg-stage-700 flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-stage-500 dark:text-cream/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
         </div>
-        <h3 class="font-display text-lg font-semibold text-cream mb-2">No history yet</h3>
-        <p class="text-cream/50 text-sm">Approved and rejected registrations will appear here.</p>
+        <h3 class="font-display text-lg font-semibold text-stage-900 dark:text-cream mb-2">No history yet</h3>
+        <p class="text-stage-500 dark:text-cream/50 text-sm">Approved and rejected registrations will appear here.</p>
     </div>
     {% endif %}
     {% endif %}

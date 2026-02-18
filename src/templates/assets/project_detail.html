@@ -7,60 +7,60 @@
     <div class="flex justify-between items-center">
         <h1 class="font-display text-3xl font-bold">{{ project.name }}</h1>
         <div class="flex gap-2">
-            <a href="{% url 'assets:project_edit' project.pk %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+            <a href="{% url 'assets:project_edit' project.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Edit
             </a>
-            <a href="{% url 'assets:project_list' %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+            <a href="{% url 'assets:project_list' %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Back
             </a>
         </div>
     </div>
 
     {% if project.description %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-4">
-        <p class="text-sm text-cream/70">{{ project.description }}</p>
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4">
+        <p class="text-sm text-stage-600 dark:text-cream/70">{{ project.description }}</p>
     </div>
     {% endif %}
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
-            <span class="text-cream/50">Active:</span>
-            <span class="ml-2 text-cream">{{ project.is_active|yesno:"Yes,No" }}</span>
+            <span class="text-stage-500 dark:text-cream/50">Active:</span>
+            <span class="ml-2 text-stage-900 dark:text-cream">{{ project.is_active|yesno:"Yes,No" }}</span>
         </div>
         <div>
-            <span class="text-cream/50">Created by:</span>
-            <span class="ml-2 text-cream">{{ project.created_by|default:"-" }}</span>
+            <span class="text-stage-500 dark:text-cream/50">Created by:</span>
+            <span class="ml-2 text-stage-900 dark:text-cream">{{ project.created_by|default:"-" }}</span>
         </div>
     </div>
 
     <h2 class="font-display text-xl font-bold">Hold Lists</h2>
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <table class="w-full text-sm">
-            <thead class="bg-stage-700/50">
-                <tr class="border-b border-white/5">
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Name</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Department</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Status</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Items</th>
+            <thead class="bg-stage-100/50 dark:bg-stage-700/50">
+                <tr class="border-b border-stage-200 dark:border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Name</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Department</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Status</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Items</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
+            <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                 {% for hl in hold_lists %}
-                <tr class="hover:bg-white/5 transition-colors">
+                <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-300 font-medium">
+                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 font-medium">
                             {{ hl.name }}
                         </a>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">{{ hl.department.name|default:"-" }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ hl.department.name|default:"-" }}</td>
                     <td class="px-4 py-3">
-                        <span class="px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ hl.status.name }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs bg-stage-100 dark:bg-stage-700 text-stage-600 dark:text-cream/70">{{ hl.status.name }}</span>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">{{ hl.items.count }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ hl.items.count }}</td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="4" class="px-4 py-8 text-center text-cream/50">No hold lists for this project.</td>
+                    <td colspan="4" class="px-4 py-8 text-center text-stage-500 dark:text-cream/50">No hold lists for this project.</td>
                 </tr>
                 {% endfor %}
             </tbody>

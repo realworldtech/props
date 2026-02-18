@@ -7,7 +7,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="font-display text-3xl font-bold">Stocktake Sessions</h1>
-            <p class="text-cream/50 mt-1">{{ sessions|length }} session{{ sessions|length|pluralize }}</p>
+            <p class="text-stage-500 dark:text-cream/50 mt-1">{{ sessions|length }} session{{ sessions|length|pluralize }}</p>
         </div>
         <a href="{% url 'assets:stocktake_start' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg font-semibold btn-press transition-all">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -18,24 +18,24 @@
     </div>
 
     {% if sessions %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="border-b border-white/5">
-                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Location</th>
-                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Started By</th>
-                        <th class="text-left px-4 py-3 text-cream/50 font-medium hidden sm:table-cell">Started At</th>
-                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Status</th>
-                        <th class="text-left px-4 py-3 text-cream/50 font-medium">Actions</th>
+                    <tr class="border-b border-stage-200 dark:border-white/5">
+                        <th class="text-left px-4 py-3 text-stage-500 dark:text-cream/50 font-medium">Location</th>
+                        <th class="text-left px-4 py-3 text-stage-500 dark:text-cream/50 font-medium">Started By</th>
+                        <th class="text-left px-4 py-3 text-stage-500 dark:text-cream/50 font-medium hidden sm:table-cell">Started At</th>
+                        <th class="text-left px-4 py-3 text-stage-500 dark:text-cream/50 font-medium">Status</th>
+                        <th class="text-left px-4 py-3 text-stage-500 dark:text-cream/50 font-medium">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/5">
+                <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                     {% for session in sessions %}
-                    <tr class="hover:bg-white/[0.02] transition-colors">
-                        <td class="px-4 py-3 text-cream">{{ session.location.name }}</td>
-                        <td class="px-4 py-3 text-cream/70">{{ session.started_by.get_display_name }}</td>
-                        <td class="px-4 py-3 text-cream/40 hidden sm:table-cell">{{ session.started_at|date:"d M Y H:i" }}</td>
+                    <tr class="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                        <td class="px-4 py-3 text-stage-900 dark:text-cream">{{ session.location.name }}</td>
+                        <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ session.started_by.get_display_name }}</td>
+                        <td class="px-4 py-3 text-stage-500 dark:text-cream/40 hidden sm:table-cell">{{ session.started_at|date:"d M Y H:i" }}</td>
                         <td class="px-4 py-3">
                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
                                 {% if session.status == 'in_progress' %}bg-blue-500/10 text-blue-400
@@ -46,7 +46,7 @@
                             </span>
                         </td>
                         <td class="px-4 py-3">
-                            <a href="{% url 'assets:stocktake_detail' session.pk %}" class="text-spotlight-400 hover:text-spotlight-300 text-sm font-medium transition-colors">
+                            <a href="{% url 'assets:stocktake_detail' session.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 text-sm font-medium transition-colors">
                                 View
                             </a>
                         </td>
@@ -58,11 +58,11 @@
     </div>
     {% else %}
     <div class="text-center py-16">
-        <svg class="w-16 h-16 mx-auto text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-16 h-16 mx-auto text-stage-200 dark:text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
         </svg>
-        <h3 class="text-lg font-medium text-cream/70">No stocktake sessions yet</h3>
-        <p class="text-cream/40 text-sm mt-1">Start a new stocktake to verify assets at a location.</p>
+        <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70">No stocktake sessions yet</h3>
+        <p class="text-stage-500 dark:text-cream/40 text-sm mt-1">Start a new stocktake to verify assets at a location.</p>
     </div>
     {% endif %}
 </div>

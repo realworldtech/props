@@ -6,41 +6,41 @@
 <div class="space-y-6">
     <div class="flex justify-between items-center">
         <h1 class="font-display text-3xl font-bold">Fulfil: {{ hold_list.name }}</h1>
-        <a href="{% url 'assets:holdlist_detail' hold_list.pk %}" class="px-3 py-1.5 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg text-sm font-medium transition-all">
+        <a href="{% url 'assets:holdlist_detail' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
             Back to Hold List
         </a>
     </div>
 
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <table class="w-full text-sm">
-            <thead class="bg-stage-700/50">
-                <tr class="border-b border-white/5">
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Asset</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Serial</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Location</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Qty</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Pull Status</th>
+            <thead class="bg-stage-100/50 dark:bg-stage-700/50">
+                <tr class="border-b border-stage-200 dark:border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Asset</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Serial</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Location</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Qty</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Pull Status</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
+            <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                 {% for item in items %}
-                <tr class="hover:bg-white/5 transition-colors">
-                    <td class="px-4 py-3 text-cream">{{ item.asset.name }}</td>
-                    <td class="px-4 py-3 text-cream/70">{{ item.serial|default:"-" }}</td>
-                    <td class="px-4 py-3 text-cream/70">{{ item.asset.current_location|default:"-" }}</td>
-                    <td class="px-4 py-3 text-cream/70">{{ item.quantity }}</td>
+                <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
+                    <td class="px-4 py-3 text-stage-900 dark:text-cream">{{ item.asset.name }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ item.serial|default:"-" }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ item.asset.current_location|default:"-" }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ item.quantity }}</td>
                     <td class="px-4 py-3">
                         <span class="px-2 py-0.5 rounded text-xs
                             {% if item.pull_status == 'pulled' %}bg-emerald-500/20 text-emerald-400
                             {% elif item.pull_status == 'unavailable' %}bg-red-500/20 text-red-400
-                            {% else %}bg-stage-700 text-cream/70{% endif %}">
+                            {% else %}bg-stage-100 dark:bg-stage-700 text-stage-600 dark:text-cream/70{% endif %}">
                             {{ item.get_pull_status_display }}
                         </span>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="5" class="px-4 py-8 text-center text-cream/50">No items to fulfil.</td>
+                    <td colspan="5" class="px-4 py-8 text-center text-stage-500 dark:text-cream/50">No items to fulfil.</td>
                 </tr>
                 {% endfor %}
             </tbody>

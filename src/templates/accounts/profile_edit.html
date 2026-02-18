@@ -4,33 +4,33 @@
 
 {% block content %}
 <div class="space-y-6">
-    <div class="flex items-center gap-2 text-sm text-cream/50">
-        <a href="{% url 'accounts:profile' %}" class="hover:text-cream transition-colors">Profile</a>
+    <div class="flex items-center gap-2 text-sm text-stage-500 dark:text-cream/50">
+        <a href="{% url 'accounts:profile' %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">Profile</a>
         <span>/</span>
-        <span class="text-cream">Edit</span>
+        <span class="text-stage-900 dark:text-cream">Edit</span>
     </div>
 
     <h1 class="font-display text-3xl font-bold">Edit Profile</h1>
 
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 max-w-xl">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 max-w-xl">
         <form method="post" class="space-y-5">
             {% csrf_token %}
 
             <div>
-                <label for="id_display_name" class="block text-sm font-medium text-cream/70 mb-1.5">Display Name</label>
+                <label for="id_display_name" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Display Name</label>
                 <input type="text" name="display_name" id="id_display_name"
                     value="{{ form.display_name.value|default:'' }}"
-                    class="w-full form-input rounded-lg px-4 py-3 text-cream">
+                    class="w-full form-input rounded-lg px-4 py-3 text-stage-900 dark:text-cream">
                 {% if form.display_name.errors %}
                 <p class="text-red-400 text-xs mt-1">{{ form.display_name.errors.0 }}</p>
                 {% endif %}
             </div>
 
             <div>
-                <label for="id_email" class="block text-sm font-medium text-cream/70 mb-1.5">Email</label>
+                <label for="id_email" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email</label>
                 <input type="email" name="email" id="id_email" required
                     value="{{ form.email.value|default:'' }}"
-                    class="w-full form-input rounded-lg px-4 py-3 text-cream">
+                    class="w-full form-input rounded-lg px-4 py-3 text-stage-900 dark:text-cream">
                 {% if form.email.errors %}
                 <p class="text-red-400 text-xs mt-1">{{ form.email.errors.0 }}</p>
                 {% endif %}
@@ -38,20 +38,20 @@
             </div>
 
             <div>
-                <label for="id_phone_number" class="block text-sm font-medium text-cream/70 mb-1.5">Phone Number</label>
+                <label for="id_phone_number" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Phone Number</label>
                 <input type="text" name="phone_number" id="id_phone_number"
                     value="{{ form.phone_number.value|default:'' }}"
-                    class="w-full form-input rounded-lg px-4 py-3 text-cream">
+                    class="w-full form-input rounded-lg px-4 py-3 text-stage-900 dark:text-cream">
                 {% if form.phone_number.errors %}
                 <p class="text-red-400 text-xs mt-1">{{ form.phone_number.errors.0 }}</p>
                 {% endif %}
             </div>
 
             <div>
-                <label for="id_organisation" class="block text-sm font-medium text-cream/70 mb-1.5">Organisation</label>
+                <label for="id_organisation" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Organisation</label>
                 <input type="text" name="organisation" id="id_organisation"
                     value="{{ form.organisation.value|default:'' }}"
-                    class="w-full form-input rounded-lg px-4 py-3 text-cream">
+                    class="w-full form-input rounded-lg px-4 py-3 text-stage-900 dark:text-cream">
                 {% if form.organisation.errors %}
                 <p class="text-red-400 text-xs mt-1">{{ form.organisation.errors.0 }}</p>
                 {% endif %}
@@ -61,7 +61,7 @@
                 <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold px-6 py-3 rounded-lg transition-all btn-press">
                     Save Changes
                 </button>
-                <a href="{% url 'accounts:profile' %}" class="px-6 py-3 text-cream/50 hover:text-cream transition-colors">Cancel</a>
+                <a href="{% url 'accounts:profile' %}" class="px-6 py-3 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors">Cancel</a>
             </div>
         </form>
     </div>

@@ -10,10 +10,10 @@
 {% block content %}
 <div class="space-y-6">
     <!-- Breadcrumb -->
-    <div class="flex items-center gap-2 text-sm text-cream/50">
-        <a href="{% url 'assets:asset_list' %}" class="hover:text-cream transition-colors">Assets</a>
+    <div class="flex items-center gap-2 text-sm text-stage-500 dark:text-cream/50">
+        <a href="{% url 'assets:asset_list' %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">Assets</a>
         <span>/</span>
-        <span class="text-cream">{{ asset.name }}</span>
+        <span class="text-stage-900 dark:text-cream">{{ asset.name }}</span>
     </div>
 
     <!-- Header -->
@@ -21,13 +21,13 @@
         <div>
             <h1 class="font-display text-3xl font-bold">{{ asset.name }}</h1>
             <div class="flex items-center gap-3 mt-2 flex-wrap">
-                <span class="font-mono text-cream/50 text-sm">{{ asset.barcode }}</span>
+                <span class="font-mono text-stage-500 dark:text-cream/50 text-sm">{{ asset.barcode }}</span>
                 <span class="inline-block px-2.5 py-0.5 rounded-full text-xs
                     {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
                     {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
                     {% elif asset.status == 'retired' %}bg-gray-500/20 text-gray-400
                     {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
-                    {% else %}bg-stage-600/50 text-cream/50{% endif %}">
+                    {% else %}bg-stage-200/50 dark:bg-stage-600/50 text-stage-500 dark:text-cream/50{% endif %}">
                     {{ asset.get_status_display }}
                 </span>
                 {% if asset.is_checked_out %}
@@ -49,7 +49,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             {% if can_edit %}
-            <a href="{% url 'assets:asset_edit' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+            <a href="{% url 'assets:asset_edit' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                 Edit
             </a>
@@ -64,23 +64,23 @@
             <a href="{% url 'assets:asset_handover' asset.pk %}" class="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-lg text-sm transition-colors">Hand Over</a>
             {% endif %}
             {% if can_edit and asset.status == 'active' and not asset.is_checked_out %}
-            <a href="{% url 'assets:asset_transfer' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">Transfer</a>
+            <a href="{% url 'assets:asset_transfer' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">Transfer</a>
             {% endif %}
             {% if can_edit and asset.status == 'active' %}
-            <a href="{% url 'assets:asset_relocate' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">Relocate</a>
+            <a href="{% url 'assets:asset_relocate' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">Relocate</a>
             {% endif %}
-            <a href="{% url 'assets:asset_label' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+            <a href="{% url 'assets:asset_label' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
                 Print Label
             </a>
             {% if can_convert and asset.status != 'disposed' %}
-            <a href="{% url 'assets:asset_convert_serialisation' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+            <a href="{% url 'assets:asset_convert_serialisation' asset.pk %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
                 Convert Serialisation
             </a>
             {% endif %}
             {% if can_delete and asset.status != 'disposed' %}
-            <a href="{% url 'assets:asset_delete' asset.pk %}" class="inline-flex items-center gap-1.5 text-red-400 hover:text-red-300 px-3 py-2 rounded-lg text-sm transition-colors">Dispose</a>
+            <a href="{% url 'assets:asset_delete' asset.pk %}" class="inline-flex items-center gap-1.5 text-red-400 hover:text-red-600 dark:text-red-300 px-3 py-2 rounded-lg text-sm transition-colors">Dispose</a>
             {% endif %}
         </div>
     </div>
@@ -89,7 +89,7 @@
         <!-- Main Info -->
         <div class="lg:col-span-2 space-y-6">
             <!-- Images -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6"
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6"
                  x-data="{
                     lightboxOpen: false,
                     currentIndex: 0,
@@ -125,20 +125,20 @@
                 {% if images %}
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                     {% for img in images %}
-                    <div class="relative rounded-lg overflow-hidden bg-stage-700 aspect-square group">
+                    <div class="relative rounded-lg overflow-hidden bg-stage-100 dark:bg-stage-700 aspect-square group">
                         <img src="{{ img.image.url }}" class="w-full h-full object-cover" alt="{{ img.caption }}"
                              onerror="this.onerror=null;this.src='';this.alt='Image unavailable (placeholder)';this.style.display='none'">
                         {% if img.is_primary %}
                         <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-spotlight-500/90 text-stage-900 text-xs font-medium">Primary</span>
                         {% endif %}
                         <!-- V69: Preview icon triggers lightbox -->
-                        <button class="lightbox-trigger preview-icon absolute top-2 right-2 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-1.5 rounded-lg transition-colors border border-white/10 z-10"
+                        <button class="lightbox-trigger preview-icon absolute top-2 right-2 bg-white/80 dark:bg-stage-800/80 hover:bg-stage-100 dark:hover:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream p-1.5 rounded-lg transition-colors border border-stage-200 dark:border-white/10 z-10"
                                 @click="open({{ forloop.counter0 }})" title="Preview image">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
                             </svg>
                         </button>
-                        <div class="absolute inset-0 bg-stage-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
+                        <div class="absolute inset-0 bg-black/30 dark:bg-stage-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"
                              @click.stop>
                             {% if not img.is_primary %}
                             <form method="post" action="{% url 'assets:image_set_primary' asset.pk img.pk %}">
@@ -172,13 +172,13 @@
                      class="fixed inset-0 z-50 flex items-center justify-center"
                      x-cloak>
                     <!-- Backdrop -->
-                    <div class="absolute inset-0 bg-stage-900/90 backdrop-blur-sm" @click="close()"></div>
+                    <div class="absolute inset-0 bg-black/70 dark:bg-stage-900/90 backdrop-blur-sm" @click="close()"></div>
 
                     <!-- Content -->
                     <div class="relative z-10 max-w-5xl max-h-[90vh] w-full mx-4 flex flex-col items-center">
                         <!-- Close button -->
                         <button @click="close()"
-                                class="absolute -top-10 right-0 text-cream/60 hover:text-cream transition-colors">
+                                class="absolute -top-10 right-0 text-stage-500 dark:text-cream/60 hover:text-stage-900 dark:hover:text-cream transition-colors">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                             </svg>
@@ -192,18 +192,18 @@
 
                         <!-- Caption -->
                         <div x-show="images[currentIndex]?.caption"
-                             class="mt-3 text-cream/70 text-sm text-center"
+                             class="mt-3 text-stage-600 dark:text-cream/70 text-sm text-center"
                              x-text="images[currentIndex]?.caption"></div>
 
                         <!-- Image counter -->
                         <div x-show="images.length > 1"
-                             class="mt-2 text-cream/40 text-xs"
+                             class="mt-2 text-stage-500 dark:text-cream/40 text-xs"
                              x-text="(currentIndex + 1) + ' / ' + images.length"></div>
 
                         <!-- Prev button -->
                         <button x-show="images.length > 1"
                                 @click.stop="prev()"
-                                class="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 sm:ml-0 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-white/10">
+                                class="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 sm:ml-0 bg-white/80 dark:bg-stage-800/80 hover:bg-stage-100 dark:hover:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-stage-200 dark:border-white/10">
                             <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
                             </svg>
@@ -212,7 +212,7 @@
                         <!-- Next button -->
                         <button x-show="images.length > 1"
                                 @click.stop="next()"
-                                class="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 sm:mr-0 bg-stage-800/80 hover:bg-stage-700 text-cream/70 hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-white/10">
+                                class="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 sm:mr-0 bg-white/80 dark:bg-stage-800/80 hover:bg-stage-100 dark:hover:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream p-2 sm:p-3 rounded-full transition-colors border border-stage-200 dark:border-white/10">
                             <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                             </svg>
@@ -224,8 +224,8 @@
                 <!-- Upload form -->
                 <form method="post" action="{% url 'assets:image_upload' asset.pk %}" enctype="multipart/form-data" class="flex items-center gap-3">
                     {% csrf_token %}
-                    <input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" class="text-sm text-cream/50 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-stage-700 file:text-cream/70 hover:file:bg-stage-600">
-                    <button type="submit" class="bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2 rounded-lg text-sm transition-colors">Upload</button>
+                    <input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" class="text-sm text-stage-500 dark:text-cream/50 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-stage-100 dark:file:bg-stage-700 file:text-stage-600 dark:file:text-cream/70 hover:file:bg-stage-200 dark:hover:file:bg-stage-200 dark:bg-stage-600">
+                    <button type="submit" class="bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2 rounded-lg text-sm transition-colors">Upload</button>
                 </form>
             </div>
 
@@ -236,40 +236,40 @@
                 <div class="flex items-center gap-3 mb-4">
                     <img src="{{ img.image.url }}" class="w-12 h-12 object-cover rounded" alt="">
                     <h2 class="font-display text-lg font-semibold text-purple-300">AI Analysis</h2>
-                    <p class="text-cream/30 text-xs mt-1">Images are sent to Anthropic's API for analysis. Image data is used only for this request and is not stored or used for training. <a href="https://www.anthropic.com/policies/privacy" class="underline hover:text-cream/50" target="_blank" rel="noopener">Anthropic's data usage policies</a> apply.</p>
-                    <span class="text-xs text-cream/40">{{ img.ai_processed_at|timesince }} ago</span>
+                    <p class="text-stage-500 dark:text-cream/30 text-xs mt-1">Images are sent to Anthropic's API for analysis. Image data is used only for this request and is not stored or used for training. <a href="https://www.anthropic.com/policies/privacy" class="underline hover:text-stage-700 dark:hover:text-cream/50" target="_blank" rel="noopener">Anthropic's data usage policies</a> apply.</p>
+                    <span class="text-xs text-stage-500 dark:text-cream/40">{{ img.ai_processed_at|timesince }} ago</span>
                 </div>
                 {% if img.ai_description %}
-                <p class="text-cream/70 text-sm mb-3">{{ img.ai_description }}</p>
+                <p class="text-stage-600 dark:text-cream/70 text-sm mb-3">{{ img.ai_description }}</p>
                 {% endif %}
                 <dl class="grid grid-cols-2 gap-3 text-sm mb-4">
                     {% if img.ai_name_suggestion %}
                     <div>
-                        <dt class="text-cream/40 text-xs">Suggested Name</dt>
-                        <dd class="text-cream mt-0.5">{{ img.ai_name_suggestion }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Suggested Name</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ img.ai_name_suggestion }}</dd>
                     </div>
                     {% endif %}
                     {% if img.ai_department_suggestion %}
                     <div>
-                        <dt class="text-cream/40 text-xs">Suggested Department</dt>
-                        <dd class="text-cream mt-0.5">{{ img.ai_department_suggestion }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Suggested Department</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ img.ai_department_suggestion }}</dd>
                     </div>
                     {% endif %}
                     {% if img.ai_category_suggestion %}
                     <div>
-                        <dt class="text-cream/40 text-xs">Suggested Category</dt>
-                        <dd class="text-cream mt-0.5">{{ img.ai_category_suggestion }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Suggested Category</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ img.ai_category_suggestion }}</dd>
                     </div>
                     {% endif %}
                     {% if img.ai_condition_suggestion %}
                     <div>
-                        <dt class="text-cream/40 text-xs">Suggested Condition</dt>
-                        <dd class="text-cream mt-0.5">{{ img.ai_condition_suggestion }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Suggested Condition</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ img.ai_condition_suggestion }}</dd>
                     </div>
                     {% endif %}
                     {% if img.ai_tag_suggestions %}
                     <div class="col-span-2">
-                        <dt class="text-cream/40 text-xs">Suggested Tags</dt>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Suggested Tags</dt>
                         <dd class="flex flex-wrap gap-1 mt-1">
                             {% for tag in img.ai_tag_suggestions %}
                             <span class="px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-300">{{ tag }}</span>
@@ -279,28 +279,28 @@
                     {% endif %}
                     {% if img.ai_ocr_text %}
                     <div class="col-span-2">
-                        <dt class="text-cream/40 text-xs">Detected Text</dt>
-                        <dd class="text-cream/70 mt-0.5 font-mono text-xs">{{ img.ai_ocr_text }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/40 text-xs">Detected Text</dt>
+                        <dd class="text-stage-600 dark:text-cream/70 mt-0.5 font-mono text-xs">{{ img.ai_ocr_text }}</dd>
                     </div>
                     {% endif %}
                 </dl>
                 <form method="post" action="{% url 'assets:ai_apply_suggestions' asset.pk img.pk %}" class="flex flex-wrap gap-2">
                     {% csrf_token %}
                     {% if img.ai_name_suggestion %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_name" value="1"> Use as name
                     </label>
                     {% endif %}
                     {% if img.ai_description %}
                     {% if asset.description %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_description" value="1"> Use as description
                     </label>
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="append_description" value="1"> Append to description
                     </label>
                     {% else %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_description" value="1" checked> Apply description
                     </label>
                     {% endif %}
@@ -309,7 +309,7 @@
                     {% if img.ai_department_suggestion %}
                     {% department_exists img.ai_department_suggestion as dept_exists %}
                     {% if dept_exists %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_department" value="1" checked> Apply department ({{ img.ai_department_suggestion }})
                     </label>
                     {% else %}
@@ -321,7 +321,7 @@
                     {% if img.ai_category_suggestion %}
                     {% category_exists img.ai_category_suggestion as cat_exists %}
                     {% if cat_exists %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_category" value="1" checked> Apply category ({{ img.ai_category_suggestion }})
                     </label>
                     {% else %}
@@ -331,17 +331,17 @@
                     {% endif %}
                     {% endif %}
                     {% if img.ai_condition_suggestion %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_condition" value="1" checked> Apply condition
                     </label>
                     {% endif %}
                     {% if img.ai_tag_suggestions %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="apply_tags" value="1" checked> Apply tags
                     </label>
                     {% endif %}
                     {% if img.ai_ocr_text %}
-                    <label class="inline-flex items-center gap-1.5 text-xs text-cream/70">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
                         <input type="checkbox" name="copy_ocr_to_notes" value="1"> Copy text to notes
                     </label>
                     {% endif %}
@@ -356,39 +356,39 @@
             </div>
             {% elif img.ai_processing_status == 'failed' %}
             <div class="bg-red-500/5 rounded-xl border border-red-500/20 p-4 flex items-center justify-between">
-                <span class="text-red-300 text-sm">AI analysis failed: {{ img.ai_error_message|truncatewords:20 }}</span>
+                <span class="text-red-600 dark:text-red-300 text-sm">AI analysis failed: {{ img.ai_error_message|truncatewords:20 }}</span>
                 <a href="{% url 'assets:ai_reanalyse' asset.pk img.pk %}" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs transition-colors">Retry</a>
             </div>
             {% endif %}
             {% endfor %}
 
             <!-- Details -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <h2 class="font-display text-lg font-semibold mb-4">Details</h2>
                 {% if asset.description %}
-                <p class="text-cream/70 mb-4">{{ asset.description }}</p>
+                <p class="text-stage-600 dark:text-cream/70 mb-4">{{ asset.description }}</p>
                 {% endif %}
                 <dl class="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                        <dt class="text-cream/50">Category</dt>
-                        <dd class="text-cream mt-0.5">{{ asset.category|default:"Not set" }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Category</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ asset.category|default:"Not set" }}</dd>
                     </div>
                     <div>
-                        <dt class="text-cream/50">Department</dt>
-                        <dd class="text-cream mt-0.5">{{ asset.department|default:"Not set" }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Department</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ asset.department|default:"Not set" }}</dd>
                     </div>
                     <div>
-                        <dt class="text-cream/50">Location</dt>
-                        <dd class="text-cream mt-0.5">{{ asset.current_location|default:"Not set" }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Location</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ asset.current_location|default:"Not set" }}</dd>
                     </div>
                     {% if asset.home_location %}
                     <div>
-                        <dt class="text-cream/50">Home Location</dt>
-                        <dd class="text-cream mt-0.5">{{ asset.home_location }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Home Location</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ asset.home_location }}</dd>
                     </div>
                     {% endif %}
                     <div>
-                        <dt class="text-cream/50">Condition</dt>
+                        <dt class="text-stage-500 dark:text-cream/50">Condition</dt>
                         <dd class="mt-0.5">
                             <span class="inline-block px-2 py-0.5 rounded-full text-xs
                                 {% if asset.condition == 'excellent' %}bg-emerald-500/20 text-emerald-400
@@ -401,58 +401,58 @@
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-cream/50">Quantity</dt>
-                        <dd class="text-cream mt-0.5">{{ asset.quantity }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Quantity</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">{{ asset.quantity }}</dd>
                     </div>
                     {% if asset.purchase_price %}
                     <div>
-                        <dt class="text-cream/50">Purchase Price</dt>
-                        <dd class="text-cream mt-0.5">${{ asset.purchase_price }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Purchase Price</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">${{ asset.purchase_price }}</dd>
                     </div>
                     {% endif %}
                     {% if asset.estimated_value %}
                     <div>
-                        <dt class="text-cream/50">Estimated Value</dt>
-                        <dd class="text-cream mt-0.5">${{ asset.estimated_value }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Estimated Value</dt>
+                        <dd class="text-stage-900 dark:text-cream mt-0.5">${{ asset.estimated_value }}</dd>
                     </div>
                     {% endif %}
                 </dl>
                 {% if asset.tags.exists %}
                 <div class="mt-4">
-                    <dt class="text-cream/50 text-sm mb-2">Tags</dt>
+                    <dt class="text-stage-500 dark:text-cream/50 text-sm mb-2">Tags</dt>
                     <div class="flex flex-wrap gap-2">
                         {% for tag in asset.tags.all %}
-                        <span class="px-2.5 py-0.5 rounded-full text-xs text-cream/70
-    {% if tag.color == 'red' %}bg-red-500/20 text-red-300
+                        <span class="px-2.5 py-0.5 rounded-full text-xs text-stage-600 dark:text-cream/70
+    {% if tag.color == 'red' %}bg-red-500/20 text-red-600 dark:text-red-300
     {% elif tag.color == 'orange' %}bg-orange-500/20 text-orange-300
     {% elif tag.color == 'yellow' %}bg-yellow-500/20 text-yellow-300
     {% elif tag.color == 'green' %}bg-green-500/20 text-green-300
     {% elif tag.color == 'blue' %}bg-blue-500/20 text-blue-300
     {% elif tag.color == 'purple' %}bg-purple-500/20 text-purple-300
     {% elif tag.color == 'pink' %}bg-pink-500/20 text-pink-300
-    {% else %}bg-stage-600 text-cream/70{% endif %}">{{ tag.name }}</span>
+    {% else %}bg-stage-200 dark:bg-stage-600 text-stage-600 dark:text-cream/70{% endif %}">{{ tag.name }}</span>
                         {% endfor %}
                     </div>
                 </div>
                 {% endif %}
                 {% if asset.notes %}
                 <div class="mt-4">
-                    <dt class="text-cream/50 text-sm mb-1">Notes</dt>
-                    <dd class="text-cream/70 text-sm whitespace-pre-line">{{ asset.notes }}</dd>
+                    <dt class="text-stage-500 dark:text-cream/50 text-sm mb-1">Notes</dt>
+                    <dd class="text-stage-600 dark:text-cream/70 text-sm whitespace-pre-line">{{ asset.notes }}</dd>
                 </div>
                 {% endif %}
             </div>
 
             {% if active_serials %}
             <!-- Active Serials (V492) -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <h2 class="font-display text-lg font-semibold mb-4">Serial Units ({{ active_serials|length }})</h2>
                 <div class="space-y-2">
                     {% for serial in active_serials %}
-                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-700/50 text-sm">
+                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-100/50 dark:bg-stage-700/50 text-sm">
                         <div>
-                            <span class="text-cream font-medium">#{{ serial.serial_number }}</span>
-                            {% if serial.barcode %}<span class="font-mono text-cream/40 text-xs ml-2">{{ serial.barcode }}</span>{% endif %}
+                            <span class="text-stage-900 dark:text-cream font-medium">#{{ serial.serial_number }}</span>
+                            {% if serial.barcode %}<span class="font-mono text-stage-500 dark:text-cream/40 text-xs ml-2">{{ serial.barcode }}</span>{% endif %}
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="inline-block px-2 py-0.5 rounded-full text-xs
@@ -473,15 +473,15 @@
 
             {% if archived_serials %}
             <!-- Archived Serials (V492) -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6"
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6"
                  x-data="{ showArchived: false }">
-                <button @click="showArchived = !showArchived" class="flex items-center gap-2 text-cream/50 hover:text-cream transition-colors w-full text-left">
+                <button @click="showArchived = !showArchived" class="flex items-center gap-2 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream transition-colors w-full text-left">
                     <svg class="w-4 h-4 transition-transform" :class="showArchived ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                     <h2 class="font-display text-lg font-semibold">Archived Serials ({{ archived_serials|length }})</h2>
                 </button>
                 <div x-show="showArchived" x-cloak class="mt-4 space-y-2">
                     {% for serial in archived_serials %}
-                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-700/30 text-sm text-cream/40">
+                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-stage-100/30 dark:bg-stage-700/30 text-sm text-stage-500 dark:text-cream/40">
                         <div>
                             <span>#{{ serial.serial_number }}</span>
                             {% if serial.barcode %}<span class="font-mono text-xs ml-2">{{ serial.barcode }}</span>{% endif %}
@@ -494,7 +494,7 @@
             {% endif %}
 
             <!-- Transaction History -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <h2 class="font-display text-lg font-semibold mb-4">Transaction History</h2>
                 {% if transactions %}
                 <div class="space-y-3">
@@ -510,31 +510,31 @@
                             {{ tx.get_action_display|first }}
                         </div>
                         <div class="flex-1">
-                            <div class="text-cream flex items-center gap-1.5">
+                            <div class="text-stage-900 dark:text-cream flex items-center gap-1.5">
                                 {{ tx.get_action_display }}{% if tx.user %} by
                                 <span class="inline-flex items-center gap-1">{% include "includes/avatar.html" with email=tx.user.email size=24 alt=tx.user.get_display_name %} {{ tx.user.get_display_name }}</span>
                                 {% endif %}
                             </div>
                             {% if tx.borrower %}
-                            <div class="text-cream/50">Borrower: {{ tx.borrower.get_display_name }}</div>
+                            <div class="text-stage-500 dark:text-cream/50">Borrower: {{ tx.borrower.get_display_name }}</div>
                             {% endif %}
                             {% if tx.from_location or tx.to_location %}
-                            <div class="text-cream/50">
+                            <div class="text-stage-500 dark:text-cream/50">
                                 {% if tx.from_location %}{{ tx.from_location }}{% endif %}
                                 {% if tx.from_location and tx.to_location %} &rarr; {% endif %}
                                 {% if tx.to_location %}{{ tx.to_location }}{% endif %}
                             </div>
                             {% endif %}
                             {% if tx.notes %}
-                            <div class="text-cream/40 mt-1">{{ tx.notes }}</div>
+                            <div class="text-stage-500 dark:text-cream/40 mt-1">{{ tx.notes }}</div>
                             {% endif %}
                         </div>
-                        <span class="text-cream/30 text-xs whitespace-nowrap">{{ tx.timestamp|timesince }} ago{% if tx.is_backdated %} <span class="text-amber-400/60">(backdated)</span>{% endif %}</span>
+                        <span class="text-stage-500 dark:text-cream/30 text-xs whitespace-nowrap">{{ tx.timestamp|timesince }} ago{% if tx.is_backdated %} <span class="text-amber-400/60">(backdated)</span>{% endif %}</span>
                     </div>
                     {% endfor %}
                 </div>
                 {% else %}
-                <p class="text-cream/40 text-sm">No transactions yet.</p>
+                <p class="text-stage-500 dark:text-cream/40 text-sm">No transactions yet.</p>
                 {% endif %}
             </div>
         </div>
@@ -543,52 +543,52 @@
         <div class="space-y-6">
             <!-- Barcode -->
             {% if asset.barcode_image %}
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
-                <h3 class="text-sm font-medium text-cream/50 mb-3">Barcode</h3>
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
+                <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50 mb-3">Barcode</h3>
                 <div class="bg-white rounded-lg p-3">
                     <img src="{{ asset.barcode_image.url }}" class="w-full" alt="{{ asset.barcode }}">
                 </div>
-                <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-spotlight-400 text-xs mt-2 hover:text-spotlight-300 transition-colors">Print Label</a>
+                <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-spotlight-400 text-xs mt-2 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">Print Label</a>
                 {% if user_role == "system_admin" or user_role == "department_manager" %}
                 <form method="post" action="{% url 'assets:clear_barcode' asset.pk %}"
                       onsubmit="return confirm('Are you sure you want to clear the barcode? This cannot be undone.');"
                       class="mt-2">
                     {% csrf_token %}
-                    <button type="submit" class="w-full text-center text-red-400 text-xs hover:text-red-300 transition-colors">Clear Barcode</button>
+                    <button type="submit" class="w-full text-center text-red-400 text-xs hover:text-red-600 dark:text-red-300 transition-colors">Clear Barcode</button>
                 </form>
                 {% endif %}
             </div>
             {% endif %}
 
             <!-- NFC Tags -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-medium text-cream/50">NFC Tags</h3>
-                    <a href="{% url 'assets:nfc_add' asset.pk %}" class="text-spotlight-400 text-xs hover:text-spotlight-300 transition-colors">+ Add Tag</a>
+                    <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50">NFC Tags</h3>
+                    <a href="{% url 'assets:nfc_add' asset.pk %}" class="text-spotlight-400 text-xs hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">+ Add Tag</a>
                 </div>
                 {% if active_nfc %}
                 {% for nfc in active_nfc %}
                 <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-2">
                     <div class="flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                        <span class="text-sm text-cream font-mono">{{ nfc.tag_id }}</span>
+                        <span class="text-sm text-stage-900 dark:text-cream font-mono">{{ nfc.tag_id }}</span>
                     </div>
                     <form method="post" action="{% url 'assets:nfc_remove' asset.pk nfc.pk %}" class="flex items-center gap-2" onsubmit="return confirm('Remove this NFC tag?')">
                         {% csrf_token %}
-                        <input type="text" name="notes" placeholder="Removal reason..." class="form-input rounded px-2 py-1 text-xs text-cream w-32">
+                        <input type="text" name="notes" placeholder="Removal reason..." class="form-input rounded px-2 py-1 text-xs text-stage-900 dark:text-cream w-32">
                         <button type="submit" class="text-red-400/50 hover:text-red-400 text-xs transition-colors">Remove</button>
                     </form>
                 </div>
                 {% endfor %}
                 {% else %}
-                <p class="text-cream/30 text-xs">No active NFC tags</p>
+                <p class="text-stage-500 dark:text-cream/30 text-xs">No active NFC tags</p>
                 {% endif %}
                 {% if removed_nfc %}
                 <details class="mt-2">
-                    <summary class="text-cream/40 text-xs cursor-pointer hover:text-cream/60">Removed tags ({{ removed_nfc.count }})</summary>
+                    <summary class="text-stage-500 dark:text-cream/40 text-xs cursor-pointer hover:text-stage-700 dark:hover:text-cream/60">Removed tags ({{ removed_nfc.count }})</summary>
                     <div class="mt-2 space-y-1">
                         {% for nfc in removed_nfc %}
-                        <div class="text-xs text-cream/30 font-mono">{{ nfc.tag_id }} (removed {{ nfc.removed_at|timesince }} ago)</div>
+                        <div class="text-xs text-stage-500 dark:text-cream/30 font-mono">{{ nfc.tag_id }} (removed {{ nfc.removed_at|timesince }} ago)</div>
                         {% endfor %}
                     </div>
                 </details>
@@ -597,11 +597,11 @@
 
             <!-- Member of Kits -->
             {% if member_of_kits %}
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
-                <h3 class="text-sm font-medium text-cream/50 mb-3">Member of Kits</h3>
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
+                <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50 mb-3">Member of Kits</h3>
                 <div class="space-y-2">
                     {% for membership in member_of_kits %}
-                    <a href="{% url 'assets:kit_contents' membership.kit.pk %}" class="flex items-center gap-2 text-sm text-spotlight-400 hover:text-spotlight-300 transition-colors">
+                    <a href="{% url 'assets:kit_contents' membership.kit.pk %}" class="flex items-center gap-2 text-sm text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
                         </svg>
@@ -613,20 +613,20 @@
             {% endif %}
 
             <!-- Meta -->
-            <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
-                <h3 class="text-sm font-medium text-cream/50 mb-3">Info</h3>
+            <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
+                <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50 mb-3">Info</h3>
                 <dl class="space-y-2 text-sm">
                     <div class="flex justify-between">
-                        <dt class="text-cream/50">Created by</dt>
-                        <dd class="text-cream">{% if asset.created_by %}{{ asset.created_by.get_display_name }}{% else %}Unknown{% endif %}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Created by</dt>
+                        <dd class="text-stage-900 dark:text-cream">{% if asset.created_by %}{{ asset.created_by.get_display_name }}{% else %}Unknown{% endif %}</dd>
                     </div>
                     <div class="flex justify-between">
-                        <dt class="text-cream/50">Created</dt>
-                        <dd class="text-cream">{{ asset.created_at|date:"d M Y H:i" }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Created</dt>
+                        <dd class="text-stage-900 dark:text-cream">{{ asset.created_at|date:"d M Y H:i" }}</dd>
                     </div>
                     <div class="flex justify-between">
-                        <dt class="text-cream/50">Updated</dt>
-                        <dd class="text-cream">{{ asset.updated_at|date:"d M Y H:i" }}</dd>
+                        <dt class="text-stage-500 dark:text-cream/50">Updated</dt>
+                        <dd class="text-stage-900 dark:text-cream">{{ asset.updated_at|date:"d M Y H:i" }}</dd>
                     </div>
                 </dl>
             </div>

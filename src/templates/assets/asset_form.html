@@ -4,21 +4,21 @@
 
 {% block content %}
 <div class="max-w-2xl mx-auto space-y-6">
-    <div class="flex items-center gap-2 text-sm text-cream/50 mb-4">
-        <a href="{% url 'assets:dashboard' %}" class="hover:text-cream transition-colors">Dashboard</a>
+    <div class="flex items-center gap-2 text-sm text-stage-500 dark:text-cream/50 mb-4">
+        <a href="{% url 'assets:dashboard' %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">Dashboard</a>
         <span>/</span>
         {% if asset %}
-        <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-cream transition-colors">{{ asset.name }}</a>
+        <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">{{ asset.name }}</a>
         <span>/</span>
-        <span class="text-cream">Edit</span>
+        <span class="text-stage-900 dark:text-cream">Edit</span>
         {% else %}
-        <span class="text-cream">Create Asset</span>
+        <span class="text-stage-900 dark:text-cream">Create Asset</span>
         {% endif %}
     </div>
     <div>
         <h1 class="font-display text-3xl font-bold">{% if asset %}Edit Asset{% else %}Create Asset{% endif %}</h1>
         {% if asset %}
-        <p class="text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
         {% endif %}
     </div>
 
@@ -27,8 +27,8 @@
 
         {% if form.errors %}
         <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-            <p class="text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
-            <ul class="text-red-300/70 text-sm space-y-1">
+            <p class="text-red-600 dark:text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
+            <ul class="text-red-600 dark:text-red-300/70 text-sm space-y-1">
                 {% for field, errors in form.errors.items %}
                     {% for error in errors %}
                     <li>{{ field|title }}: {{ error }}</li>
@@ -40,114 +40,114 @@
 
         {% if asset %}
         <!-- Edit mode: primary image + name/status at top -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="flex items-center justify-center">
                     {% if primary_image %}
                     <img src="{{ primary_image.image.url }}" alt="{{ asset.name }}" class="w-full max-h-48 object-contain rounded-lg">
                     {% else %}
-                    <div class="w-full h-48 bg-stage-700 rounded-lg flex items-center justify-center">
-                        <svg class="w-12 h-12 text-cream/15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    <div class="w-full h-48 bg-stage-100 dark:bg-stage-700 rounded-lg flex items-center justify-center">
+                        <svg class="w-12 h-12 text-stage-200 dark:text-cream/15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                     </div>
                     {% endif %}
                 </div>
                 <div class="md:col-span-2 space-y-4">
                     <div>
-                        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                        <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Name *</label>
                         {{ form.name }}
                     </div>
                     <div>
-                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Status</label>
+                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Status</label>
                         {{ form.status }}
-                        <p class="text-xs text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                        <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Draft assets don't require category or location.</p>
                     </div>
                 </div>
             </div>
         </div>
         {% endif %}
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Basic Information</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Basic Information</h2>
 
             {% if not asset %}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Name *</label>
+                    <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Name *</label>
                     {{ form.name }}
                 </div>
                 <div>
-                    <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Status</label>
+                    <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Status</label>
                     {{ form.status }}
-                    <p class="text-xs text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                    <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Draft assets don't require category or location.</p>
                 </div>
             </div>
             {% endif %}
 
             <div>
-                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Description</label>
+                <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Description</label>
                 {{ form.description }}
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
-                        <label class="block text-sm font-medium text-cream/70" id="label-category">Category <span id="cat-required-star">*</span></label>
-                        <button type="button" id="btn-add-category" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-xs font-bold transition-colors" title="Create new category">+</button>
+                        <label class="block text-sm font-medium text-stage-600 dark:text-cream/70" id="label-category">Category <span id="cat-required-star">*</span></label>
+                        <button type="button" id="btn-add-category" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new category">+</button>
                     </div>
                     <!-- Hidden FK input -->
                     {{ form.category }}
                     <!-- Autocomplete UI -->
                     <div class="relative">
-                        <input type="text" id="category-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search categories..." autocomplete="off">
-                        <button type="button" id="category-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-cream/40 hover:text-cream text-lg">&times;</button>
-                        <div id="category-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                        <input type="text" id="category-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Search categories..." autocomplete="off">
+                        <button type="button" id="category-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-lg">&times;</button>
+                        <div id="category-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
                     </div>
                 </div>
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
-                        <label class="block text-sm font-medium text-cream/70" id="label-location">Location <span id="loc-required-star">*</span></label>
-                        <button type="button" id="btn-add-location" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-xs font-bold transition-colors" title="Create new location">+</button>
+                        <label class="block text-sm font-medium text-stage-600 dark:text-cream/70" id="label-location">Location <span id="loc-required-star">*</span></label>
+                        <button type="button" id="btn-add-location" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new location">+</button>
                     </div>
                     <!-- Hidden FK input -->
                     {{ form.current_location }}
                     <!-- Autocomplete UI -->
                     <div class="relative">
-                        <input type="text" id="location-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search locations..." autocomplete="off">
-                        <button type="button" id="location-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-cream/40 hover:text-cream text-lg">&times;</button>
-                        <div id="location-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                        <input type="text" id="location-ac-input" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Search locations..." autocomplete="off">
+                        <button type="button" id="location-ac-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-lg">&times;</button>
+                        <div id="location-ac-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
                     </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="{{ form.quantity.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Quantity</label>
+                    <label for="{{ form.quantity.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Quantity</label>
                     {{ form.quantity }}
                 </div>
                 <div>
-                    <label for="{{ form.condition.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Condition</label>
+                    <label for="{{ form.condition.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Condition</label>
                     {{ form.condition }}
                 </div>
             </div>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Financial</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Financial</h2>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="{{ form.purchase_price.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Purchase Price</label>
+                    <label for="{{ form.purchase_price.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Purchase Price</label>
                     {{ form.purchase_price }}
                 </div>
                 <div>
-                    <label for="{{ form.estimated_value.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Estimated Value</label>
+                    <label for="{{ form.estimated_value.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Estimated Value</label>
                     {{ form.estimated_value }}
                 </div>
             </div>
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Tags</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Tags</h2>
 
             <!-- Hidden multi-select for form submission -->
             <div class="hidden">{{ form.tags }}</div>
@@ -155,69 +155,69 @@
             <!-- Tag autocomplete UI -->
             <div id="tag-autocomplete" class="space-y-3">
                 <div class="relative">
-                    <input type="text" id="tag-search-input" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Search or create tags..." autocomplete="off">
-                    <div id="tag-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-700 border border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
+                    <input type="text" id="tag-search-input" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Search or create tags..." autocomplete="off">
+                    <div id="tag-suggestions" class="hidden absolute left-0 right-0 top-full mt-1 bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto"></div>
                 </div>
                 <div id="tag-pills" class="flex flex-wrap gap-2"></div>
             </div>
         </div>
 
         {% if asset %}
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Images</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Images</h2>
 
             {% if images %}
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {% for image in images %}
-                <div class="relative group rounded-lg overflow-hidden border border-white/5 bg-stage-900/50">
+                <div class="relative group rounded-lg overflow-hidden border border-stage-200 dark:border-white/5 bg-gray-50 dark:bg-stage-900/50">
                     <img src="{{ image.image.url }}" alt="{{ image.caption }}" class="w-full h-32 object-cover">
                     {% if image.is_primary %}
                     <span class="absolute top-2 left-2 bg-spotlight-500 text-stage-900 text-xs font-bold px-2 py-0.5 rounded">Primary</span>
                     {% endif %}
                     {% if image.caption %}
-                    <p class="text-xs text-cream/50 px-2 py-1.5 truncate">{{ image.caption }}</p>
+                    <p class="text-xs text-stage-500 dark:text-cream/50 px-2 py-1.5 truncate">{{ image.caption }}</p>
                     {% endif %}
                     <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {% if not image.is_primary %}
-                        <a href="{% url 'assets:image_set_primary' asset.pk image.pk %}" class="bg-stage-800/80 hover:bg-spotlight-500/30 text-cream/70 hover:text-spotlight-300 rounded p-1 text-xs" title="Set as primary">&#9733;</a>
+                        <a href="{% url 'assets:image_set_primary' asset.pk image.pk %}" class="bg-white/80 dark:bg-stage-800/80 hover:bg-spotlight-500/30 text-stage-600 dark:text-cream/70 hover:text-spotlight-600 dark:text-spotlight-300 rounded p-1 text-xs" title="Set as primary">&#9733;</a>
                         {% endif %}
-                        <a href="{% url 'assets:image_delete' asset.pk image.pk %}" class="bg-stage-800/80 hover:bg-red-500/30 text-cream/70 hover:text-red-300 rounded p-1 text-xs" title="Delete image" onclick="return confirm('Delete this image?')">&times;</a>
+                        <a href="{% url 'assets:image_delete' asset.pk image.pk %}" class="bg-white/80 dark:bg-stage-800/80 hover:bg-red-500/30 text-stage-600 dark:text-cream/70 hover:text-red-600 dark:text-red-300 rounded p-1 text-xs" title="Delete image" onclick="return confirm('Delete this image?')">&times;</a>
                     </div>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-sm text-cream/40">No images uploaded yet.</p>
+            <p class="text-sm text-stage-500 dark:text-cream/40">No images uploaded yet.</p>
             {% endif %}
 
             <div class="space-y-3 pt-2">
                 <div>
-                    <label for="id_images" class="block text-sm font-medium text-cream/70 mb-1.5">Upload Images</label>
-                    <input type="file" name="images" id="id_images" multiple accept="image/*" class="form-input w-full rounded-lg px-4 py-2.5 text-cream file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-spotlight-500/20 file:text-spotlight-300 hover:file:bg-spotlight-500/30">
+                    <label for="id_images" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Upload Images</label>
+                    <input type="file" name="images" id="id_images" multiple accept="image/*" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-spotlight-500/20 file:text-spotlight-600 dark:text-spotlight-300 hover:file:bg-spotlight-500/30">
                 </div>
                 <div>
-                    <label for="id_image_captions" class="block text-sm font-medium text-cream/70 mb-1.5">Caption <span class="text-cream/40">(optional, applies to all uploaded images)</span></label>
-                    <input type="text" name="image_captions" id="id_image_captions" class="form-input w-full rounded-lg px-4 py-2.5 text-cream" placeholder="Caption for uploaded images">
+                    <label for="id_image_captions" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Caption <span class="text-stage-500 dark:text-cream/40">(optional, applies to all uploaded images)</span></label>
+                    <input type="text" name="image_captions" id="id_image_captions" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Caption for uploaded images">
                 </div>
             </div>
         </div>
         {% endif %}
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Notes</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Notes</h2>
             {{ form.notes }}
         </div>
 
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-5" x-data="{ isPublic: {{ form.is_public.value|yesno:'true,false' }} }">
-            <h2 class="text-lg font-medium text-cream/90 border-b border-white/5 pb-3">Public Visibility</h2>
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5" x-data="{ isPublic: {{ form.is_public.value|yesno:'true,false' }} }">
+            <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90 border-b border-stage-200 dark:border-white/5 pb-3">Public Visibility</h2>
             <div class="flex items-center gap-3">
                 {{ form.is_public }}
-                <label for="{{ form.is_public.id_for_label }}" class="text-sm font-medium text-cream/70">Make this asset publicly visible</label>
+                <label for="{{ form.is_public.id_for_label }}" class="text-sm font-medium text-stage-600 dark:text-cream/70">Make this asset publicly visible</label>
             </div>
             <div x-show="isPublic" x-cloak>
-                <label for="{{ form.public_description.id_for_label }}" class="block text-sm font-medium text-cream/70 mb-1.5">Public Description</label>
+                <label for="{{ form.public_description.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Public Description</label>
                 {{ form.public_description }}
-                <p class="text-xs text-cream/40 mt-1">This description will be shown on the public catalogue page.</p>
+                <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">This description will be shown on the public catalogue page.</p>
             </div>
         </div>
 
@@ -232,7 +232,7 @@
                 Publish
             </button>
             {% endif %}
-            <a href="{% if asset %}{% url 'assets:asset_detail' asset.pk %}{% else %}{% url 'assets:asset_list' %}{% endif %}" class="px-6 py-3 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-base font-medium transition-colors">
+            <a href="{% if asset %}{% url 'assets:asset_detail' asset.pk %}{% else %}{% url 'assets:asset_list' %}{% endif %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors">
                 Cancel
             </a>
         </div>
@@ -243,15 +243,15 @@
 <div id="quick-create-modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="modal-backdrop"></div>
     <div class="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-        <div class="bg-stage-800 border border-white/10 rounded-xl shadow-2xl w-full max-w-md pointer-events-auto">
-            <div class="flex items-center justify-between p-5 border-b border-white/5">
-                <h3 id="modal-title" class="text-lg font-medium text-cream">Create</h3>
-                <button type="button" id="modal-close-btn" class="text-cream/40 hover:text-cream transition-colors text-xl">&times;</button>
+        <div class="bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-xl shadow-2xl w-full max-w-md pointer-events-auto">
+            <div class="flex items-center justify-between p-5 border-b border-stage-200 dark:border-white/5">
+                <h3 id="modal-title" class="text-lg font-medium text-stage-900 dark:text-cream">Create</h3>
+                <button type="button" id="modal-close-btn" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream transition-colors text-xl">&times;</button>
             </div>
             <div id="modal-body" class="p-5 space-y-4"></div>
             <div id="modal-error" class="hidden px-5 pb-2 text-red-400 text-sm"></div>
-            <div class="flex justify-end gap-3 p-5 border-t border-white/5">
-                <button type="button" id="modal-cancel-btn" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
+            <div class="flex justify-end gap-3 p-5 border-t border-stage-200 dark:border-white/5">
+                <button type="button" id="modal-cancel-btn" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
                 <button type="button" id="modal-save-btn" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
             </div>
         </div>
@@ -345,14 +345,14 @@
             while (dropdown.firstChild) dropdown.removeChild(dropdown.firstChild);
             if (results.length === 0) {
                 var empty = document.createElement('div');
-                empty.className = 'px-4 py-2 text-sm text-cream/40';
+                empty.className = 'px-4 py-2 text-sm text-stage-500 dark:text-cream/40';
                 empty.textContent = 'No results found';
                 dropdown.appendChild(empty);
             }
             results.forEach(function(item) {
                 var btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'block w-full text-left px-4 py-2 text-sm text-cream/80 hover:bg-white/10 hover:text-cream transition-colors';
+                btn.className = 'block w-full text-left px-4 py-2 text-sm text-stage-700 dark:text-cream/80 hover:bg-stage-100 dark:hover:bg-white/10 hover:text-stage-900 dark:hover:text-cream transition-colors';
                 var label = config.formatLabel ? config.formatLabel(item) : item.name;
                 btn.textContent = label;
                 btn.addEventListener('mousedown', function(e) {
@@ -490,13 +490,13 @@
         var wrapper = document.createElement('div');
         var lbl = document.createElement('label');
         lbl.setAttribute('for', id);
-        lbl.className = 'block text-sm font-medium text-cream/70 mb-1.5';
+        lbl.className = 'block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5';
         lbl.textContent = label;
         var input = document.createElement('input');
         input.type = type;
         input.id = id;
         input.placeholder = placeholder || '';
-        input.className = 'form-input w-full rounded-lg px-4 py-2.5 text-cream';
+        input.className = 'form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream';
         wrapper.appendChild(lbl);
         wrapper.appendChild(input);
         return wrapper;
@@ -506,7 +506,7 @@
         var wrapper = document.createElement('div');
         var lbl = document.createElement('label');
         lbl.setAttribute('for', id);
-        lbl.className = 'block text-sm font-medium text-cream/70 mb-1.5';
+        lbl.className = 'block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5';
         lbl.textContent = label;
 
         var row = document.createElement('div');
@@ -514,7 +514,7 @@
 
         var select = document.createElement('select');
         select.id = id;
-        select.className = 'form-input w-full rounded-lg px-4 py-2.5 text-cream';
+        select.className = 'form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream';
         var emptyOpt = document.createElement('option');
         emptyOpt.value = '';
         emptyOpt.textContent = '---------';
@@ -535,7 +535,7 @@
 
         var addBtn = document.createElement('button');
         addBtn.type = 'button';
-        addBtn.className = 'inline-flex items-center justify-center w-8 h-8 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-300 text-sm font-bold transition-colors flex-shrink-0';
+        addBtn.className = 'inline-flex items-center justify-center w-8 h-8 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-sm font-bold transition-colors flex-shrink-0';
         addBtn.textContent = '+';
         addBtn.title = 'Create new department';
         addBtn.addEventListener('click', function() {
@@ -616,7 +616,7 @@
         filtered.forEach(function(t) {
             var btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'block w-full text-left px-4 py-2 text-sm text-cream/80 hover:bg-white/10 hover:text-cream transition-colors';
+            btn.className = 'block w-full text-left px-4 py-2 text-sm text-stage-700 dark:text-cream/80 hover:bg-stage-100 dark:hover:bg-white/10 hover:text-stage-900 dark:hover:text-cream transition-colors';
             btn.textContent = t.name;
             btn.addEventListener('mousedown', function(e) { e.preventDefault(); addTagItem(t.id.toString(), t.name); });
             tagSuggestions.appendChild(btn);
@@ -626,7 +626,7 @@
         if (query && !exactMatch) {
             var createBtn = document.createElement('button');
             createBtn.type = 'button';
-            createBtn.className = 'block w-full text-left px-4 py-2 text-sm text-spotlight-400 hover:bg-white/10 transition-colors';
+            createBtn.className = 'block w-full text-left px-4 py-2 text-sm text-spotlight-400 hover:bg-stage-100 dark:hover:bg-white/10 transition-colors';
             createBtn.appendChild(document.createTextNode('Create "'));
             var strong = document.createElement('strong');
             strong.textContent = query;
@@ -682,7 +682,7 @@
         Object.keys(selectedTags).forEach(function(id) {
             var name = selectedTags[id];
             var span = document.createElement('span');
-            span.className = 'inline-flex items-center gap-1.5 bg-spotlight-500/20 text-spotlight-300 px-3 py-1 rounded-lg text-sm';
+            span.className = 'inline-flex items-center gap-1.5 bg-spotlight-500/20 text-spotlight-600 dark:text-spotlight-300 px-3 py-1 rounded-lg text-sm';
             span.appendChild(document.createTextNode(name));
             var removeBtn = document.createElement('button');
             removeBtn.type = 'button';

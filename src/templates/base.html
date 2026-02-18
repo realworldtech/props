@@ -209,7 +209,7 @@
             {% if messages %}
             <div class="mb-6 space-y-3 animate-slide-down">
                 {% for message in messages %}
-                <div class="flex items-start gap-3 p-4 rounded-xl backdrop-blur-sm {% if message.tags == 'error' %}bg-red-500/10 border border-red-500/20 text-red-300{% elif message.tags == 'success' %}bg-emerald-500/10 border border-emerald-500/20 text-emerald-300{% else %}bg-spotlight-500/10 border border-spotlight-500/20 text-spotlight-300{% endif %}">
+                <div class="flex items-start gap-3 p-4 rounded-xl backdrop-blur-sm {% if message.tags == 'error' %}bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300{% elif message.tags == 'success' %}bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-300{% else %}bg-spotlight-500/10 border border-spotlight-500/20 text-spotlight-600 dark:text-spotlight-300{% endif %}">
                     {% if message.tags == 'error' %}
                     <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>

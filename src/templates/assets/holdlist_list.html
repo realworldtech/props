@@ -7,7 +7,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="font-display text-3xl font-bold">Hold Lists</h1>
-            <p class="text-cream/50 mt-1">{{ hold_lists|length }} list{{ hold_lists|length|pluralize }}</p>
+            <p class="text-stage-500 dark:text-cream/50 mt-1">{{ hold_lists|length }} list{{ hold_lists|length|pluralize }}</p>
         </div>
         <a href="{% url 'assets:holdlist_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -18,52 +18,52 @@
     </div>
 
     <div class="flex flex-wrap gap-2">
-        <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if not current_status %}bg-spotlight-500 text-stage-900{% else %}bg-stage-700 hover:bg-stage-600 text-cream/70 hover:text-cream{% endif %}">
+        <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if not current_status %}bg-spotlight-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
             All
         </a>
         {% for s in statuses %}
-        <a href="?status={{ s.name }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if current_status == s.name %}bg-spotlight-500 text-stage-900{% else %}bg-stage-700 hover:bg-stage-600 text-cream/70 hover:text-cream{% endif %}">
+        <a href="?status={{ s.name }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if current_status == s.name %}bg-spotlight-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
             {{ s.name }}
         </a>
         {% endfor %}
     </div>
 
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 overflow-hidden">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
         <table class="w-full text-sm">
-            <thead class="bg-stage-700/50">
-                <tr class="border-b border-white/5">
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Name</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Project</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Status</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Dates</th>
-                    <th class="px-4 py-3 text-left font-medium text-cream/70">Items</th>
+            <thead class="bg-stage-100/50 dark:bg-stage-700/50">
+                <tr class="border-b border-stage-200 dark:border-white/5">
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Name</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Project</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Status</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Dates</th>
+                    <th class="px-4 py-3 text-left font-medium text-stage-600 dark:text-cream/70">Items</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-white/5">
+            <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                 {% for hl in hold_lists %}
-                <tr class="hover:bg-white/5 transition-colors">
+                <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-300 font-medium">
+                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 font-medium">
                             {{ hl.name }}
                         </a>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">{{ hl.project.name|default:"-" }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ hl.project.name|default:"-" }}</td>
                     <td class="px-4 py-3">
-                        <span class="px-2 py-0.5 rounded text-xs bg-stage-700 text-cream/70">{{ hl.status.name }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs bg-stage-100 dark:bg-stage-700 text-stage-600 dark:text-cream/70">{{ hl.status.name }}</span>
                     </td>
-                    <td class="px-4 py-3 text-cream/70">
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">
                         {% if hl.start_date %}{{ hl.start_date }} - {{ hl.end_date }}{% else %}-{% endif %}
                     </td>
-                    <td class="px-4 py-3 text-cream/70">{{ hl.items.count }}</td>
+                    <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ hl.items.count }}</td>
                 </tr>
                 {% empty %}
                 <tr>
                     <td colspan="5" class="px-4 py-16 text-center">
                         <div class="text-center">
-                            <svg class="w-12 h-12 mx-auto text-cream/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-12 h-12 mx-auto text-stage-200 dark:text-cream/20 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                             </svg>
-                            <p class="text-cream/50">No hold lists yet.</p>
+                            <p class="text-stage-500 dark:text-cream/50">No hold lists yet.</p>
                         </div>
                     </td>
                 </tr>
@@ -74,22 +74,22 @@
 
     {% if page_obj.has_other_pages %}
     <div class="flex items-center justify-between mt-4">
-        <div class="text-cream/50 text-sm">
+        <div class="text-stage-500 dark:text-cream/50 text-sm">
             Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
         </div>
         <div class="flex gap-2">
             {% if page_obj.has_previous %}
-            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Previous</a>
+            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-100 dark:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Previous</a>
             {% endif %}
             {% for num in page_obj.paginator.page_range %}
                 {% if page_obj.number == num %}
                 <span class="px-3 py-1.5 rounded-lg bg-spotlight-500/20 text-spotlight-400 text-sm border border-spotlight-500/30">{{ num }}</span>
                 {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
-                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/50 hover:text-cream text-sm transition-colors">{{ num }}</a>
+                <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">{{ num }}</a>
                 {% endif %}
             {% endfor %}
             {% if page_obj.has_next %}
-            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-700 text-cream/70 hover:text-cream text-sm transition-colors">Next</a>
+            <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg bg-stage-100 dark:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Next</a>
             {% endif %}
         </div>
     </div>

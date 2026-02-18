@@ -7,71 +7,71 @@
     <div class="flex items-center justify-between">
         <h1 class="font-display text-3xl font-bold">Profile</h1>
         <div class="flex gap-2">
-            <a href="{% url 'accounts:profile_edit' %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+            <a href="{% url 'accounts:profile_edit' %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                 Edit Profile
             </a>
-            <a href="{% url 'accounts:password_change' %}" class="inline-flex items-center gap-1.5 bg-stage-700 hover:bg-stage-600 text-cream px-3 py-2 rounded-lg text-sm transition-colors">
+            <a href="{% url 'accounts:password_change' %}" class="inline-flex items-center gap-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-3 py-2 rounded-lg text-sm transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 Change Password
             </a>
         </div>
     </div>
 
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <div class="flex items-center gap-4 mb-6">
             {% include "includes/avatar.html" with email=profile_user.email size=96 alt=profile_user.get_display_name %}
             <div>
                 <h2 class="font-display text-xl font-semibold">{{ profile_user.get_display_name }}</h2>
-                <p class="text-cream/50 text-sm">{{ profile_user.email }}</p>
+                <p class="text-stage-500 dark:text-cream/50 text-sm">{{ profile_user.email }}</p>
             </div>
         </div>
         <dl class="grid grid-cols-2 gap-4 text-sm">
             <div>
-                <dt class="text-cream/50">Username</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.username }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Username</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.username }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Display Name</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.get_display_name }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Display Name</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.get_display_name }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Email</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.email }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Email</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.email }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Phone</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.phone_number|default:"-" }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Phone</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.phone_number|default:"-" }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Organisation</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.organisation|default:"-" }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Organisation</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.organisation|default:"-" }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Role</dt>
-                <dd class="text-cream mt-0.5">
+                <dt class="text-stage-500 dark:text-cream/50">Role</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">
                     {% for group in profile_user.groups.all %}{{ group.name }}{% if not forloop.last %}, {% endif %}{% empty %}-{% endfor %}
                 </dd>
             </div>
             <div>
-                <dt class="text-cream/50">Member Since</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.date_joined|date:"d M Y" }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Member Since</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.date_joined|date:"d M Y" }}</dd>
             </div>
             <div>
-                <dt class="text-cream/50">Last Login</dt>
-                <dd class="text-cream mt-0.5">{{ profile_user.last_login|date:"d M Y H:i"|default:"-" }}</dd>
+                <dt class="text-stage-500 dark:text-cream/50">Last Login</dt>
+                <dd class="text-stage-900 dark:text-cream mt-0.5">{{ profile_user.last_login|date:"d M Y H:i"|default:"-" }}</dd>
             </div>
         </dl>
     </div>
 
     {% if managed_departments %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <h2 class="font-display text-xl font-semibold mb-4">Department Memberships</h2>
         <div class="space-y-2">
             {% for dept in managed_departments %}
-            <div class="flex items-center gap-3 p-3 bg-stage-700/50 rounded-lg">
-                <span class="text-cream">{{ dept.name }}</span>
-                <span class="text-xs text-cream/40">Manager</span>
+            <div class="flex items-center gap-3 p-3 bg-stage-100/50 dark:bg-stage-700/50 rounded-lg">
+                <span class="text-stage-900 dark:text-cream">{{ dept.name }}</span>
+                <span class="text-xs text-stage-500 dark:text-cream/40">Manager</span>
             </div>
             {% endfor %}
         </div>
@@ -79,16 +79,16 @@
     {% endif %}
 
     {% if borrowed_assets %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="font-display text-xl font-semibold">My Borrowed Items</h2>
-            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all</a>
+            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all</a>
         </div>
         <div class="space-y-2">
             {% for asset in borrowed_assets %}
-            <a href="{{ asset.get_absolute_url }}" class="block p-3 rounded-lg hover:bg-white/5 transition-colors text-sm">
-                <span class="text-cream">{{ asset.name }}</span>
-                <span class="text-cream/40 ml-2">{{ asset.barcode }}</span>
+            <a href="{{ asset.get_absolute_url }}" class="block p-3 rounded-lg hover:bg-stage-100 dark:hover:bg-white/5 transition-colors text-sm">
+                <span class="text-stage-900 dark:text-cream">{{ asset.name }}</span>
+                <span class="text-stage-500 dark:text-cream/40 ml-2">{{ asset.barcode }}</span>
             </a>
             {% endfor %}
         </div>
@@ -96,14 +96,14 @@
     {% endif %}
 
     {% if recent_transactions %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <h2 class="font-display text-xl font-semibold mb-4">Recent Activity</h2>
         <div class="space-y-2">
             {% for tx in recent_transactions %}
             <div class="flex items-center gap-3 text-sm">
-                <span class="text-cream/70">{{ tx.get_action_display }}</span>
-                <a href="{{ tx.asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ tx.asset.name }}</a>
-                <span class="text-cream/30 text-xs ml-auto">{{ tx.timestamp|timesince }} ago</span>
+                <span class="text-stage-600 dark:text-cream/70">{{ tx.get_action_display }}</span>
+                <a href="{{ tx.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ tx.asset.name }}</a>
+                <span class="text-stage-500 dark:text-cream/30 text-xs ml-auto">{{ tx.timestamp|timesince }} ago</span>
             </div>
             {% endfor %}
         </div>

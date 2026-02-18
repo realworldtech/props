@@ -6,16 +6,16 @@
 <div class="max-w-2xl mx-auto space-y-6">
     <h1 class="font-display text-3xl font-bold">{% if editing %}Edit{% else %}New{% endif %} Hold List</h1>
 
-    <form method="post" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+    <form method="post" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-4">
         {% csrf_token %}
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Name *</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Name *</label>
             <input type="text" name="name" value="{{ hold_list.name|default:'' }}" required class="form-input w-full rounded-lg px-3 py-2">
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Project</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Project</label>
             <select name="project" class="form-input w-full rounded-lg px-3 py-2">
                 <option value="">-- None --</option>
                 {% for p in projects %}
@@ -25,7 +25,7 @@
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Department</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Department</label>
             <select name="department" class="form-input w-full rounded-lg px-3 py-2">
                 <option value="">-- None --</option>
                 {% for d in departments %}
@@ -35,7 +35,7 @@
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Status</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Status</label>
             <select name="status" class="form-input w-full rounded-lg px-3 py-2">
                 {% for s in statuses %}
                 <option value="{{ s.pk }}" {% if hold_list.status_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
@@ -45,17 +45,17 @@
 
         <div class="grid grid-cols-2 gap-4">
             <div>
-                <label class="block text-sm font-medium text-cream mb-1">Start Date</label>
+                <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Start Date</label>
                 <input type="date" name="start_date" value="{{ hold_list.start_date|date:'Y-m-d'|default:'' }}" class="form-input w-full rounded-lg px-3 py-2">
             </div>
             <div>
-                <label class="block text-sm font-medium text-cream mb-1">End Date</label>
+                <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">End Date</label>
                 <input type="date" name="end_date" value="{{ hold_list.end_date|date:'Y-m-d'|default:'' }}" class="form-input w-full rounded-lg px-3 py-2">
             </div>
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Notes</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Notes</label>
             <textarea name="notes" rows="3" class="form-input w-full rounded-lg px-3 py-2">{{ hold_list.notes|default:'' }}</textarea>
         </div>
 
@@ -63,7 +63,7 @@
             <button type="submit" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg font-medium btn-press transition-all">
                 {% if editing %}Save{% else %}Create{% endif %}
             </button>
-            <a href="{% url 'assets:holdlist_list' %}" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg font-medium transition-all">
+            <a href="{% url 'assets:holdlist_list' %}" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg font-medium transition-all">
                 Cancel
             </a>
         </div>

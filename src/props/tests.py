@@ -1003,6 +1003,136 @@ class TestAccessibilityAndCodeQuality:
         assert "[tool.isort]" in content
 
 
+class TestDarkModeTemplateCompliance:
+    """Every content template must use dark: prefixed variants.
+
+    Dark-mode-only classes (text-cream, bg-stage-800/50, border-white/10,
+    etc.) without a ``dark:`` prefix render incorrectly in light mode.
+    This test walks all content templates and flags any bare dark-only
+    class that is missing its ``dark:`` counterpart.
+    """
+
+    # Templates that are excluded from this check
+    EXCLUDED_PATHS = {
+        "emails/",
+        "admin/",
+        "registration/",
+        "asset_label.html",
+        "bulk_labels.html",
+        "virtual_bulk_labels.html",
+        "pick_sheet.html",
+        "includes/avatar.html",
+    }
+
+    # Patterns that indicate dark-mode-only classes when used without
+    # a dark: prefix.  Each tuple is (regex_pattern, description).
+    # Regex that matches a class NOT preceded by dark: (with optional
+    # intermediate modifiers like hover:, file:, etc.)
+    # We use a helper to build lookbehinds that handle compound prefixes.
+    DARK_ONLY_PATTERNS = [
+        # text-cream variants (not inside dark:, dark:hover:, dark:file:)
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)"
+            r"(?<!\bdark:file:)(?<!\bdark:focus:)"
+            r"\btext-cream(?:/\d+)?\b",
+            "text-cream",
+        ),
+        # hover:text-cream variants
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\bhover:text-cream(?:/\d+)?\b",
+            "hover:text-cream",
+        ),
+        # bg-stage-{700,800,900} variants
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)"
+            r"(?<!\bdark:file:)"
+            r"\bbg-stage-(?:700|800|900)(?:/\d+)?\b",
+            "bg-stage-dark",
+        ),
+        # bg-stage-600 variants
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\bbg-stage-600(?:/\d+)?\b",
+            "bg-stage-600",
+        ),
+        # hover:bg-white/ variants (low opacity hover effects)
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)"
+            r"\bhover:bg-white/(?:\d+|\[\d+\.?\d*\])\b",
+            "hover:bg-white/",
+        ),
+        # hover:bg-stage-600
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\bhover:bg-stage-600\b",
+            "hover:bg-stage-600",
+        ),
+        # border-white/ variants
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\bborder-white/\d+\b",
+            "border-white/",
+        ),
+        # divide-white/ variants
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\bdivide-white/\d+\b",
+            "divide-white/",
+        ),
+        # file: prefixed dark classes
+        (
+            r"(?<!\bdark:)(?<!\bdark:file:)\bfile:bg-stage-700\b",
+            "file:bg-stage-700",
+        ),
+        (
+            r"(?<!\bdark:)(?<!\bdark:file:)\bfile:text-cream(?:/\d+)?\b",
+            "file:text-cream",
+        ),
+        # placeholder-cream
+        (r"(?<!\bdark:)\bplaceholder-cream(?:/\d+)?\b", "placeholder-cream"),
+        # Message colours that need dark: prefix
+        (r"(?<!\bdark:)(?<!\bdark:hover:)\btext-red-300\b", "text-red-300"),
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\btext-emerald-300\b",
+            "text-emerald-300",
+        ),
+        (
+            r"(?<!\bdark:)(?<!\bdark:hover:)\btext-spotlight-300\b",
+            "text-spotlight-300",
+        ),
+    ]
+
+    def _is_excluded(self, rel_path: str) -> bool:
+        for excl in self.EXCLUDED_PATHS:
+            if excl in rel_path:
+                return True
+        return False
+
+    def test_no_bare_dark_mode_classes(self):
+        """Content templates must use dark: prefix for dark classes."""
+        import re
+        from pathlib import Path
+
+        templates_dir = Path(__file__).parent.parent / "templates"
+        violations = []
+
+        for html_file in sorted(templates_dir.rglob("*.html")):
+            rel_path = str(html_file.relative_to(templates_dir))
+            if self._is_excluded(rel_path):
+                continue
+
+            lines = html_file.read_text().splitlines()
+            for line_num, line in enumerate(lines, start=1):
+                for pattern, desc in self.DARK_ONLY_PATTERNS:
+                    for match in re.finditer(pattern, line):
+                        violations.append(
+                            f"  {rel_path}:{line_num} — "
+                            f"{match.group()} ({desc})"
+                        )
+
+        msg = (
+            f"{len(violations)} bare dark-mode-only class(es) "
+            f"found (missing dark: prefix):\n" + "\n".join(violations)
+        )
+        assert not violations, msg
+
+
 class TestTailwindCSSBuild:
     """Tailwind CSS source must not be in static directory."""
 

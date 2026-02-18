@@ -6,23 +6,23 @@
 <div class="max-w-2xl mx-auto space-y-6">
     <h1 class="font-display text-3xl font-bold">{% if editing %}Edit{% else %}New{% endif %} Project</h1>
 
-    <form method="post" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6 space-y-4">
+    <form method="post" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-4">
         {% csrf_token %}
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Name *</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Name *</label>
             <input type="text" name="name" value="{{ project.name|default:'' }}" required class="form-input w-full rounded-lg px-3 py-2">
         </div>
 
         <div>
-            <label class="block text-sm font-medium text-cream mb-1">Description</label>
+            <label class="block text-sm font-medium text-stage-900 dark:text-cream mb-1">Description</label>
             <textarea name="description" rows="3" class="form-input w-full rounded-lg px-3 py-2">{{ project.description|default:'' }}</textarea>
         </div>
 
         {% if editing %}
         <label class="flex items-center gap-2">
             <input type="checkbox" name="is_active" value="1" {% if project.is_active %}checked{% endif %} class="rounded">
-            <span class="text-sm text-cream">Active</span>
+            <span class="text-sm text-stage-900 dark:text-cream">Active</span>
         </label>
         {% endif %}
 
@@ -30,7 +30,7 @@
             <button type="submit" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg font-medium btn-press transition-all">
                 {% if editing %}Save{% else %}Create{% endif %}
             </button>
-            <a href="{% url 'assets:project_list' %}" class="px-4 py-2 bg-stage-700 hover:bg-stage-600 text-cream rounded-lg font-medium transition-all">
+            <a href="{% url 'assets:project_list' %}" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg font-medium transition-all">
                 Cancel
             </a>
         </div>

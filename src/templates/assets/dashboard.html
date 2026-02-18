@@ -8,7 +8,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="font-display text-3xl font-bold">Dashboard</h1>
-            <p class="text-cream/50 mt-1">Overview of your asset inventory</p>
+            <p class="text-stage-500 dark:text-cream/50 mt-1">Overview of your asset inventory</p>
         </div>
         {% if show_actions %}
         <div class="flex gap-3">
@@ -19,19 +19,19 @@
                 </svg>
                 Quick Capture
             </a>
-            <a href="{% url 'assets:scan' %}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <a href="{% url 'assets:scan' %}" class="flex items-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
                 </svg>
                 Scan
             </a>
-            <a href="{% url 'assets:drafts_queue' %}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <a href="{% url 'assets:drafts_queue' %}" class="flex items-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                 </svg>
                 View Drafts
             </a>
-            <a href="{% url 'assets:asset_create' %}" class="flex items-center gap-2 bg-stage-700 hover:bg-stage-600 text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+            <a href="{% url 'assets:asset_create' %}" class="flex items-center gap-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
@@ -43,80 +43,80 @@
 
     <!-- Pending Approvals Alert -->
     {% if pending_approvals_count > 0 %}
-    <a href="{% url 'accounts:approval_queue' %}" class="bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-amber-500/20 p-6 card-hover block">
+    <a href="{% url 'accounts:approval_queue' %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-2xl border border-amber-500/20 p-6 card-hover block">
         <div class="flex items-center gap-3 mb-3">
             <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
                 <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
                 </svg>
             </div>
-            <h3 class="font-display font-semibold text-cream">Pending Approvals</h3>
+            <h3 class="font-display font-semibold text-stage-900 dark:text-cream">Pending Approvals</h3>
         </div>
         <p class="text-3xl font-bold text-amber-400">{{ pending_approvals_count }}</p>
-        <p class="text-sm text-cream/50 mt-1">users awaiting approval</p>
+        <p class="text-sm text-stage-500 dark:text-cream/50 mt-1">users awaiting approval</p>
     </a>
     {% endif %}
 
     <!-- Stats Cards -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <a href="{% url 'assets:asset_list' %}?status=active" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 card-hover">
+        <a href="{% url 'assets:asset_list' %}?status=active" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
             <div class="flex items-center justify-between">
-                <div class="text-cream/50 text-sm">Active Assets</div>
+                <div class="text-stage-500 dark:text-cream/50 text-sm">Active Assets</div>
                 <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
                     <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 </div>
             </div>
-            <div class="text-3xl font-bold mt-1 text-cream">{{ total_active }}</div>
+            <div class="text-3xl font-bold mt-1 text-stage-900 dark:text-cream">{{ total_active }}</div>
         </a>
-        <a href="{% url 'assets:drafts_queue' %}" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 card-hover">
+        <a href="{% url 'assets:drafts_queue' %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
             <div class="flex items-center justify-between">
-                <div class="text-cream/50 text-sm">Drafts</div>
+                <div class="text-stage-500 dark:text-cream/50 text-sm">Drafts</div>
                 <div class="w-8 h-8 rounded-lg bg-spotlight-500/10 flex items-center justify-center">
                     <svg class="w-4 h-4 text-spotlight-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                 </div>
             </div>
             <div class="text-3xl font-bold mt-1 text-spotlight-400">{{ total_draft }}</div>
         </a>
-        <a href="{% url 'assets:asset_list' %}?status=active&location=checked_out" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 card-hover">
+        <a href="{% url 'assets:asset_list' %}?status=active&location=checked_out" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
             <div class="flex items-center justify-between">
-                <div class="text-cream/50 text-sm">Checked Out</div>
+                <div class="text-stage-500 dark:text-cream/50 text-sm">Checked Out</div>
                 <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                     <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
                 </div>
             </div>
             <div class="text-3xl font-bold mt-1 text-blue-400">{{ total_checked_out }}</div>
         </a>
-        <a href="{% url 'assets:asset_list' %}?status=missing" class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5 card-hover">
+        <a href="{% url 'assets:asset_list' %}?status=missing" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
             <div class="flex items-center justify-between">
-                <div class="text-cream/50 text-sm">Missing</div>
+                <div class="text-stage-500 dark:text-cream/50 text-sm">Missing</div>
                 <div class="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
                     <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
                 </div>
             </div>
-            <div class="text-3xl font-bold mt-1 {% if total_missing > 0 %}text-red-400{% else %}text-cream{% endif %}">{{ total_missing }}</div>
+            <div class="text-3xl font-bold mt-1 {% if total_missing > 0 %}text-red-400{% else %}text-stage-900 dark:text-cream{% endif %}">{{ total_missing }}</div>
         </a>
     </div>
 
     {% if ai_daily_usage is not None and AI_ANALYSIS_ENABLED %}
     <!-- V370: AI Usage for admins -->
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-5">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5">
         <div class="flex items-center gap-3 mb-2">
             <div class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
                 <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
             </div>
-            <span class="text-cream/50 text-sm">AI Analysis Today</span>
+            <span class="text-stage-500 dark:text-cream/50 text-sm">AI Analysis Today</span>
         </div>
-        <div class="text-2xl font-bold text-cream">{{ ai_daily_usage }} <span class="text-cream/30 text-base">/ {{ ai_daily_remaining|add:ai_daily_usage }}</span></div>
-        <p class="text-xs text-cream/40 mt-1">{{ ai_daily_remaining }} remaining</p>
+        <div class="text-2xl font-bold text-stage-900 dark:text-cream">{{ ai_daily_usage }} <span class="text-stage-500 dark:text-cream/30 text-base">/ {{ ai_daily_remaining|add:ai_daily_usage }}</span></div>
+        <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">{{ ai_daily_remaining }} remaining</p>
     </div>
     {% endif %}
 
     <div class="grid lg:grid-cols-2 gap-6">
         <!-- Recent Activity -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="font-display text-xl font-semibold">Recent Activity</h2>
-                <a href="{% url 'assets:transaction_list' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all</a>
+                <a href="{% url 'assets:transaction_list' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all</a>
             </div>
             {% if recent_transactions %}
             <div class="space-y-3">
@@ -137,31 +137,31 @@
                         {% endif %}
                     </div>
                     <div class="flex-1 min-w-0">
-                        <a href="{{ tx.asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors truncate block">{{ tx.asset.name }}</a>
-                        <span class="text-cream/40">{{ tx.get_action_display }}{% if tx.action == 'checkout' and tx.borrower %} to {{ tx.borrower.get_display_name }}{% endif %}{% if tx.user %} by {{ tx.user.get_display_name }}{% endif %}</span>
+                        <a href="{{ tx.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors truncate block">{{ tx.asset.name }}</a>
+                        <span class="text-stage-500 dark:text-cream/40">{{ tx.get_action_display }}{% if tx.action == 'checkout' and tx.borrower %} to {{ tx.borrower.get_display_name }}{% endif %}{% if tx.user %} by {{ tx.user.get_display_name }}{% endif %}</span>
                     </div>
-                    <span class="text-cream/30 text-xs whitespace-nowrap">{{ tx.timestamp|timesince }} ago</span>
+                    <span class="text-stage-500 dark:text-cream/30 text-xs whitespace-nowrap">{{ tx.timestamp|timesince }} ago</span>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No recent activity</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No recent activity</p>
             {% endif %}
         </div>
 
         <!-- Recent Drafts -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="font-display text-xl font-semibold">Recent Drafts</h2>
                 {% if total_draft > 0 %}
-                <a href="{% url 'assets:drafts_queue' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all ({{ total_draft }})</a>
+                <a href="{% url 'assets:drafts_queue' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all ({{ total_draft }})</a>
                 {% endif %}
             </div>
             {% if recent_drafts %}
             <div class="space-y-3">
                 {% for draft in recent_drafts %}
-                <a href="{% url 'assets:asset_edit' draft.pk %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <div class="w-12 h-12 rounded-lg bg-stage-700 flex items-center justify-center text-cream/30 flex-shrink-0 overflow-hidden">
+                <a href="{% url 'assets:asset_edit' draft.pk %}" class="flex items-center gap-3 p-3 rounded-lg hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
+                    <div class="w-12 h-12 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center text-stage-500 dark:text-cream/30 flex-shrink-0 overflow-hidden">
                         {% if draft.primary_image %}
                         <img src="{% if draft.primary_image.thumbnail %}{{ draft.primary_image.thumbnail.url }}{% else %}{{ draft.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover" alt="">
                         {% else %}
@@ -169,29 +169,29 @@
                         {% endif %}
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-cream text-sm truncate">{{ draft.name }}</div>
-                        <div class="text-cream/40 text-xs">{{ draft.barcode }} &middot; {{ draft.created_at|timesince }} ago</div>
+                        <div class="text-stage-900 dark:text-cream text-sm truncate">{{ draft.name }}</div>
+                        <div class="text-stage-500 dark:text-cream/40 text-xs">{{ draft.barcode }} &middot; {{ draft.created_at|timesince }} ago</div>
                     </div>
                 </a>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No drafts pending</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No drafts pending</p>
             {% endif %}
         </div>
     </div>
 
     <!-- Checked Out Assets -->
     {% if checked_out_assets %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="font-display text-xl font-semibold">Currently Checked Out</h2>
-            <a href="{% url 'assets:asset_list' %}?status=active&location=checked_out" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all</a>
+            <a href="{% url 'assets:asset_list' %}?status=active&location=checked_out" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all</a>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="text-cream/50 border-b border-white/5">
+                    <tr class="text-stage-500 dark:text-cream/50 border-b border-stage-200 dark:border-white/5">
                         <th class="text-left py-2 pr-4">Asset</th>
                         <th class="text-left py-2 pr-4">Borrower</th>
                         <th class="text-left py-2 pr-4 hidden sm:table-cell">Checked Out</th>
@@ -199,23 +199,23 @@
                         <th class="text-right py-2">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/5">
+                <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                     {% for asset in checked_out_assets %}
-                    <tr class="hover:bg-white/[0.02] transition-colors">
+                    <tr class="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
                         <td class="py-2.5 pr-4">
-                            <a href="{{ asset.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                            <a href="{{ asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
                         </td>
-                        <td class="py-2.5 pr-4 text-cream/70">
+                        <td class="py-2.5 pr-4 text-stage-600 dark:text-cream/70">
                             <span class="inline-flex items-center gap-1.5">
                                 {% include "includes/avatar.html" with email=asset.checked_out_to.email size=24 alt=asset.checked_out_to.get_display_name %}
-                                {{ asset.checked_out_to.get_display_name }}{% if asset.checked_out_to.organisation %} <span class="text-cream/40 text-xs">({{ asset.checked_out_to.organisation }})</span>{% endif %}
+                                {{ asset.checked_out_to.get_display_name }}{% if asset.checked_out_to.organisation %} <span class="text-stage-500 dark:text-cream/40 text-xs">({{ asset.checked_out_to.organisation }})</span>{% endif %}
                             </span>
                         </td>
-                        <td class="py-2.5 pr-4 text-cream/50 hidden sm:table-cell">{% if asset.checked_out_at %}{{ asset.checked_out_at|timesince }} ago{% else %}-{% endif %}</td>
-                        <td class="py-2.5 pr-4 text-cream/50 hidden md:table-cell">{{ asset.category|default:"-" }}</td>
+                        <td class="py-2.5 pr-4 text-stage-500 dark:text-cream/50 hidden sm:table-cell">{% if asset.checked_out_at %}{{ asset.checked_out_at|timesince }} ago{% else %}-{% endif %}</td>
+                        <td class="py-2.5 pr-4 text-stage-500 dark:text-cream/50 hidden md:table-cell">{{ asset.category|default:"-" }}</td>
                         <td class="py-2.5 text-right">
                             {% if show_actions %}
-                            <a href="{% url 'assets:asset_checkin' asset.pk %}" class="text-emerald-400 hover:text-emerald-300 text-xs transition-colors">Check In</a>
+                            <a href="{% url 'assets:asset_checkin' asset.pk %}" class="text-emerald-400 hover:text-emerald-600 dark:text-emerald-300 text-xs transition-colors">Check In</a>
                             {% endif %}
                         </td>
                     </tr>
@@ -228,26 +228,26 @@
 
     <!-- My Borrowed Items -->
     {% if my_borrowed %}
-    <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="font-display text-xl font-semibold">My Borrowed Items</h2>
-            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-300 transition-colors">View all</a>
+            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all</a>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="text-cream/50 border-b border-white/5">
+                    <tr class="text-stage-500 dark:text-cream/50 border-b border-stage-200 dark:border-white/5">
                         <th class="text-left py-2 pr-4">Asset</th>
                         <th class="text-left py-2 pr-4">Category</th>
                         <th class="text-left py-2 pr-4">Location</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/5">
+                <tbody class="divide-y divide-stage-200 dark:divide-white/5">
                     {% for item in my_borrowed %}
-                    <tr class="hover:bg-white/[0.02] transition-colors">
-                        <td class="py-2.5 pr-4"><a href="{{ item.get_absolute_url }}" class="text-cream hover:text-spotlight-400 transition-colors">{{ item.name }}</a></td>
-                        <td class="py-2.5 pr-4 text-cream/70">{{ item.category|default:"-" }}</td>
-                        <td class="py-2.5 pr-4 text-cream/70">{{ item.current_location|default:"-" }}</td>
+                    <tr class="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                        <td class="py-2.5 pr-4"><a href="{{ item.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ item.name }}</a></td>
+                        <td class="py-2.5 pr-4 text-stage-600 dark:text-cream/70">{{ item.category|default:"-" }}</td>
+                        <td class="py-2.5 pr-4 text-stage-600 dark:text-cream/70">{{ item.current_location|default:"-" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -259,55 +259,55 @@
     <!-- Breakdowns -->
     <div class="grid lg:grid-cols-2 gap-6">
         <!-- By Department -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <h2 class="font-display text-lg font-semibold mb-4">By Department</h2>
             {% if dept_counts %}
             <div class="space-y-2">
                 {% for dept in dept_counts %}
                 <div class="flex items-center justify-between text-sm">
-                    <span class="text-cream/70">{{ dept.name }}</span>
-                    <span class="text-cream font-medium">{{ dept.asset_count }}</span>
+                    <span class="text-stage-600 dark:text-cream/70">{{ dept.name }}</span>
+                    <span class="text-stage-900 dark:text-cream font-medium">{{ dept.asset_count }}</span>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No data</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No data</p>
             {% endif %}
         </div>
         <!-- By Category -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <h2 class="font-display text-lg font-semibold mb-4">By Category</h2>
             {% if cat_counts %}
             <div class="space-y-2">
                 {% for cat in cat_counts %}
                 <div class="flex items-center justify-between text-sm">
-                    <span class="text-cream/70">{{ cat.name }}</span>
-                    <span class="text-cream font-medium">{{ cat.asset_count }}</span>
+                    <span class="text-stage-600 dark:text-cream/70">{{ cat.name }}</span>
+                    <span class="text-stage-900 dark:text-cream font-medium">{{ cat.asset_count }}</span>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No data</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No data</p>
             {% endif %}
         </div>
         <!-- By Location -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <h2 class="font-display text-lg font-semibold mb-4">By Location</h2>
             {% if loc_counts %}
             <div class="space-y-2">
                 {% for loc in loc_counts %}
                 <div class="flex items-center justify-between text-sm">
-                    <span class="text-cream/70">{{ loc.name }}</span>
-                    <span class="text-cream font-medium">{{ loc.asset_count }}</span>
+                    <span class="text-stage-600 dark:text-cream/70">{{ loc.name }}</span>
+                    <span class="text-stage-900 dark:text-cream font-medium">{{ loc.asset_count }}</span>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No data</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No data</p>
             {% endif %}
         </div>
         <!-- Top Tags -->
-        <div class="bg-stage-800/50 backdrop-blur-sm rounded-xl border border-white/5 p-6">
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
             <h2 class="font-display text-lg font-semibold mb-4">Top Tags</h2>
             {% if top_tags %}
             <div class="flex flex-wrap gap-2">
@@ -320,7 +320,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-cream/40 text-sm">No tags</p>
+            <p class="text-stage-500 dark:text-cream/40 text-sm">No tags</p>
             {% endif %}
         </div>
     </div>
