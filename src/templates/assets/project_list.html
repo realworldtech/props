@@ -9,7 +9,7 @@
             <h1 class="font-display text-3xl font-bold">Projects</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ projects|length }} project{{ projects|length|pluralize }}</p>
         </div>
-        <a href="{% url 'assets:project_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:project_create' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -40,7 +40,7 @@
                     </td>
                     <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ p.hold_lists.count }}</td>
                     <td class="px-4 py-3 text-right">
-                        <a href="{% url 'assets:project_edit' p.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-medium">
+                        <a href="{% url 'assets:project_edit' p.pk %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300 text-xs font-medium">
                             Edit
                         </a>
                     </td>

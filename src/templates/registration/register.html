@@ -19,11 +19,12 @@
         })();
     </script>
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    {% include "includes/brand_css.html" %}
 </head>
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <svg class="w-8 h-8 text-stage-900" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                 </svg>
@@ -54,7 +55,7 @@
                 <div>
                     <label for="id_email" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email Address</label>
                     <input type="email" name="email" id="id_email" required value="{{ form.email.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                         placeholder="you@example.com">
                     {% if form.email.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.email.errors.0 }}</p>
@@ -64,7 +65,7 @@
                 <div>
                     <label for="id_display_name" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Display Name</label>
                     <input type="text" name="display_name" id="id_display_name" required value="{{ form.display_name.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                         placeholder="Your name">
                     {% if form.display_name.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.display_name.errors.0 }}</p>
@@ -74,7 +75,7 @@
                 <div>
                     <label for="id_phone_number" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Phone Number <span class="text-stage-500 dark:text-cream/30">(optional)</span></label>
                     <input type="tel" name="phone_number" id="id_phone_number" value="{{ form.phone_number.value|default:'' }}"
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                         placeholder="+61 400 000 000">
                     {% if form.phone_number.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.phone_number.errors.0 }}</p>
@@ -84,7 +85,7 @@
                 <div>
                     <label for="id_requested_department" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Department</label>
                     <select name="requested_department" id="id_requested_department" required
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
                         <option value="" class="bg-white dark:bg-stage-800">Select a department...</option>
                         {% for dept in form.requested_department.field.queryset %}
                         <option value="{{ dept.pk }}" class="bg-white dark:bg-stage-800"
@@ -101,7 +102,7 @@
                 <div>
                     <label for="id_password1" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Password</label>
                     <input type="password" name="password1" id="id_password1" required
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
                     {% if form.password1.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.password1.errors.0 }}</p>
                     {% endif %}
@@ -110,20 +111,20 @@
                 <div>
                     <label for="id_password2" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Confirm Password</label>
                     <input type="password" name="password2" id="id_password2" required
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all">
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
                     {% if form.password2.errors %}
                     <p class="mt-1 text-sm text-red-400">{{ form.password2.errors.0 }}</p>
                     {% endif %}
                 </div>
 
-                <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
+                <button type="submit" class="w-full bg-brand-500 hover:bg-brand-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
                     Create Account
                 </button>
             </form>
 
             <p class="text-center text-sm text-stage-500 dark:text-cream/50 mt-6">
                 Already have an account?
-                <a href="{% url 'accounts:login' %}" class="text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-500 font-medium transition-colors">Sign in</a>
+                <a href="{% url 'accounts:login' %}" class="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-500 font-medium transition-colors">Sign in</a>
             </p>
         </div>
     </div>

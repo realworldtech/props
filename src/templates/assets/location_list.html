@@ -8,7 +8,7 @@
         <div>
             <h1 class="font-display text-3xl font-bold">Locations</h1>
         </div>
-        <a href="{% url 'assets:location_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:location_create' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Location
         </a>
@@ -26,7 +26,7 @@
                     </svg>
                     <div>
                         <h3 class="font-medium text-stage-900 dark:text-cream">
-                            <a href="{% url 'assets:location_detail' location.pk %}" class="hover:text-spotlight-400 transition-colors">{{ location.name }}</a>
+                            <a href="{% url 'assets:location_detail' location.pk %}" class="hover:text-brand-400 transition-colors">{{ location.name }}</a>
                         </h3>
                         {% if location.address %}
                         <p class="text-xs text-stage-500 dark:text-cream/40 mt-0.5">{{ location.address }}</p>
@@ -57,7 +57,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
                             </svg>
-                            <a href="{% url 'assets:location_detail' child.pk %}" class="text-sm text-stage-600 dark:text-cream/70 hover:text-spotlight-400 transition-colors">{{ child.name }}</a>
+                            <a href="{% url 'assets:location_detail' child.pk %}" class="text-sm text-stage-600 dark:text-cream/70 hover:text-brand-400 transition-colors">{{ child.name }}</a>
                             {% if not child.is_active %}
                             <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1.5 py-0.5 rounded-full">Inactive</span>
                             {% endif %}
@@ -72,7 +72,7 @@
                         <div class="flex items-center justify-between py-0.5">
                             <div class="flex items-center gap-2">
                                 <span class="w-1.5 h-1.5 rounded-full bg-stage-200 dark:bg-cream/20 flex-shrink-0"></span>
-                                <a href="{% url 'assets:location_detail' grandchild.pk %}" class="text-xs text-stage-500 dark:text-cream/50 hover:text-spotlight-400 transition-colors">{{ grandchild.name }}</a>
+                                <a href="{% url 'assets:location_detail' grandchild.pk %}" class="text-xs text-stage-500 dark:text-cream/50 hover:text-brand-400 transition-colors">{{ grandchild.name }}</a>
                                 {% if not grandchild.is_active %}
                                 <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1 py-0.5 rounded-full">Inactive</span>
                                 {% endif %}

@@ -61,7 +61,7 @@
                 <div class="space-y-2 max-h-60 overflow-y-auto">
                     {% for serial in available_serials %}
                     <label class="flex items-center gap-3 p-2.5 rounded-lg bg-stage-100/50 dark:bg-stage-700/50 hover:bg-stage-100 dark:bg-stage-700 cursor-pointer transition-colors">
-                        <input type="checkbox" name="serial_ids" value="{{ serial.pk }}" class="rounded border-stage-300 dark:border-white/20 text-spotlight-500 focus:ring-spotlight-500">
+                        <input type="checkbox" name="serial_ids" value="{{ serial.pk }}" class="rounded border-stage-300 dark:border-white/20 text-brand-500 focus:ring-brand-500">
                         <span class="text-stage-900 dark:text-cream">
                             #{{ serial.serial_number }}
                             {% if serial.barcode %}<span class="font-mono text-stage-500 dark:text-cream/50 text-xs ml-1">{{ serial.barcode }}</span>{% endif %}
@@ -105,7 +105,7 @@
         </div>
 
         <div class="flex gap-3">
-            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+            <button type="submit" class="flex-1 bg-brand-500 hover:bg-brand-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 Check Out
             </button>
             <a href="{% url 'assets:asset_detail' asset.pk %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">

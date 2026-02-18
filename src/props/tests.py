@@ -88,15 +88,15 @@ class TestGenerateBrandCssProperties:
 
     def test_generate_css_properties(self):
         css = generate_brand_css_properties(primary_hex="#4F46E5")
-        assert "--brand-primary-500:" in css
-        assert "--brand-primary-50:" in css
+        assert "--color-brand-500:" in css
+        assert "--color-brand-50:" in css
 
     def test_css_properties_multiple_colors(self):
         css = generate_brand_css_properties(
             primary_hex="#4F46E5",
             secondary_hex="#10B981",
         )
-        assert "--brand-primary-500:" in css
+        assert "--color-brand-500:" in css
         assert "--brand-secondary-500:" in css
 
     def test_empty_input_returns_empty(self):
@@ -306,9 +306,9 @@ class TestDarkModePalette:
     def test_dark_mode_palette_generated(self):
         """Verify dark mode CSS vars are generated."""
         css = generate_brand_css_properties(primary_hex="#4F46E5")
-        assert "--brand-primary-dark-500:" in css
-        assert "--brand-primary-dark-50:" in css
-        assert "--brand-primary-dark-950:" in css
+        assert "--color-brand-dark-500:" in css
+        assert "--color-brand-dark-50:" in css
+        assert "--color-brand-dark-950:" in css
 
     def test_dark_mode_reduced_chroma(self):
         """Verify dark palette has lower max chroma than light palette."""
@@ -368,7 +368,7 @@ class TestDarkModePalette:
             secondary_hex="#10B981",
             accent_hex="#F59E0B",
         )
-        assert "--brand-primary-dark-500:" in css
+        assert "--color-brand-dark-500:" in css
         assert "--brand-secondary-dark-500:" in css
         assert "--brand-accent-dark-500:" in css
 
@@ -481,10 +481,10 @@ class TestBrandingCSSIntegration:
     """Test that brand CSS custom properties are wired into templates."""
 
     def test_brand_css_properties_in_base_template(self, client_logged_in, db):
-        """Dashboard response should contain --brand-primary CSS var."""
+        """Dashboard response should contain --color-brand- CSS var."""
         response = client_logged_in.get("/")
         content = response.content.decode()
-        assert "--brand-primary-" in content
+        assert "--color-brand-" in content
 
     def test_brand_css_with_custom_primary_color(self, client_logged_in, db):
         """SiteBranding with custom primary renders derived CSS vars."""
@@ -494,7 +494,7 @@ class TestBrandingCSSIntegration:
         SiteBranding.objects.create(primary_color="#BC2026")
         response = client_logged_in.get("/")
         content = response.content.decode()
-        assert "--brand-primary-500:" in content
+        assert "--color-brand-500:" in content
         assert "--brand-secondary-500:" in content
         assert "--brand-accent-500:" in content
 
@@ -509,7 +509,7 @@ class TestBrandingCSSIntegration:
         response = client_logged_in.get("/")
         content = response.content.decode()
         # Fallback CSS vars should still be present from settings
-        assert "--brand-primary-" in content
+        assert "--color-brand-" in content
 
     def test_context_processor_includes_brand_css(self, db):
         """The context processor always includes brand_css_properties."""
@@ -524,15 +524,177 @@ class TestBrandingCSSIntegration:
         # Should be non-empty even without SiteBranding
         assert ctx["brand_css_properties"] != ""
 
-    def test_brand_utility_classes_in_base_template(
-        self, client_logged_in, db
-    ):
-        """Base template should contain brand utility CSS classes."""
+
+# ============================================================
+# BRAND COLOUR PROPAGATION TESTS (§4.9.7)
+# ============================================================
+
+
+class TestBrandColourPropagation:
+    """S4.9.7-01, S4.9.7-02c, S4.9.7-03, S4.9.7-13:
+    Brand colours must propagate from SiteBranding to all UI.
+
+    The Tailwind 'brand' theme colour (--color-brand-*) is set by
+    the brand CSS context processor using values from SiteBranding,
+    overriding the static defaults in input.css @theme.
+    """
+
+    def test_brand_style_block_after_tailwind_link(self, client_logged_in, db):
+        """Brand <style> block must appear AFTER the Tailwind CSS
+        <link> so --color-brand-* overrides take effect."""
         response = client_logged_in.get("/")
         content = response.content.decode()
-        assert ".bg-brand-primary" in content
-        assert ".text-brand-primary" in content
-        assert ".border-brand-primary" in content
+        tailwind_pos = content.find("tailwind.css")
+        brand_pos = content.find("--color-brand-")
+        assert tailwind_pos > 0, "Tailwind CSS link not found"
+        assert brand_pos > 0, "Brand CSS properties not found"
+        assert brand_pos > tailwind_pos, (
+            "Brand CSS properties must appear AFTER the Tailwind CSS "
+            "link to override --color-brand-* theme defaults"
+        )
+
+    def test_brand_css_uses_tailwind_naming(self, client_logged_in, db):
+        """Brand CSS must use --color-brand-* naming to match
+        Tailwind theme convention (bg-brand-500, etc.)."""
+        response = client_logged_in.get("/")
+        content = response.content.decode()
+        assert (
+            "--color-brand-500:" in content
+        ), "Brand CSS should use --color-brand-* Tailwind naming"
+
+    def test_brand_css_has_full_palette(self, client_logged_in, db):
+        """Brand CSS must include shades 50-950."""
+        response = client_logged_in.get("/")
+        content = response.content.decode()
+        for shade in [
+            "50",
+            "100",
+            "200",
+            "300",
+            "400",
+            "500",
+            "600",
+            "700",
+            "800",
+            "900",
+            "950",
+        ]:
+            assert (
+                f"--color-brand-{shade}:" in content
+            ), f"Brand shade {shade} missing from CSS properties"
+
+    def test_login_page_has_brand_css(self, client, db):
+        """Login page must inject brand CSS custom properties
+        (S4.9.7-03: login page must use brand palette)."""
+        response = client.get(reverse("accounts:login"))
+        content = response.content.decode()
+        assert (
+            "--color-brand-" in content
+        ), "Login page must include brand CSS custom properties"
+
+    def test_login_page_brand_style_after_tailwind(self, client, db):
+        """Login page brand style must appear after Tailwind CSS."""
+        response = client.get(reverse("accounts:login"))
+        content = response.content.decode()
+        tailwind_pos = content.find("tailwind.css")
+        brand_pos = content.find("--color-brand-")
+        assert tailwind_pos > 0, "Tailwind CSS link not found"
+        assert brand_pos > 0, "Brand CSS not found on login page"
+        assert (
+            brand_pos > tailwind_pos
+        ), "Login page brand CSS must appear after Tailwind CSS link"
+
+    @pytest.mark.parametrize(
+        "url_name",
+        [
+            "accounts:register",
+            "accounts:password_reset",
+        ],
+    )
+    def test_standalone_auth_pages_have_brand_css(self, client, db, url_name):
+        """Standalone auth pages must inject brand CSS properties."""
+        response = client.get(reverse(url_name))
+        content = response.content.decode()
+        assert (
+            "--color-brand-" in content
+        ), f"{url_name} must include brand CSS custom properties"
+
+    def test_no_spotlight_in_templates(self):
+        """Templates must not reference spotlight colour classes.
+
+        The spotlight theme was replaced by the brand theme
+        (§4.9.7-02c). Only 'spotlight-bg' (a CSS effect class,
+        not a colour) is permitted."""
+        from pathlib import Path
+
+        templates_dir = Path(__file__).parent.parent / "templates"
+        violations = []
+        for html_file in sorted(templates_dir.rglob("*.html")):
+            rel = str(html_file.relative_to(templates_dir))
+            if rel.startswith("emails/"):
+                continue
+            content = html_file.read_text()
+            for i, line in enumerate(content.splitlines(), 1):
+                # Skip the spotlight-bg CSS class (visual effect)
+                cleaned = line.replace("spotlight-bg", "")
+                if "spotlight-" in cleaned:
+                    violations.append(f"  {rel}:{i}: {line.strip()}")
+        assert not violations, (
+            "Templates still reference spotlight colour classes "
+            "(should use brand-* instead):\n" + "\n".join(violations[:20])
+        )
+
+    def test_input_css_no_hardcoded_brand_hex(self):
+        """input.css custom CSS must not contain hardcoded brand
+        hex values — use var(--color-brand-*) instead."""
+        import re
+        from pathlib import Path
+
+        input_css = Path(__file__).parent.parent / "tailwind" / "input.css"
+        content = input_css.read_text()
+
+        # Split into @theme block and the rest
+        theme_end = content.find("\n}\n", content.find("@theme {"))
+        if theme_end == -1:
+            theme_end = 0
+        custom_css = content[theme_end:]
+
+        # Brand default hex values (from @theme) that should not
+        # appear in custom CSS outside @theme
+        brand_hex = [
+            "#f59e0b",  # brand-500
+            "#fbbf24",  # brand-400
+            "#d97706",  # brand-600
+            "#b45309",  # brand-700
+            "#fcd34d",  # brand-300
+            "#fef3c7",  # brand-100
+        ]
+        violations = []
+        for hex_val in brand_hex:
+            for match in re.finditer(
+                re.escape(hex_val), custom_css, re.IGNORECASE
+            ):
+                line_num = custom_css[: match.start()].count("\n") + 1
+                violations.append(f"  line ~{line_num}: {hex_val}")
+
+        assert not violations, (
+            "Hardcoded brand hex values in input.css custom CSS "
+            "(outside @theme). Use var(--color-brand-*) instead:\n"
+            + "\n".join(violations)
+        )
+
+    def test_brand_css_with_custom_colour(self, client_logged_in, db):
+        """When SiteBranding has a custom primary colour, the
+        --color-brand-* vars must reflect that colour's palette."""
+        from assets.models import SiteBranding
+
+        cache.clear()
+        SiteBranding.objects.create(primary_color="#BC2026")
+        response = client_logged_in.get("/")
+        content = response.content.decode()
+        assert "--color-brand-500:" in content
+        # Secondary should be auto-derived
+        assert "--brand-secondary-500:" in content
 
 
 # ============================================================
@@ -1093,8 +1255,8 @@ class TestDarkModeTemplateCompliance:
             "text-emerald-300",
         ),
         (
-            r"(?<!\bdark:)(?<!\bdark:hover:)\btext-spotlight-300\b",
-            "text-spotlight-300",
+            r"(?<!\bdark:)(?<!\bdark:hover:)\btext-brand-300\b",
+            "text-brand-300",
         ),
     ]
 

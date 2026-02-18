@@ -9,7 +9,7 @@
             <h1 class="font-display text-3xl font-bold">Tags</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ tags|length }} tag{{ tags|length|pluralize }}</p>
         </div>
-        <a href="{% url 'assets:tag_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:tag_create' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Tag
         </a>

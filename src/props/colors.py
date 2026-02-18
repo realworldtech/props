@@ -181,13 +181,14 @@ def generate_brand_css_properties(
 ) -> str:
     """Generate CSS custom properties block for brand colours.
 
-    Generates both light and dark mode palettes. Returns a string like:
-      --brand-primary-50: #fef2f2;
-      --brand-primary-100: #fee2e2;
-      ...
-      --brand-primary-dark-50: #1a1a2e;
-      --brand-primary-dark-100: #1e1e3a;
-      ...
+    The primary colour uses Tailwind's ``--color-brand-*`` naming
+    convention so that Tailwind utility classes (``bg-brand-500``,
+    ``text-brand-400``, etc.) pick up the values automatically.
+
+    Secondary and accent use ``--brand-secondary-*`` /
+    ``--brand-accent-*`` naming (not Tailwind theme vars).
+
+    Dark mode palettes use a ``-dark-`` infix for each colour.
     """
     lines = []
 
@@ -199,14 +200,20 @@ def generate_brand_css_properties(
         if not hex_color:
             continue
 
+        # Tailwind theme vars for primary, custom vars for others
+        if name == "primary":
+            prefix = "--color-brand"
+        else:
+            prefix = f"--brand-{name}"
+
         # Light mode palette
         palette = generate_oklch_palette(hex_color)
         for shade, value in palette.items():
-            lines.append(f"--brand-{name}-{shade}: {value};")
+            lines.append(f"{prefix}-{shade}: {value};")
 
         # Dark mode palette
         dark_palette = generate_dark_palette(hex_color)
         for shade, value in dark_palette.items():
-            lines.append(f"--brand-{name}-dark-{shade}: {value};")
+            lines.append(f"{prefix}-dark-{shade}: {value};")
 
     return "\n".join(lines)

@@ -24,7 +24,7 @@
                 <span class="font-mono text-stage-500 dark:text-cream/50 text-sm">{{ asset.barcode }}</span>
                 <span class="inline-block px-2.5 py-0.5 rounded-full text-xs
                     {% if asset.status == 'active' %}bg-emerald-500/20 text-emerald-400
-                    {% elif asset.status == 'draft' %}bg-spotlight-500/20 text-spotlight-400
+                    {% elif asset.status == 'draft' %}bg-brand-500/20 text-brand-400
                     {% elif asset.status == 'retired' %}bg-gray-500/20 text-gray-400
                     {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
                     {% else %}bg-stage-200/50 dark:bg-stage-600/50 text-stage-500 dark:text-cream/50{% endif %}">
@@ -129,7 +129,7 @@
                         <img src="{{ img.image.url }}" class="w-full h-full object-cover" alt="{{ img.caption }}"
                              onerror="this.onerror=null;this.src='';this.alt='Image unavailable (placeholder)';this.style.display='none'">
                         {% if img.is_primary %}
-                        <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-spotlight-500/90 text-stage-900 text-xs font-medium">Primary</span>
+                        <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-brand-500/90 text-stage-900 text-xs font-medium">Primary</span>
                         {% endif %}
                         <!-- V69: Preview icon triggers lightbox -->
                         <button class="lightbox-trigger preview-icon absolute top-2 right-2 bg-white/80 dark:bg-stage-800/80 hover:bg-stage-100 dark:hover:bg-stage-700 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream p-1.5 rounded-lg transition-colors border border-stage-200 dark:border-white/10 z-10"
@@ -143,7 +143,7 @@
                             {% if not img.is_primary %}
                             <form method="post" action="{% url 'assets:image_set_primary' asset.pk img.pk %}">
                                 {% csrf_token %}
-                                <button type="submit" class="text-xs bg-spotlight-500 text-stage-900 px-2 py-1 rounded">Set Primary</button>
+                                <button type="submit" class="text-xs bg-brand-500 text-stage-900 px-2 py-1 rounded">Set Primary</button>
                             </form>
                             {% endif %}
                             <form method="post" action="{% url 'assets:image_delete' asset.pk img.pk %}" onsubmit="return confirm('Delete this image?')">
@@ -506,7 +506,7 @@
                             {% elif tx.action == 'transfer' %}bg-purple-500/20 text-purple-400
                             {% elif tx.action == 'relocate' %}bg-indigo-500/20 text-indigo-400
                             {% elif tx.action == 'handover' %}bg-amber-500/20 text-amber-400
-                            {% else %}bg-spotlight-500/20 text-spotlight-400{% endif %}">
+                            {% else %}bg-brand-500/20 text-brand-400{% endif %}">
                             {{ tx.get_action_display|first }}
                         </div>
                         <div class="flex-1">
@@ -548,7 +548,7 @@
                 <div class="bg-white rounded-lg p-3">
                     <img src="{{ asset.barcode_image.url }}" class="w-full" alt="{{ asset.barcode }}">
                 </div>
-                <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-spotlight-400 text-xs mt-2 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">Print Label</a>
+                <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-brand-400 text-xs mt-2 hover:text-brand-600 dark:text-brand-300 transition-colors">Print Label</a>
                 {% if user_role == "system_admin" or user_role == "department_manager" %}
                 <form method="post" action="{% url 'assets:clear_barcode' asset.pk %}"
                       onsubmit="return confirm('Are you sure you want to clear the barcode? This cannot be undone.');"
@@ -564,7 +564,7 @@
             <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50">NFC Tags</h3>
-                    <a href="{% url 'assets:nfc_add' asset.pk %}" class="text-spotlight-400 text-xs hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">+ Add Tag</a>
+                    <a href="{% url 'assets:nfc_add' asset.pk %}" class="text-brand-400 text-xs hover:text-brand-600 dark:text-brand-300 transition-colors">+ Add Tag</a>
                 </div>
                 {% if active_nfc %}
                 {% for nfc in active_nfc %}
@@ -601,7 +601,7 @@
                 <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50 mb-3">Member of Kits</h3>
                 <div class="space-y-2">
                     {% for membership in member_of_kits %}
-                    <a href="{% url 'assets:kit_contents' membership.kit.pk %}" class="flex items-center gap-2 text-sm text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">
+                    <a href="{% url 'assets:kit_contents' membership.kit.pk %}" class="flex items-center gap-2 text-sm text-brand-400 hover:text-brand-600 dark:text-brand-300 transition-colors">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
                         </svg>

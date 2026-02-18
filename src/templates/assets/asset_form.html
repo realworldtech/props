@@ -92,7 +92,7 @@
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
                         <label class="block text-sm font-medium text-stage-600 dark:text-cream/70" id="label-category">Category <span id="cat-required-star">*</span></label>
-                        <button type="button" id="btn-add-category" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new category">+</button>
+                        <button type="button" id="btn-add-category" class="inline-flex items-center justify-center w-5 h-5 rounded bg-brand-500/20 text-brand-400 hover:bg-brand-500/30 hover:text-brand-600 dark:text-brand-300 text-xs font-bold transition-colors" title="Create new category">+</button>
                     </div>
                     <!-- Hidden FK input -->
                     {{ form.category }}
@@ -106,7 +106,7 @@
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
                         <label class="block text-sm font-medium text-stage-600 dark:text-cream/70" id="label-location">Location <span id="loc-required-star">*</span></label>
-                        <button type="button" id="btn-add-location" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new location">+</button>
+                        <button type="button" id="btn-add-location" class="inline-flex items-center justify-center w-5 h-5 rounded bg-brand-500/20 text-brand-400 hover:bg-brand-500/30 hover:text-brand-600 dark:text-brand-300 text-xs font-bold transition-colors" title="Create new location">+</button>
                     </div>
                     <!-- Hidden FK input -->
                     {{ form.current_location }}
@@ -172,14 +172,14 @@
                 <div class="relative group rounded-lg overflow-hidden border border-stage-200 dark:border-white/5 bg-gray-50 dark:bg-stage-900/50">
                     <img src="{{ image.image.url }}" alt="{{ image.caption }}" class="w-full h-32 object-cover">
                     {% if image.is_primary %}
-                    <span class="absolute top-2 left-2 bg-spotlight-500 text-stage-900 text-xs font-bold px-2 py-0.5 rounded">Primary</span>
+                    <span class="absolute top-2 left-2 bg-brand-500 text-stage-900 text-xs font-bold px-2 py-0.5 rounded">Primary</span>
                     {% endif %}
                     {% if image.caption %}
                     <p class="text-xs text-stage-500 dark:text-cream/50 px-2 py-1.5 truncate">{{ image.caption }}</p>
                     {% endif %}
                     <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {% if not image.is_primary %}
-                        <a href="{% url 'assets:image_set_primary' asset.pk image.pk %}" class="bg-white/80 dark:bg-stage-800/80 hover:bg-spotlight-500/30 text-stage-600 dark:text-cream/70 hover:text-spotlight-600 dark:text-spotlight-300 rounded p-1 text-xs" title="Set as primary">&#9733;</a>
+                        <a href="{% url 'assets:image_set_primary' asset.pk image.pk %}" class="bg-white/80 dark:bg-stage-800/80 hover:bg-brand-500/30 text-stage-600 dark:text-cream/70 hover:text-brand-600 dark:text-brand-300 rounded p-1 text-xs" title="Set as primary">&#9733;</a>
                         {% endif %}
                         <a href="{% url 'assets:image_delete' asset.pk image.pk %}" class="bg-white/80 dark:bg-stage-800/80 hover:bg-red-500/30 text-stage-600 dark:text-cream/70 hover:text-red-600 dark:text-red-300 rounded p-1 text-xs" title="Delete image" onclick="return confirm('Delete this image?')">&times;</a>
                     </div>
@@ -193,7 +193,7 @@
             <div class="space-y-3 pt-2">
                 <div>
                     <label for="id_images" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Upload Images</label>
-                    <input type="file" name="images" id="id_images" multiple accept="image/*" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-spotlight-500/20 file:text-spotlight-600 dark:text-spotlight-300 hover:file:bg-spotlight-500/30">
+                    <input type="file" name="images" id="id_images" multiple accept="image/*" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-brand-500/20 file:text-brand-600 dark:text-brand-300 hover:file:bg-brand-500/30">
                 </div>
                 <div>
                     <label for="id_image_captions" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Caption <span class="text-stage-500 dark:text-cream/40">(optional, applies to all uploaded images)</span></label>
@@ -222,7 +222,7 @@
         </div>
 
         <div class="flex gap-3">
-            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+            <button type="submit" class="flex-1 bg-brand-500 hover:bg-brand-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 {% if asset %}Update Asset{% else %}Create Asset{% endif %}
             </button>
             {% if asset and asset.status == 'draft' %}
@@ -252,7 +252,7 @@
             <div id="modal-error" class="hidden px-5 pb-2 text-red-400 text-sm"></div>
             <div class="flex justify-end gap-3 p-5 border-t border-stage-200 dark:border-white/5">
                 <button type="button" id="modal-cancel-btn" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
-                <button type="button" id="modal-save-btn" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
+                <button type="button" id="modal-save-btn" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
             </div>
         </div>
     </div>
@@ -535,7 +535,7 @@
 
         var addBtn = document.createElement('button');
         addBtn.type = 'button';
-        addBtn.className = 'inline-flex items-center justify-center w-8 h-8 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-sm font-bold transition-colors flex-shrink-0';
+        addBtn.className = 'inline-flex items-center justify-center w-8 h-8 rounded bg-brand-500/20 text-brand-400 hover:bg-brand-500/30 hover:text-brand-600 dark:text-brand-300 text-sm font-bold transition-colors flex-shrink-0';
         addBtn.textContent = '+';
         addBtn.title = 'Create new department';
         addBtn.addEventListener('click', function() {
@@ -626,7 +626,7 @@
         if (query && !exactMatch) {
             var createBtn = document.createElement('button');
             createBtn.type = 'button';
-            createBtn.className = 'block w-full text-left px-4 py-2 text-sm text-spotlight-400 hover:bg-stage-100 dark:hover:bg-white/10 transition-colors';
+            createBtn.className = 'block w-full text-left px-4 py-2 text-sm text-brand-400 hover:bg-stage-100 dark:hover:bg-white/10 transition-colors';
             createBtn.appendChild(document.createTextNode('Create "'));
             var strong = document.createElement('strong');
             strong.textContent = query;
@@ -682,11 +682,11 @@
         Object.keys(selectedTags).forEach(function(id) {
             var name = selectedTags[id];
             var span = document.createElement('span');
-            span.className = 'inline-flex items-center gap-1.5 bg-spotlight-500/20 text-spotlight-600 dark:text-spotlight-300 px-3 py-1 rounded-lg text-sm';
+            span.className = 'inline-flex items-center gap-1.5 bg-brand-500/20 text-brand-600 dark:text-brand-300 px-3 py-1 rounded-lg text-sm';
             span.appendChild(document.createTextNode(name));
             var removeBtn = document.createElement('button');
             removeBtn.type = 'button';
-            removeBtn.className = 'hover:text-spotlight-100 transition-colors';
+            removeBtn.className = 'hover:text-brand-100 transition-colors';
             removeBtn.textContent = '\u00d7';
             removeBtn.addEventListener('click', function() { removeTagItem(id); });
             span.appendChild(removeBtn);

@@ -76,7 +76,7 @@
                 <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Notes</label>
                 <input type="text" name="notes" class="form-input rounded-lg px-3 py-1.5 w-full">
             </div>
-            <button type="submit" class="px-4 py-1.5 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
+            <button type="submit" class="px-4 py-1.5 bg-brand-500 hover:bg-brand-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
                 Add Item
             </button>
         </div>
@@ -105,7 +105,7 @@
                 {% for item in loc_items %}
                 <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:asset_detail' item.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300">
+                        <a href="{% url 'assets:asset_detail' item.asset.pk %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300">
                             {{ item.asset.name }}
                         </a>
                     </td>

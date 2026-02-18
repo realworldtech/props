@@ -24,7 +24,7 @@
                 {% for tag in tags %}
                 <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:asset_detail' tag.asset.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 font-medium">
+                        <a href="{% url 'assets:asset_detail' tag.asset.pk %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300 font-medium">
                             {{ tag.asset.name }}
                         </a>
                         <span class="text-stage-500 dark:text-cream/40 text-xs block font-mono">{{ tag.asset.barcode }}</span>
@@ -66,7 +66,7 @@
     </div>
 
     <div class="text-center">
-        <a href="{% url 'assets:scan' %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 text-sm">
+        <a href="{% url 'assets:scan' %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300 text-sm">
             Back to Scan
         </a>
     </div>

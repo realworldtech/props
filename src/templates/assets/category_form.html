@@ -59,7 +59,7 @@
                         <span id="icon-selected-name" class="text-sm text-stage-500 dark:text-cream/60 font-mono"></span>
                         <button type="button" id="icon-clear-btn" class="hidden text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-xs transition-colors">(clear)</button>
                     </div>
-                    <button type="button" id="icon-picker-toggle" class="text-sm text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">Choose icon...</button>
+                    <button type="button" id="icon-picker-toggle" class="text-sm text-brand-400 hover:text-brand-600 dark:text-brand-300 transition-colors">Choose icon...</button>
                     <div id="icon-picker" class="hidden mt-2 bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10 rounded-lg p-3 space-y-2">
                         <input type="text" id="icon-search" class="form-input w-full rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm" placeholder="Search icons..." autocomplete="off">
                         <div id="icon-grid" class="grid grid-cols-6 gap-1 max-h-48 overflow-y-auto"></div>
@@ -68,7 +68,7 @@
                 <div>
                     <div class="flex items-center gap-2 mb-1.5">
                         <label for="{{ form.department.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70">Department *</label>
-                        <button type="button" id="add-dept-btn" class="inline-flex items-center justify-center w-5 h-5 rounded bg-spotlight-500/20 text-spotlight-400 hover:bg-spotlight-500/30 hover:text-spotlight-600 dark:text-spotlight-300 text-xs font-bold transition-colors" title="Create new department">+</button>
+                        <button type="button" id="add-dept-btn" class="inline-flex items-center justify-center w-5 h-5 rounded bg-brand-500/20 text-brand-400 hover:bg-brand-500/30 hover:text-brand-600 dark:text-brand-300 text-xs font-bold transition-colors" title="Create new department">+</button>
                     </div>
                     {{ form.department }}
                 </div>
@@ -76,7 +76,7 @@
         </div>
 
         <div class="flex gap-3">
-            <button type="submit" class="flex-1 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+            <button type="submit" class="flex-1 bg-brand-500 hover:bg-brand-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 {% if category %}Update Category{% else %}Create Category{% endif %}
             </button>
             <a href="{% url 'assets:category_list' %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
@@ -102,7 +102,7 @@
             </div>
             <div class="flex justify-end gap-3 p-5 border-t border-stage-200 dark:border-white/5">
                 <button type="button" id="dept-cancel-btn" class="px-4 py-2 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-sm transition-colors">Cancel</button>
-                <button type="button" id="dept-save-btn" class="px-4 py-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
+                <button type="button" id="dept-save-btn" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-stage-900 rounded-lg text-sm font-medium transition-colors">Create</button>
             </div>
         </div>
     </div>
@@ -178,7 +178,7 @@
     if (currentIcon) {
         preview.textContent = currentIcon;
         preview.classList.remove('text-stage-500', 'dark:text-cream/50');
-        preview.classList.add('text-spotlight-400');
+        preview.classList.add('text-brand-400');
         selectedName.textContent = currentIcon;
         clearBtn.classList.remove('hidden');
         pickerToggle.textContent = 'Change icon...';
@@ -207,7 +207,7 @@
         currentIcon = '';
         preview.textContent = 'category';
         preview.classList.add('text-stage-500', 'dark:text-cream/50');
-        preview.classList.remove('text-spotlight-400');
+        preview.classList.remove('text-brand-400');
         selectedName.textContent = '';
         clearBtn.classList.add('hidden');
         pickerToggle.textContent = 'Choose icon...';
@@ -219,7 +219,7 @@
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'w-9 h-9 rounded-lg flex items-center justify-center hover:bg-stage-100 dark:hover:bg-white/10 transition-colors' +
-                (name === currentIcon ? ' bg-spotlight-500/20 ring-1 ring-spotlight-500' : '');
+                (name === currentIcon ? ' bg-brand-500/20 ring-1 ring-brand-500' : '');
             btn.title = name;
             var icon = document.createElement('span');
             icon.className = 'material-symbols-outlined text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream';
@@ -242,7 +242,7 @@
         currentIcon = name;
         preview.textContent = name;
         preview.classList.remove('text-stage-500', 'dark:text-cream/50');
-        preview.classList.add('text-spotlight-400');
+        preview.classList.add('text-brand-400');
         selectedName.textContent = name;
         clearBtn.classList.remove('hidden');
         pickerToggle.textContent = 'Change icon...';

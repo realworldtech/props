@@ -9,7 +9,7 @@
             <h1 class="font-display text-3xl font-bold">Stocktake Sessions</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ sessions|length }} session{{ sessions|length|pluralize }}</p>
         </div>
-        <a href="{% url 'assets:stocktake_start' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg font-semibold btn-press transition-all">
+        <a href="{% url 'assets:stocktake_start' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-5 py-2.5 rounded-lg font-semibold btn-press transition-all">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
             </svg>
@@ -46,7 +46,7 @@
                             </span>
                         </td>
                         <td class="px-4 py-3">
-                            <a href="{% url 'assets:stocktake_detail' session.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 text-sm font-medium transition-colors">
+                            <a href="{% url 'assets:stocktake_detail' session.pk %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300 text-sm font-medium transition-colors">
                                 View
                             </a>
                         </td>

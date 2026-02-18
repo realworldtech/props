@@ -1,20 +1,52 @@
 {% extends "admin/base_site.html" %}
+
 {% block content %}
-<form method="post">
-    {% csrf_token %}
-    <p>Transfer {{ assets.count }} asset(s) to:</p>
-    <select name="location" required>
-        <option value="">-- Select location --</option>
-        {% for loc in locations %}
-        <option value="{{ loc.pk }}">{{ loc.name }}</option>
+<div class="bg-white dark:bg-base-900 rounded-default shadow-sm p-6 max-w-2xl">
+    <h2 class="text-lg font-semibold text-base-900 dark:text-base-100 mb-1">
+        {{ title }}
+    </h2>
+    <p class="text-sm text-base-600 dark:text-base-400 mb-6">
+        Transfer {{ assets.count }} selected asset{{ assets.count|pluralize }} to a new location.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-base-900 dark:text-base-100 mb-1">
+                Location
+            </label>
+            <select name="location" required
+                    class="w-full px-3 py-2 border border-base-200 rounded-default
+                           bg-white text-base-900 text-sm appearance-none
+                           focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600
+                           dark:bg-base-900 dark:border-base-700 dark:text-base-100">
+                <option value="">-- Select location --</option>
+                {% for loc in locations %}
+                <option value="{{ loc.pk }}">{{ loc.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        {% for asset in assets %}
+        <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
         {% endfor %}
-    </select>
-    {% for asset in assets %}
-    <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
-    {% endfor %}
-    <input type="hidden" name="action" value="{{ action }}">
-    <input type="hidden" name="apply" value="1">
-    <button type="submit" class="button">Transfer</button>
-    <a href="{% url 'admin:assets_asset_changelist' %}" class="button cancel-link">Cancel</a>
-</form>
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="apply" value="1">
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="px-4 py-2 bg-primary-600 text-white rounded-default
+                           font-medium hover:bg-primary-700 transition-colors">
+                Transfer
+            </button>
+            <a href="{% url 'admin:assets_asset_changelist' %}"
+               class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+                      font-medium hover:bg-base-200 transition-colors
+                      dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
 {% endblock %}

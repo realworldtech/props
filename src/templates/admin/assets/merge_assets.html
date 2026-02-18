@@ -1,22 +1,67 @@
 {% extends "admin/base_site.html" %}
+
 {% block content %}
-<form method="post">
-    {% csrf_token %}
-    <p>Select the primary asset to keep. The other asset will be merged into it and disposed.</p>
-    <div style="margin: 1em 0;">
-    {% for asset in assets %}
-        <label style="display: block; margin: 0.5em 0;">
-            <input type="radio" name="primary" value="{{ asset.pk }}" required>
-            <strong>{{ asset.name }}</strong> ({{ asset.barcode }})
-        </label>
-    {% endfor %}
+<div class="bg-white dark:bg-base-900 rounded-default shadow-sm p-6 max-w-2xl">
+    <h2 class="text-lg font-semibold text-base-900 dark:text-base-100 mb-1">
+        {{ title }}
+    </h2>
+
+    <div class="p-4 rounded-default bg-yellow-50 border border-yellow-200
+                dark:bg-yellow-900/20 dark:border-yellow-800 mb-6">
+        <div class="flex items-start gap-2">
+            <span class="material-symbols-outlined text-yellow-600 mt-0.5">warning</span>
+            <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                Select the primary asset to keep. The other asset will be merged into it and disposed.
+                This action cannot be undone.
+            </span>
+        </div>
     </div>
-    {% for asset in assets %}
-    <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
-    {% endfor %}
-    <input type="hidden" name="action" value="{{ action }}">
-    <input type="hidden" name="apply" value="1">
-    <button type="submit" class="button">Merge Assets</button>
-    <a href="{% url 'admin:assets_asset_changelist' %}" class="button cancel-link">Cancel</a>
-</form>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <fieldset class="mb-6">
+            <legend class="block text-sm font-medium text-base-900 dark:text-base-100 mb-3">
+                Primary asset
+            </legend>
+            <div class="space-y-2">
+                {% for asset in assets %}
+                <label class="flex items-center gap-3 p-3 rounded-default border border-base-200
+                              dark:border-base-700 cursor-pointer
+                              hover:bg-base-50 dark:hover:bg-base-800 transition-colors
+                              has-[:checked]:border-primary-500 has-[:checked]:bg-primary-50
+                              dark:has-[:checked]:border-primary-600 dark:has-[:checked]:bg-primary-900/20">
+                    <input type="radio" name="primary" value="{{ asset.pk }}" required
+                           class="h-4 w-4 border-base-300 text-primary-600
+                                  focus:ring-primary-500 dark:border-base-600 dark:bg-base-700">
+                    <div>
+                        <span class="text-sm font-medium text-base-900 dark:text-base-100">{{ asset.name }}</span>
+                        <span class="text-sm text-base-500 dark:text-base-400 ml-1">({{ asset.barcode }})</span>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+
+        {% for asset in assets %}
+        <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="apply" value="1">
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="px-4 py-2 bg-red-600 text-white rounded-default
+                           font-medium hover:bg-red-700 transition-colors">
+                Merge Assets
+            </button>
+            <a href="{% url 'admin:assets_asset_changelist' %}"
+               class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+                      font-medium hover:bg-base-200 transition-colors
+                      dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
 {% endblock %}

@@ -17603,7 +17603,7 @@ class TestV593ThemeCSSProperties:
         """Base template should include brand CSS custom properties."""
         response = admin_client.get(reverse("assets:dashboard"))
         content = response.content.decode()
-        assert "--brand-primary" in content
+        assert "--color-brand-" in content
 
 
 @pytest.mark.django_db

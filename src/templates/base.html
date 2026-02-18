@@ -30,35 +30,21 @@
             }
         })();
     </script>
+    <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     {% if brand_css_properties %}
     <style>
       :root {
         {{ brand_css_properties|safe }}
       }
-      /* Brand utility classes mapped to CSS custom properties */
-      .bg-brand-primary { background-color: var(--brand-primary-500); }
-      .bg-brand-primary-light { background-color: var(--brand-primary-200); }
-      .bg-brand-primary-dark { background-color: var(--brand-primary-700); }
-      .text-brand-primary { color: var(--brand-primary-500); }
-      .text-brand-primary-light { color: var(--brand-primary-300); }
-      .text-brand-primary-dark { color: var(--brand-primary-700); }
-      .border-brand-primary { border-color: var(--brand-primary-500); }
-      .bg-brand-secondary { background-color: var(--brand-secondary-500); }
-      .text-brand-secondary { color: var(--brand-secondary-500); }
-      .bg-brand-accent { background-color: var(--brand-accent-500); }
-      .text-brand-accent { color: var(--brand-accent-500); }
-      .hover\:bg-brand-primary:hover { background-color: var(--brand-primary-400); }
-      .hover\:bg-brand-primary-dark:hover { background-color: var(--brand-primary-600); }
     </style>
     {% endif %}
-    <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     {% block extra_head %}{% endblock %}
 </head>
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans antialiased" hx-indicator="#htmx-indicator">
     <div class="fixed inset-0 texture-overlay"></div>
     <div class="fixed inset-0 spotlight-bg pointer-events-none"></div>
-    <div id="htmx-indicator" class="htmx-indicator fixed top-0 left-0 right-0 z-[100] h-1" style="display: none; background-color: var(--brand-primary-500, #f59e0b);"></div>
+    <div id="htmx-indicator" class="htmx-indicator fixed top-0 left-0 right-0 z-[100] h-1" style="display: none; background-color: var(--color-brand-500, #f59e0b);"></div>
 
     <div class="relative z-10 min-h-screen flex flex-col">
         {% if user.is_authenticated %}
@@ -66,7 +52,7 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6">
                 <div class="flex justify-between items-center h-16">
                     <a href="{% url 'assets:dashboard' %}" class="flex items-center gap-3 group">
-                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:animate-glow transition-all" style="background: linear-gradient(to bottom right, var(--brand-primary-500, #f59e0b), var(--brand-primary-600, #d97706))">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg group-hover:animate-glow transition-all" style="background: linear-gradient(to bottom right, var(--color-brand-500, #f59e0b), var(--color-brand-600, #d97706))">
                             <svg class="w-5 h-5 text-stage-900" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                             </svg>
@@ -122,7 +108,7 @@
 
                     <div class="flex items-center gap-3">
                         {% if can_capture %}
-                        <a href="{% url 'assets:quick_capture' %}" class="hidden sm:flex items-center gap-2 bg-brand-primary hover:bg-brand-primary text-stage-900 px-4 py-2 rounded-lg text-sm font-medium btn-press transition-all" style="background-color: var(--brand-primary-500, #f59e0b)">
+                        <a href="{% url 'assets:quick_capture' %}" class="hidden sm:flex items-center gap-2 bg-brand-primary hover:bg-brand-primary text-stage-900 px-4 py-2 rounded-lg text-sm font-medium btn-press transition-all" style="background-color: var(--color-brand-500, #f59e0b)">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
@@ -153,7 +139,7 @@
                 <div id="mobile-menu" class="mobile-menu md:hidden border-t border-stage-200 dark:border-white/5" hx-boost="true">
                     <div class="py-3 space-y-1">
                         {% if can_capture %}
-                        <a href="{% url 'assets:quick_capture' %}" class="block px-4 py-2.5 text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
+                        <a href="{% url 'assets:quick_capture' %}" class="block px-4 py-2.5 text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
                             <span class="flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -165,7 +151,7 @@
                         <a href="{% url 'assets:dashboard' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Dashboard</a>
                         <a href="{% url 'assets:asset_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Assets</a>
                         {% if can_capture %}
-                        <a href="{% url 'assets:scan' %}" class="block px-4 py-2.5 text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
+                        <a href="{% url 'assets:scan' %}" class="block px-4 py-2.5 text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
                             <span class="flex items-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
@@ -209,7 +195,7 @@
             {% if messages %}
             <div class="mb-6 space-y-3 animate-slide-down">
                 {% for message in messages %}
-                <div class="flex items-start gap-3 p-4 rounded-xl backdrop-blur-sm {% if message.tags == 'error' %}bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300{% elif message.tags == 'success' %}bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-300{% else %}bg-spotlight-500/10 border border-spotlight-500/20 text-spotlight-600 dark:text-spotlight-300{% endif %}">
+                <div class="flex items-start gap-3 p-4 rounded-xl backdrop-blur-sm {% if message.tags == 'error' %}bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300{% elif message.tags == 'success' %}bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-300{% else %}bg-brand-500/10 border border-brand-500/20 text-brand-600 dark:text-brand-300{% endif %}">
                     {% if message.tags == 'error' %}
                     <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>

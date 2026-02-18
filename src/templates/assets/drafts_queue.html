@@ -14,7 +14,7 @@
             <h1 class="font-display text-3xl font-bold">Drafts Queue</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ page_obj.paginator.count }} draft asset{{ page_obj.paginator.count|pluralize }} awaiting review</p>
         </div>
-        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -28,7 +28,7 @@
         <!-- Bulk action bar -->
         <div class="flex items-center gap-3 bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-3 mb-3">
             <label class="flex items-center gap-2 text-sm text-stage-600 dark:text-cream/70 cursor-pointer">
-                <input type="checkbox" id="select-all" class="rounded border-stage-300 dark:border-white/20 text-spotlight-500 focus:ring-spotlight-500">
+                <input type="checkbox" id="select-all" class="rounded border-stage-300 dark:border-white/20 text-brand-500 focus:ring-brand-500">
                 <span>Select All</span>
             </label>
             <select name="action" class="form-input rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm bg-stage-100 dark:bg-stage-700 border-stage-200 dark:border-white/10">
@@ -36,7 +36,7 @@
                 <option value="activate">Activate Selected</option>
                 <option value="delete">Dispose Selected</option>
             </select>
-            <button type="submit" class="px-4 py-1.5 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
+            <button type="submit" class="px-4 py-1.5 bg-brand-500 hover:bg-brand-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
                 Apply
             </button>
         </div>
@@ -46,7 +46,7 @@
             <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4 card-hover">
                 <div class="flex items-start gap-4">
                     <div class="flex items-center pt-1 flex-shrink-0">
-                        <input type="checkbox" name="selected" value="{{ asset.pk }}" class="bulk-checkbox rounded border-stage-300 dark:border-white/20 text-spotlight-500 focus:ring-spotlight-500">
+                        <input type="checkbox" name="selected" value="{{ asset.pk }}" class="bulk-checkbox rounded border-stage-300 dark:border-white/20 text-brand-500 focus:ring-brand-500">
                     </div>
                     {% if asset.primary_image %}
                     <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" alt="{{ asset.name }}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
@@ -62,11 +62,11 @@
                         <div class="flex items-start justify-between gap-2">
                             <div>
                                 <h3 class="font-medium text-stage-900 dark:text-cream truncate">
-                                    <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                                    <a href="{% url 'assets:asset_detail' asset.pk %}" class="hover:text-brand-400 transition-colors">{{ asset.name }}</a>
                                 </h3>
                                 <p class="text-sm text-stage-500 dark:text-cream/40 font-mono">{{ asset.barcode }}</p>
                             </div>
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-spotlight-500/10 text-spotlight-400 border border-spotlight-500/20 flex-shrink-0">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-500/10 text-brand-400 border border-brand-500/20 flex-shrink-0">
                                 Draft
                             </span>
                             {% if asset.images.all %}
@@ -140,7 +140,7 @@
         </svg>
         <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70 mb-2">No drafts yet</h3>
         <p class="text-stage-500 dark:text-cream/40 mb-6">Start capturing assets to see them here.</p>
-        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:quick_capture' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-5 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>

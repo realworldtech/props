@@ -28,7 +28,7 @@
         </div>
         <div class="flex gap-3 mt-3">
             <a href="{{ just_created.get_absolute_url }}" class="text-emerald-400 text-sm hover:text-emerald-600 dark:text-emerald-300 transition-colors">View Asset</a>
-            <a href="{% url 'assets:quick_capture' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">Capture Another</a>
+            <a href="{% url 'assets:quick_capture' %}" class="text-brand-400 text-sm hover:text-brand-600 dark:text-brand-300 transition-colors">Capture Another</a>
         </div>
     </div>
     {% endif %}
@@ -82,19 +82,19 @@
                 <label class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Enter barcode or NFC tag ID</label>
                 <div class="flex gap-2">
                     <input type="text" id="scan-text-input" class="form-input flex-1 rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Scan or type code..." autofocus>
-                    <button type="button" id="scan-apply-btn" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">Apply</button>
+                    <button type="button" id="scan-apply-btn" class="bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">Apply</button>
                     <button type="button" id="scan-cancel-btn" class="bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 px-3 py-2.5 rounded-lg text-sm transition-colors">Cancel</button>
                 </div>
             </div>
         </div>
 
         <div id="scan-result" class="hidden bg-stage-100 dark:bg-stage-700 rounded-lg p-3 text-sm text-stage-600 dark:text-cream/70">
-            <span>Scanned: </span><span id="scan-code" class="font-mono text-spotlight-400"></span>
+            <span>Scanned: </span><span id="scan-code" class="font-mono text-brand-400"></span>
         </div>
 
         <!-- Submit -->
         <button type="submit"
-            class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3.5 rounded-lg text-base font-semibold btn-press transition-all">
+            class="w-full bg-brand-500 hover:bg-brand-400 text-stage-900 py-3.5 rounded-lg text-base font-semibold btn-press transition-all">
             Capture Asset
         </button>
     </form>

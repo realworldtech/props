@@ -1,19 +1,55 @@
 {% extends "admin/base_site.html" %}
+
 {% block content %}
-<form method="post">
-    {% csrf_token %}
-    <p>Are you sure you want to {{ action_label }} the following {{ users.count }} user(s)?</p>
-    <ul>
+<div class="bg-white dark:bg-base-900 rounded-default shadow-sm p-6 max-w-2xl">
+    <h2 class="text-lg font-semibold text-base-900 dark:text-base-100 mb-1">
+        {{ title }}
+    </h2>
+
+    <div class="p-4 rounded-default bg-yellow-50 border border-yellow-200
+                dark:bg-yellow-900/20 dark:border-yellow-800 mb-6">
+        <div class="flex items-center">
+            <span class="material-symbols-outlined text-yellow-600 mr-2">warning</span>
+            <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                Are you sure you want to {{ action_label }} the following {{ users.count }} user{{ users.count|pluralize }}?
+            </span>
+        </div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="mb-6">
+            <ul class="space-y-1">
+                {% for user in users %}
+                <li class="flex items-center gap-2 text-sm text-base-700 dark:text-base-300">
+                    <span class="material-symbols-outlined text-base-400 text-lg">person</span>
+                    <span class="font-medium">{{ user.username }}</span>
+                    <span class="text-base-500 dark:text-base-400">({{ user.email }})</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
         {% for user in users %}
-        <li>{{ user.username }} ({{ user.email }})</li>
+        <input type="hidden" name="_selected_action" value="{{ user.pk }}">
         {% endfor %}
-    </ul>
-    {% for user in users %}
-    <input type="hidden" name="_selected_action" value="{{ user.pk }}">
-    {% endfor %}
-    <input type="hidden" name="action" value="{{ action }}">
-    <input type="hidden" name="apply" value="1">
-    <button type="submit" class="button">Confirm</button>
-    <a href="{% url 'admin:accounts_customuser_changelist' %}" class="button cancel-link">Cancel</a>
-</form>
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="apply" value="1">
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="px-4 py-2 bg-red-600 text-white rounded-default
+                           font-medium hover:bg-red-700 transition-colors">
+                Confirm
+            </button>
+            <a href="{% url 'admin:accounts_customuser_changelist' %}"
+               class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+                      font-medium hover:bg-base-200 transition-colors
+                      dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
 {% endblock %}

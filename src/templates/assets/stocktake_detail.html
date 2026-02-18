@@ -25,7 +25,7 @@
             </div>
         </div>
         <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 px-5 py-3 text-center">
-            <div class="font-display text-2xl font-bold text-spotlight-400">{{ confirmed_ids|length }} <span class="text-stage-500 dark:text-cream/30">/</span> {{ expected|length }}</div>
+            <div class="font-display text-2xl font-bold text-brand-400">{{ confirmed_ids|length }} <span class="text-stage-500 dark:text-cream/30">/</span> {{ expected|length }}</div>
             <div class="text-stage-500 dark:text-cream/50 text-xs mt-0.5">Confirmed</div>
         </div>
     </div>
@@ -36,7 +36,7 @@
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-medium text-stage-800 dark:text-cream/90">Scan or Enter Asset Code</h2>
             <a href="{% url 'assets:quick_capture' %}?location={{ session.location.pk }}"
-               class="inline-flex items-center gap-1.5 text-sm text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">
+               class="inline-flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-600 dark:text-brand-300 transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
@@ -48,7 +48,7 @@
             <input type="text" name="code" id="scan-input" autofocus
                 class="form-input flex-1 rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream"
                 placeholder="Scan barcode or enter asset code...">
-            <button type="submit" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-2.5 rounded-lg font-semibold btn-press transition-all">
+            <button type="submit" class="bg-brand-500 hover:bg-brand-400 text-stage-900 px-6 py-2.5 rounded-lg font-semibold btn-press transition-all">
                 Confirm
             </button>
         </form>
@@ -74,7 +74,7 @@
                     <form method="post" action="{% url 'assets:stocktake_confirm' session.pk %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="asset_id" value="{{ asset.pk }}">
-                        <button type="submit" class="w-6 h-6 rounded-full border-2 border-cream/20 hover:border-spotlight-400 transition-colors" title="Confirm this asset"></button>
+                        <button type="submit" class="w-6 h-6 rounded-full border-2 border-cream/20 hover:border-brand-400 transition-colors" title="Confirm this asset"></button>
                     </form>
                     {% else %}
                     <div class="w-6 h-6 rounded-full border-2 border-cream/20"></div>
@@ -126,7 +126,7 @@
         <form method="post" action="{% url 'assets:stocktake_complete' session.pk %}" class="flex-1" onsubmit="return confirm('Are you sure you want to complete this stocktake?')">
             {% csrf_token %}
             <input type="hidden" name="action" value="complete">
-            <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+            <button type="submit" class="w-full bg-brand-500 hover:bg-brand-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
                 Complete Stocktake
             </button>
         </form>

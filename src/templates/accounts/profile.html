@@ -82,7 +82,7 @@
     <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="font-display text-xl font-semibold">My Borrowed Items</h2>
-            <a href="{% url 'assets:my_borrowed_items' %}" class="text-spotlight-400 text-sm hover:text-spotlight-600 dark:text-spotlight-300 transition-colors">View all</a>
+            <a href="{% url 'assets:my_borrowed_items' %}" class="text-brand-400 text-sm hover:text-brand-600 dark:text-brand-300 transition-colors">View all</a>
         </div>
         <div class="space-y-2">
             {% for asset in borrowed_assets %}
@@ -102,7 +102,7 @@
             {% for tx in recent_transactions %}
             <div class="flex items-center gap-3 text-sm">
                 <span class="text-stage-600 dark:text-cream/70">{{ tx.get_action_display }}</span>
-                <a href="{{ tx.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ tx.asset.name }}</a>
+                <a href="{{ tx.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-brand-400 transition-colors">{{ tx.asset.name }}</a>
                 <span class="text-stage-500 dark:text-cream/30 text-xs ml-auto">{{ tx.timestamp|timesince }} ago</span>
             </div>
             {% endfor %}

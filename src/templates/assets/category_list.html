@@ -14,7 +14,7 @@
             <h1 class="font-display text-3xl font-bold">Categories</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ categories|length }} categor{{ categories|length|pluralize:"y,ies" }}</p>
         </div>
-        <a href="{% url 'assets:category_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:category_create' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Category
         </a>
@@ -33,7 +33,7 @@
                 <div class="flex items-start justify-between">
                     <div class="flex items-start gap-3">
                         <div class="w-10 h-10 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center flex-shrink-0">
-                            <span class="material-symbols-outlined {% if category.icon %}text-spotlight-400{% else %}text-stage-500 dark:text-cream/30{% endif %}" style="font-size:20px">{{ category.icon|default:"category" }}</span>
+                            <span class="material-symbols-outlined {% if category.icon %}text-brand-400{% else %}text-stage-500 dark:text-cream/30{% endif %}" style="font-size:20px">{{ category.icon|default:"category" }}</span>
                         </div>
                         <div>
                         <h3 class="font-medium text-stage-900 dark:text-cream">{{ category.name }}</h3>

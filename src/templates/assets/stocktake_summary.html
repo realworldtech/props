@@ -36,7 +36,7 @@
             {% for asset in missing_assets %}
             <div class="flex items-center justify-between p-3 rounded-lg bg-red-500/5 border border-red-500/10">
                 <div>
-                    <a href="{{ asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                    <a href="{{ asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-brand-400 transition-colors">{{ asset.name }}</a>
                     <span class="text-stage-500 dark:text-cream/40 text-xs font-mono ml-2">{{ asset.barcode }}</span>
                 </div>
                 <span class="text-red-400 text-xs">Not found</span>
@@ -53,7 +53,7 @@
             {% for asset in unexpected_assets %}
             <div class="flex items-center justify-between p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/10">
                 <div>
-                    <a href="{{ asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ asset.name }}</a>
+                    <a href="{{ asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-brand-400 transition-colors">{{ asset.name }}</a>
                     <span class="text-stage-500 dark:text-cream/40 text-xs font-mono ml-2">{{ asset.barcode }}</span>
                 </div>
                 <span class="text-yellow-400 text-xs">Not expected here</span>

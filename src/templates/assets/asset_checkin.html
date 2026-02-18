@@ -15,7 +15,7 @@
         <h1 class="font-display text-2xl font-bold">Check In Asset</h1>
         <p class="text-stage-500 dark:text-cream/50 mt-1">{{ asset.name }} &middot; <span class="font-mono">{{ asset.barcode }}</span></p>
         {% if asset.checked_out_to %}
-        <p class="text-spotlight-400 text-sm mt-2">Currently with: {{ asset.checked_out_to.get_display_name }}</p>
+        <p class="text-brand-400 text-sm mt-2">Currently with: {{ asset.checked_out_to.get_display_name }}</p>
         {% endif %}
     </div>
 
@@ -34,7 +34,7 @@
                         <span class="text-stage-900 dark:text-cream">
                             #{{ serial.serial_number }}
                             {% if serial.barcode %}<span class="font-mono text-stage-500 dark:text-cream/50 text-xs ml-1">{{ serial.barcode }}</span>{% endif %}
-                            {% if serial.checked_out_to %}<span class="text-xs text-spotlight-400 ml-1">(with {{ serial.checked_out_to.get_display_name }})</span>{% endif %}
+                            {% if serial.checked_out_to %}<span class="text-xs text-brand-400 ml-1">(with {{ serial.checked_out_to.get_display_name }})</span>{% endif %}
                         </span>
                     </label>
                     {% endfor %}
@@ -54,7 +54,7 @@
 
             <div>
                 <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="set_home_location" value="1" class="w-4 h-4 rounded border-stage-300 dark:border-white/20 bg-stage-100 dark:bg-stage-700 text-spotlight-500 focus:ring-spotlight-500 focus:ring-offset-0">
+                    <input type="checkbox" name="set_home_location" value="1" class="w-4 h-4 rounded border-stage-300 dark:border-white/20 bg-stage-100 dark:bg-stage-700 text-brand-500 focus:ring-brand-500 focus:ring-offset-0">
                     <span class="text-sm text-stage-600 dark:text-cream/70">Set this as the asset's home location</span>
                 </label>
             </div>

@@ -1,20 +1,63 @@
 {% extends "admin/base_site.html" %}
+
 {% block content %}
-<form method="post">
-    {% csrf_token %}
-    <p>Remove {{ users.count }} user(s) from department:</p>
-    <select name="department" required>
-        <option value="">-- Select department --</option>
-        {% for dept in departments %}
-        <option value="{{ dept.pk }}">{{ dept.name }}</option>
+<div class="bg-white dark:bg-base-900 rounded-default shadow-sm p-6 max-w-2xl">
+    <h2 class="text-lg font-semibold text-base-900 dark:text-base-100 mb-1">
+        {{ title }}
+    </h2>
+    <p class="text-sm text-base-600 dark:text-base-400 mb-6">
+        Select a department to remove {{ users.count }} selected user{{ users.count|pluralize }} from.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-base-900 dark:text-base-100 mb-1">
+                Department
+            </label>
+            <select name="department" required
+                    class="w-full px-3 py-2 border border-base-200 rounded-default
+                           bg-white text-base-900 text-sm appearance-none
+                           focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600
+                           dark:bg-base-900 dark:border-base-700 dark:text-base-100">
+                <option value="">-- Select department --</option>
+                {% for dept in departments %}
+                <option value="{{ dept.pk }}">{{ dept.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <details class="mb-6">
+            <summary class="text-sm text-base-500 dark:text-base-400 cursor-pointer hover:text-base-700 dark:hover:text-base-300">
+                Show selected users ({{ users.count }})
+            </summary>
+            <ul class="mt-2 text-sm text-base-600 dark:text-base-400 list-disc list-inside">
+                {% for user in users %}
+                <li>{{ user.username }} ({{ user.email }})</li>
+                {% endfor %}
+            </ul>
+        </details>
+
+        {% for user in users %}
+        <input type="hidden" name="_selected_action" value="{{ user.pk }}">
         {% endfor %}
-    </select>
-    {% for user in users %}
-    <input type="hidden" name="_selected_action" value="{{ user.pk }}">
-    {% endfor %}
-    <input type="hidden" name="action" value="{{ action }}">
-    <input type="hidden" name="apply" value="1">
-    <button type="submit" class="button">Remove from Department</button>
-    <a href="{% url 'admin:accounts_customuser_changelist' %}" class="button cancel-link">Cancel</a>
-</form>
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="apply" value="1">
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="px-4 py-2 bg-red-600 text-white rounded-default
+                           font-medium hover:bg-red-700 transition-colors">
+                Remove from Department
+            </button>
+            <a href="{% url 'admin:accounts_customuser_changelist' %}"
+               class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+                      font-medium hover:bg-base-200 transition-colors
+                      dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
 {% endblock %}

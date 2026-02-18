@@ -12,14 +12,14 @@
     --color-stage-800: #1a1a2e;
     --color-stage-900: #0f0f1a;
 
-    --color-spotlight-50: #fffbeb;
-    --color-spotlight-100: #fef3c7;
-    --color-spotlight-200: #fde68a;
-    --color-spotlight-300: #fcd34d;
-    --color-spotlight-400: #fbbf24;
-    --color-spotlight-500: #f59e0b;
-    --color-spotlight-600: #d97706;
-    --color-spotlight-700: #b45309;
+    --color-brand-50: #fffbeb;
+    --color-brand-100: #fef3c7;
+    --color-brand-200: #fde68a;
+    --color-brand-300: #fcd34d;
+    --color-brand-400: #fbbf24;
+    --color-brand-500: #f59e0b;
+    --color-brand-600: #d97706;
+    --color-brand-700: #b45309;
 
     --color-cream: #faf7f2;
     --color-velvet: #8b2635;
@@ -59,13 +59,13 @@
 .dark ::-webkit-scrollbar { width: 8px; height: 8px; }
 .dark ::-webkit-scrollbar-track { background: #1a1a2e; }
 .dark ::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 4px; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
+.dark ::-webkit-scrollbar-thumb:hover { background: var(--color-brand-500); }
 
 /* Light mode scrollbar */
 :root:not(.dark) ::-webkit-scrollbar { width: 8px; height: 8px; }
 :root:not(.dark) ::-webkit-scrollbar-track { background: #f0ede8; }
 :root:not(.dark) ::-webkit-scrollbar-thumb { background: #c4bfb6; border-radius: 4px; }
-:root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #d97706; }
+:root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: var(--color-brand-600); }
 
 .texture-overlay {
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
@@ -75,22 +75,22 @@
 :root:not(.dark) .texture-overlay { opacity: 0.015; }
 
 .dark .spotlight-bg {
-    background: radial-gradient(ellipse at top, rgba(245, 158, 11, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(139, 38, 53, 0.05) 0%, transparent 40%);
+    background: radial-gradient(ellipse at top, color-mix(in srgb, var(--color-brand-500) 8%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, color-mix(in srgb, var(--color-velvet) 5%, transparent) 0%, transparent 40%);
 }
 :root:not(.dark) .spotlight-bg {
-    background: radial-gradient(ellipse at top, rgba(245, 158, 11, 0.04) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(139, 38, 53, 0.02) 0%, transparent 40%);
+    background: radial-gradient(ellipse at top, color-mix(in srgb, var(--color-brand-500) 4%, transparent) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, color-mix(in srgb, var(--color-velvet) 2%, transparent) 0%, transparent 40%);
 }
 
 .card-hover { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 .dark .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(245, 158, 11, 0.1);
+    box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px color-mix(in srgb, var(--color-brand-500) 10%, transparent);
 }
 :root:not(.dark) .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(245, 158, 11, 0.15);
+    box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.1), 0 0 0 1px color-mix(in srgb, var(--color-brand-500) 15%, transparent);
 }
 
 .btn-press:active { transform: scale(0.98); }
@@ -103,7 +103,7 @@
     left: 50%;
     width: 0;
     height: 2px;
-    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+    background: linear-gradient(90deg, var(--color-brand-500), var(--color-brand-400));
     transition: all 0.3s ease;
     transform: translateX(-50%);
     border-radius: 1px;
@@ -116,8 +116,8 @@
 }
 .dark .form-input:focus {
     background: rgba(255, 255, 255, 0.08);
-    border-color: #f59e0b;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+    border-color: var(--color-brand-500);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 10%, transparent);
 }
 .dark .form-input::placeholder { color: rgba(255, 255, 255, 0.3); }
 
@@ -127,8 +127,8 @@
 }
 :root:not(.dark) .form-input:focus {
     background: rgba(0, 0, 0, 0.02);
-    border-color: #d97706;
-    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+    border-color: var(--color-brand-600);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-600) 10%, transparent);
 }
 :root:not(.dark) .form-input::placeholder { color: rgba(0, 0, 0, 0.35); }
 

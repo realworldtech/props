@@ -102,6 +102,23 @@ Never hardcode domains, email addresses, or deployment-specific values — alway
 
 This project follows a strict spec-first workflow. The specification documents may live in a separate private repository but be included in the working tree (e.g. as a git submodule or symlinked `docs/spec/` directory).
 
+### Issues Before Implementation
+
+When a user requests a change, feature, or improvement (e.g. "hey, can we do X?"), **encourage them to create a GitHub issue first** before jumping into code. Suggest it — don't gate on it.
+
+1. **Start a brief discovery conversation** to understand the request. Ask about:
+   - What they want and why (the use case / problem being solved)
+   - Whether this is a bug, a new feature, or a change to existing behaviour
+   - Whether they think it fits within current spec, extends it, or changes it (mirrors the feature request template's "Spec Consideration" section)
+   - Any relevant context — affected areas of the app, edge cases, urgency
+2. **Suggest creating an issue** using the repo's templates (`.github/ISSUE_TEMPLATE/`):
+   - *Bug Report* — description, reproduction steps, expected vs actual, environment, logs
+   - *Feature Request* — description, use case, proposed approach, spec consideration
+3. **Offer to draft and file it** via `gh issue create`, or present it for the user to file manually.
+4. If the user says "nah, just do it" — that's fine, proceed directly. The goal is to encourage the habit, not block progress.
+
+Changes become issues before they become changes — but the user always has the final say.
+
 ### Preferred Skills
 
 - **`/implement`** — Use for all implementation work. Plans from the spec, tracks progress, and verifies against requirements. Available at: https://github.com/realworldtech/claude-implement-skill

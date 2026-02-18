@@ -29,7 +29,7 @@
     <!-- Camera Scanner -->
     <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-4">
         <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-spotlight-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
@@ -44,7 +44,7 @@
         </div>
 
         <div class="flex gap-3">
-            <button type="button" id="start-btn" onclick="startScanner()" class="flex-1 flex items-center justify-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-3 rounded-lg font-medium btn-press transition-all">
+            <button type="button" id="start-btn" onclick="startScanner()" class="flex-1 flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-3 rounded-lg font-medium btn-press transition-all">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -68,7 +68,7 @@
             <input type="text" id="scan-input" placeholder="Scan or type code..."
                 class="form-input flex-1 rounded-lg px-4 py-3 text-stage-900 dark:text-cream text-lg font-mono"
                 autofocus>
-            <button type="button" onclick="doLookup()" class="bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-6 py-3 rounded-lg font-medium btn-press transition-all">
+            <button type="button" onclick="doLookup()" class="bg-brand-500 hover:bg-brand-400 text-stage-900 px-6 py-3 rounded-lg font-medium btn-press transition-all">
                 Look Up
             </button>
         </div>
@@ -90,7 +90,7 @@
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                 </svg>
                 <h3 class="text-lg font-medium text-emerald-600 dark:text-emerald-300">Asset Found</h3>
-                <span class="draft-badge text-xs bg-spotlight-500/20 text-spotlight-400 px-2 py-0.5 rounded-full hidden">Draft</span>
+                <span class="draft-badge text-xs bg-brand-500/20 text-brand-400 px-2 py-0.5 rounded-full hidden">Draft</span>
             </div>
             <dl class="space-y-2 text-sm mb-4">
                 <div class="flex justify-between">
@@ -113,13 +113,13 @@
     </template>
 
     <template id="tpl-not-found">
-        <div class="bg-spotlight-500/10 border border-spotlight-500/20 rounded-xl p-6 text-center">
-            <svg class="w-10 h-10 mx-auto text-spotlight-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="bg-brand-500/10 border border-brand-500/20 rounded-xl p-6 text-center">
+            <svg class="w-10 h-10 mx-auto text-brand-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <h3 class="text-lg font-medium text-spotlight-600 dark:text-spotlight-300 mb-2">Not Found</h3>
+            <h3 class="text-lg font-medium text-brand-600 dark:text-brand-300 mb-2">Not Found</h3>
             <p class="text-stage-500 dark:text-cream/50 text-sm mb-4">No asset matches "<span class="font-mono result-code"></span>"</p>
-            <a href="#" class="result-capture-link inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <a href="#" class="result-capture-link inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
@@ -139,7 +139,7 @@
 
     <!-- Loading -->
     <div id="scan-loading" class="hidden text-center py-8">
-        <div class="inline-block w-8 h-8 border-2 border-spotlight-500/30 border-t-spotlight-500 rounded-full animate-spin"></div>
+        <div class="inline-block w-8 h-8 border-2 border-brand-500/30 border-t-brand-500 rounded-full animate-spin"></div>
         <p class="text-stage-500 dark:text-cream/50 text-sm mt-3">Looking up...</p>
     </div>
 
@@ -176,8 +176,8 @@ function updateScannerStatus(text, color) {
     while (el.firstChild) el.removeChild(el.firstChild);
     const dot = document.createElement('span');
     dot.className = 'w-2 h-2 rounded-full';
-    if (color === 'spotlight') {
-        dot.classList.add('bg-spotlight-400', 'animate-pulse');
+    if (color === 'brand') {
+        dot.classList.add('bg-brand-400', 'animate-pulse');
     } else {
         dot.classList.add('bg-' + color + '-400');
     }
@@ -201,7 +201,7 @@ function startScanner() {
         },
         () => {}
     ).then(() => {
-        updateScannerStatus('Scanning... Point camera at barcode', 'spotlight');
+        updateScannerStatus('Scanning... Point camera at barcode', 'brand');
     }).catch((err) => {
         updateScannerStatus('Camera error: ' + err, 'red');
         stopScanner();

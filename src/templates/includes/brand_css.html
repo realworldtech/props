@@ -1,0 +1,7 @@
+{% if brand_css_properties %}
+<style>
+  :root {
+    {{ brand_css_properties|safe }}
+  }
+</style>
+{% endif %}

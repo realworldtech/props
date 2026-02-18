@@ -12,9 +12,9 @@
 
         <!-- Action filter -->
         <div class="flex gap-2 flex-wrap">
-            <a href="{% url 'assets:transaction_list' %}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if not current_action %}bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30{% else %}bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream{% endif %}">All</a>
+            <a href="{% url 'assets:transaction_list' %}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if not current_action %}bg-brand-500/20 text-brand-400 border border-brand-500/30{% else %}bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream{% endif %}">All</a>
             {% for value, label in actions %}
-            <a href="?action={{ value }}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if current_action == value %}bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30{% else %}bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream{% endif %}">{{ label }}</a>
+            <a href="?action={{ value }}" class="px-3 py-1.5 rounded-lg text-sm transition-colors {% if current_action == value %}bg-brand-500/20 text-brand-400 border border-brand-500/30{% else %}bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream{% endif %}">{{ label }}</a>
             {% endfor %}
         </div>
     </div>
@@ -43,7 +43,7 @@
                 <input type="date" name="date_to" value="{{ date_to }}" class="form-input rounded-lg px-3 py-1.5 text-sm text-stage-900 dark:text-cream bg-stage-100 dark:bg-stage-700 border border-stage-200 dark:border-white/10">
             </div>
             <div>
-                <button type="submit" class="bg-spotlight-500/20 text-spotlight-400 border border-spotlight-500/30 px-4 py-1.5 rounded-lg text-sm hover:bg-spotlight-500/30 transition-colors">Filter</button>
+                <button type="submit" class="bg-brand-500/20 text-brand-400 border border-brand-500/30 px-4 py-1.5 rounded-lg text-sm hover:bg-brand-500/30 transition-colors">Filter</button>
             </div>
             {% if current_user_id or date_from or date_to %}
             <div>
@@ -81,7 +81,7 @@
                             </span>
                         </td>
                         <td class="px-4 py-3">
-                            <a href="{{ txn.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors">{{ txn.asset.name }}</a>
+                            <a href="{{ txn.asset.get_absolute_url }}" class="text-stage-900 dark:text-cream hover:text-brand-400 transition-colors">{{ txn.asset.name }}</a>
                         </td>
                         <td class="px-4 py-3 text-stage-500 dark:text-cream/50 hidden sm:table-cell">{% if txn.user %}{{ txn.user.get_display_name }}{% else %}-{% endif %}</td>
                         <td class="px-4 py-3 text-stage-500 dark:text-cream/40 text-xs hidden md:table-cell">

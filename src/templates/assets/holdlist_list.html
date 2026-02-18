@@ -9,7 +9,7 @@
             <h1 class="font-display text-3xl font-bold">Hold Lists</h1>
             <p class="text-stage-500 dark:text-cream/50 mt-1">{{ hold_lists|length }} list{{ hold_lists|length|pluralize }}</p>
         </div>
-        <a href="{% url 'assets:holdlist_create' %}" class="inline-flex items-center gap-2 bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+        <a href="{% url 'assets:holdlist_create' %}" class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-400 text-stage-900 px-4 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -18,11 +18,11 @@
     </div>
 
     <div class="flex flex-wrap gap-2">
-        <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if not current_status %}bg-spotlight-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
+        <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if not current_status %}bg-brand-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
             All
         </a>
         {% for s in statuses %}
-        <a href="?status={{ s.name }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if current_status == s.name %}bg-spotlight-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
+        <a href="?status={{ s.name }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-all {% if current_status == s.name %}bg-brand-500 text-stage-900{% else %}bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream{% endif %}">
             {{ s.name }}
         </a>
         {% endfor %}
@@ -43,7 +43,7 @@
                 {% for hl in hold_lists %}
                 <tr class="hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">
                     <td class="px-4 py-3">
-                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-spotlight-400 hover:text-spotlight-600 dark:text-spotlight-300 font-medium">
+                        <a href="{% url 'assets:holdlist_detail' hl.pk %}" class="text-brand-400 hover:text-brand-600 dark:text-brand-300 font-medium">
                             {{ hl.name }}
                         </a>
                     </td>
@@ -83,7 +83,7 @@
             {% endif %}
             {% for num in page_obj.paginator.page_range %}
                 {% if page_obj.number == num %}
-                <span class="px-3 py-1.5 rounded-lg bg-spotlight-500/20 text-spotlight-400 text-sm border border-spotlight-500/30">{{ num }}</span>
+                <span class="px-3 py-1.5 rounded-lg bg-brand-500/20 text-brand-400 text-sm border border-brand-500/30">{{ num }}</span>
                 {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
                 <a href="?{% for key, val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ num }}" class="px-3 py-1.5 rounded-lg bg-stage-100 dark:bg-stage-700 text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">{{ num }}</a>
                 {% endif %}

@@ -19,11 +19,12 @@
         })();
     </script>
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    {% include "includes/brand_css.html" %}
 </head>
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
                 {% if status == "verified" %}
                 <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
@@ -66,7 +67,7 @@
             <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Verification links are valid for 48 hours. Please request a new one.
             </p>
-            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
+            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-brand-500 hover:bg-brand-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
                 Resend Verification Email
             </a>
 
@@ -85,7 +86,7 @@
             <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Please check that you copied the full link from your email, or request a new one.
             </p>
-            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
+            <a href="{% url 'accounts:resend_verification' %}" class="inline-block bg-brand-500 hover:bg-brand-400 text-stage-900 font-semibold py-3 px-6 rounded-lg transition-all active:scale-[0.98]">
                 Resend Verification Email
             </a>
             {% endif %}

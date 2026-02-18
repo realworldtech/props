@@ -19,11 +19,12 @@
         })();
     </script>
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    {% include "includes/brand_css.html" %}
 </head>
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
@@ -35,7 +36,7 @@
             {% if sent %}
             <div class="text-center">
                 <div class="mb-4">
-                    <svg class="w-12 h-12 text-spotlight-600 dark:text-spotlight-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg class="w-12 h-12 text-brand-600 dark:text-brand-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
                     </svg>
                 </div>
@@ -55,10 +56,10 @@
                 <div>
                     <label for="id_email" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Email Address</label>
                     <input type="email" name="email" id="id_email" required
-                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-spotlight-500 focus:ring-2 focus:ring-spotlight-500/20 outline-none transition-all"
+                        class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
                         placeholder="you@example.com">
                 </div>
-                <button type="submit" class="w-full bg-spotlight-500 hover:bg-spotlight-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
+                <button type="submit" class="w-full bg-brand-500 hover:bg-brand-400 text-stage-900 font-semibold py-3 rounded-lg transition-all active:scale-[0.98]">
                     Resend Verification Email
                 </button>
             </form>

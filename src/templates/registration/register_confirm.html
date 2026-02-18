@@ -19,11 +19,12 @@
         })();
     </script>
     <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+    {% include "includes/brand_css.html" %}
 </head>
 <body class="bg-cream text-stage-900 dark:bg-stage-900 dark:text-cream min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-spotlight-500 to-spotlight-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <svg class="w-8 h-8 text-stage-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
@@ -35,7 +36,7 @@
             <p class="text-stage-600 dark:text-cream/70 mb-4">
                 A verification email has been sent to:
             </p>
-            <p class="text-spotlight-600 dark:text-spotlight-400 font-medium mb-6">{{ email }}</p>
+            <p class="text-brand-600 dark:text-brand-400 font-medium mb-6">{{ email }}</p>
             <p class="text-stage-500 dark:text-cream/50 text-sm mb-6">
                 Please check your inbox and click the verification link to complete your registration.
                 The link will expire in 48 hours.
@@ -45,7 +46,7 @@
             </p>
 
             <div class="border-t border-stage-200 dark:border-white/5 pt-6 space-y-3">
-                <a href="{% url 'accounts:resend_verification' %}" class="block text-sm text-spotlight-600 dark:text-spotlight-400 hover:text-spotlight-700 dark:hover:text-spotlight-500 font-medium transition-colors">
+                <a href="{% url 'accounts:resend_verification' %}" class="block text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-500 font-medium transition-colors">
                     Resend verification email
                 </a>
                 <a href="{% url 'accounts:login' %}" class="block text-sm text-stage-500 dark:text-cream/50 hover:text-stage-700 dark:hover:text-cream/70 transition-colors">

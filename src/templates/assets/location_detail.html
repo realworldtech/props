@@ -72,7 +72,7 @@
                         {% for asset in page_obj %}
                         <tr class="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
                             <td class="px-4 py-3">
-                                <a href="{% url 'assets:asset_detail' asset.pk %}" class="text-stage-900 dark:text-cream hover:text-spotlight-400 transition-colors font-medium">{{ asset.name }}</a>
+                                <a href="{% url 'assets:asset_detail' asset.pk %}" class="text-stage-900 dark:text-cream hover:text-brand-400 transition-colors font-medium">{{ asset.name }}</a>
                             </td>
                             <td class="px-4 py-3 font-mono text-stage-500 dark:text-cream/50 hidden sm:table-cell">{{ asset.barcode }}</td>
                             <td class="px-4 py-3 text-stage-500 dark:text-cream/50 hidden sm:table-cell">{% if asset.category %}{{ asset.category.name }}{% else %}-{% endif %}</td>
