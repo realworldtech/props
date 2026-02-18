@@ -2271,6 +2271,132 @@ class TestBulkUserActions:
                 "superuser" in log.first().change_message.lower()
             ), "LogEntry change_message must mention 'superuser'"
 
+    def test_remove_groups_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: remove_groups creates LogEntry for
+        each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.auth.models import Group
+
+        g, _ = Group.objects.get_or_create(name="Member")
+        for u in target_users:
+            u.groups.add(g)
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "remove_groups",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "groups": [g.pk],
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after remove_groups"
+            )
+
+    def test_clear_is_staff_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: clear_is_staff creates LogEntry for
+        each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+
+        for u in target_users:
+            u.is_staff = True
+            u.save(update_fields=["is_staff"])
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "clear_is_staff",
+                "_selected_action": [u.pk for u in target_users],
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after clear_is_staff"
+            )
+
+    def test_clear_is_superuser_creates_log_entries(
+        self, admin_client, target_users
+    ):
+        """S2.13.5-12 MUST: clear_is_superuser creates LogEntry
+        for each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+
+        for u in target_users:
+            u.is_superuser = True
+            u.save(update_fields=["is_superuser"])
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "clear_is_superuser",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after clear_is_superuser"
+            )
+
+    def test_assign_department_creates_log_entries(
+        self, admin_client, target_users, department
+    ):
+        """S2.13.5-12 MUST: assign_department creates LogEntry
+        for each modified user."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+
+        admin_client.post(
+            reverse(self.CHANGELIST_URL),
+            {
+                "action": "assign_department",
+                "_selected_action": [u.pk for u in target_users],
+                "apply": "1",
+                "department": department.pk,
+            },
+        )
+
+        for u in target_users:
+            log = LogEntry.objects.filter(
+                content_type__app_label="accounts",
+                content_type__model="customuser",
+                object_id=str(u.pk),
+                action_flag=CHANGE,
+            )
+            assert log.exists(), (
+                f"LogEntry must exist for user {u.username} "
+                f"after assign_department"
+            )
+
 
 # ============================================================
 # BATCH 5: S2.10.5 USER PROFILE GAP TESTS
