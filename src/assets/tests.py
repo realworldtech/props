@@ -20947,3 +20947,18 @@ class TestV230PaginationWithFilters:
         )
         assert response.status_code == 200
         assert "page_obj" in response.context
+
+
+@pytest.mark.django_db
+class TestSiteBrandingAdminFields:
+    """SiteBranding admin must expose colour customisation fields."""
+
+    def test_admin_includes_color_fields(self, admin_client):
+        """SiteBranding add page must show color fields."""
+        response = admin_client.get("/admin/assets/sitebranding/add/")
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "primary_color" in content
+        assert "secondary_color" in content
+        assert "accent_color" in content
+        assert "color_mode" in content

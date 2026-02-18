@@ -980,7 +980,15 @@ class HoldListStatusAdmin(ModelAdmin):
 @admin.register(SiteBranding)
 class SiteBrandingAdmin(ModelAdmin):
     list_display = ["__str__"]
-    fields = ["logo_light", "logo_dark", "favicon"]
+    fields = [
+        "logo_light",
+        "logo_dark",
+        "favicon",
+        "primary_color",
+        "secondary_color",
+        "accent_color",
+        "color_mode",
+    ]
 
     def has_add_permission(self, request):
         if SiteBranding.objects.exists():
