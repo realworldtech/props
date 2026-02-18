@@ -1214,6 +1214,375 @@ class TestUserDeletionWarning:
 
 
 # ============================================================
+# BATCH 4b: S2.13.5 CUSTOMUSER ADMIN LAYOUT TESTS
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestCustomUserAdminLayout:
+    """Tests for CustomUser admin layout per S2.13.5-04 through -08."""
+
+    # --- S2.13.5-04: UnfoldAdmin base class (MUST) ---
+
+    def test_admin_uses_unfold_model_admin(self):
+        """S2.13.5-04 MUST: CustomUserAdmin inherits from
+        unfold.admin.ModelAdmin (UnfoldAdmin)."""
+        from unfold.admin import ModelAdmin as UnfoldModelAdmin
+
+        from accounts.admin import CustomUserAdmin
+
+        assert issubclass(
+            CustomUserAdmin, UnfoldModelAdmin
+        ), "CustomUserAdmin must inherit from unfold.admin.ModelAdmin"
+
+    # --- S2.13.5-04: Tabbed layout (SHOULD) ---
+
+    def test_fieldsets_use_tab_classes(self):
+        """S2.13.5-04 SHOULD: All fieldsets use tab layout via
+        'tab' in classes."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        fieldsets = admin_obj.fieldsets
+        assert fieldsets, "fieldsets must not be empty"
+
+        tab_count = sum(
+            1 for _name, opts in fieldsets if "tab" in opts.get("classes", [])
+        )
+        # All fieldsets should be tabs
+        assert tab_count == len(fieldsets), (
+            f"All {len(fieldsets)} fieldsets should have 'tab' class, "
+            f"but only {tab_count} do"
+        )
+
+    def test_fieldsets_have_profile_tab(self):
+        """S2.13.5-04 SHOULD: Profile tab contains username, email,
+        display_name, phone_number, requested_department,
+        organisation."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        profile_fields = None
+        for name, opts in admin_obj.fieldsets:
+            if name and "profile" in name.lower():
+                profile_fields = opts.get("fields", ())
+                break
+
+        assert (
+            profile_fields is not None
+        ), "No fieldset with 'Profile' in its name found"
+        # Flatten nested tuples
+        flat = []
+        for f in profile_fields:
+            if isinstance(f, (list, tuple)):
+                flat.extend(f)
+            else:
+                flat.append(f)
+
+        expected = [
+            "username",
+            "email",
+            "display_name",
+            "phone_number",
+            "requested_department",
+            "organisation",
+        ]
+        for field in expected:
+            assert field in flat, f"Profile tab missing field: {field}"
+
+    def test_fieldsets_have_permissions_tab(self):
+        """S2.13.5-04 SHOULD: Permissions tab contains groups,
+        is_staff, is_superuser, user_permissions."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        perm_fields = None
+        for name, opts in admin_obj.fieldsets:
+            if name and "permission" in name.lower():
+                perm_fields = opts.get("fields", ())
+                break
+
+        assert (
+            perm_fields is not None
+        ), "No fieldset with 'Permission' in its name found"
+        flat = []
+        for f in perm_fields:
+            if isinstance(f, (list, tuple)):
+                flat.extend(f)
+            else:
+                flat.append(f)
+
+        expected = [
+            "groups",
+            "is_staff",
+            "is_superuser",
+            "user_permissions",
+        ]
+        for field in expected:
+            assert field in flat, f"Permissions tab missing field: {field}"
+
+    def test_fieldsets_have_activity_tab(self):
+        """S2.13.5-04 SHOULD: Activity tab contains last_login,
+        date_joined, approved_by, approved_at,
+        rejection_reason."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        activity_fields = None
+        for name, opts in admin_obj.fieldsets:
+            if name and "activity" in name.lower():
+                activity_fields = opts.get("fields", ())
+                break
+
+        assert (
+            activity_fields is not None
+        ), "No fieldset with 'Activity' in its name found"
+        flat = []
+        for f in activity_fields:
+            if isinstance(f, (list, tuple)):
+                flat.extend(f)
+            else:
+                flat.append(f)
+
+        expected = [
+            "last_login",
+            "date_joined",
+            "approved_by",
+            "approved_at",
+            "rejection_reason",
+        ]
+        for field in expected:
+            assert field in flat, f"Activity tab missing field: {field}"
+
+    # --- S2.13.5-05: List display columns (SHOULD) ---
+
+    def test_changelist_shows_username_column(self, admin_client, admin_user):
+        """S2.13.5-05 SHOULD: Changelist shows username column."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert admin_user.username in content
+
+    def test_changelist_shows_email_column(self, admin_client, admin_user):
+        """S2.13.5-05 SHOULD: Changelist shows email column."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert admin_user.email in content
+
+    def test_changelist_shows_display_name_column(self, admin_client, user):
+        """S2.13.5-05 SHOULD: Changelist shows display_name."""
+        user.display_name = "Visible Name"
+        user.save()
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert "Visible Name" in content
+
+    def test_changelist_shows_groups_summary(self, admin_client, user):
+        """S2.13.5-05 SHOULD: Changelist shows comma-separated
+        groups summary."""
+        from django.contrib.auth.models import Group
+
+        g1, _ = Group.objects.get_or_create(name="Member")
+        g2, _ = Group.objects.get_or_create(name="Viewer")
+        user.groups.set([g1, g2])
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        # Both group names should appear
+        assert "Member" in content
+        assert "Viewer" in content
+
+    def test_changelist_shows_department_column(
+        self, admin_client, user, department
+    ):
+        """S2.13.5-05 SHOULD: Changelist shows department."""
+        user.requested_department = department
+        user.save()
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert department.name in content
+
+    def test_changelist_shows_is_active_column(self, admin_client, admin_user):
+        """S2.13.5-05 SHOULD: Changelist renders is_active status."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        # Check list_display contains a reference to is_active
+        display_strs = [str(f) for f in admin_obj.list_display]
+        has_active = any("active" in s.lower() for s in display_strs)
+        assert has_active, "list_display must include an is_active column"
+
+    def test_changelist_shows_is_staff_column(self, admin_client, admin_user):
+        """S2.13.5-05 SHOULD: Changelist renders is_staff status."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        display_strs = [str(f) for f in admin_obj.list_display]
+        has_staff = any("staff" in s.lower() for s in display_strs)
+        assert has_staff, "list_display must include an is_staff column"
+
+    # --- S2.13.5-06: List filters (MUST) ---
+
+    def test_filter_by_is_active(self, admin_client, user):
+        """S2.13.5-06 MUST: Filter by is_active narrows list."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"is_active__exact": "1"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_filter_by_is_staff(self, admin_client, admin_user, user):
+        """S2.13.5-06 MUST: Filter by is_staff narrows list."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"is_staff__exact": "1"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert admin_user.username in content
+        # Non-staff user should not appear
+        assert user.username not in content
+
+    def test_filter_by_is_superuser(self, admin_client, admin_user, user):
+        """S2.13.5-06 MUST: Filter by is_superuser narrows list."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"is_superuser__exact": "1"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert admin_user.username in content
+        assert user.username not in content
+
+    def test_filter_by_groups(self, admin_client, user, admin_user):
+        """S2.13.5-06 MUST: Filter by groups narrows list."""
+        from django.contrib.auth.models import Group
+
+        member_group = Group.objects.get(name="Member")
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(
+            url, {"groups__id__exact": str(member_group.pk)}
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_filter_by_department(self, admin_client, user, department):
+        """S2.13.5-06 MUST: Filter by department narrows list."""
+        user.requested_department = department
+        user.save()
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(
+            url,
+            {"requested_department__id__exact": str(department.pk)},
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_list_filter_includes_is_superuser(self):
+        """S2.13.5-06 MUST: list_filter includes is_superuser."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        filter_strs = [str(f) for f in admin_obj.list_filter]
+        has_superuser = any("superuser" in s.lower() for s in filter_strs)
+        assert has_superuser, "list_filter must include is_superuser"
+
+    def test_list_filter_includes_department(self):
+        """S2.13.5-06 MUST: list_filter includes department."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        filter_strs = [str(f) for f in admin_obj.list_filter]
+        has_dept = any("department" in s.lower() for s in filter_strs)
+        assert has_dept, (
+            "list_filter must include department " "(requested_department)"
+        )
+
+    # --- S2.13.5-07: Search fields (MUST) ---
+
+    def test_search_by_username(self, admin_client, user):
+        """S2.13.5-07 MUST: Search by username returns user."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"q": "testus"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_search_by_email(self, admin_client, user):
+        """S2.13.5-07 MUST: Search by email returns user."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"q": "test@example"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_search_by_display_name(self, admin_client, user):
+        """S2.13.5-07 MUST: Search by display_name returns user."""
+        url = reverse("admin:accounts_customuser_changelist")
+        response = admin_client.get(url, {"q": "Test User"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert user.username in content
+
+    def test_search_fields_configured(self):
+        """S2.13.5-07 MUST: search_fields includes username, email,
+        display_name."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        for field in ("username", "email", "display_name"):
+            assert (
+                field in admin_obj.search_fields
+            ), f"search_fields must include {field}"
+
+    # --- S2.13.5-08: Department FK autocomplete (SHOULD) ---
+
+    def test_requested_department_autocomplete(self):
+        """S2.13.5-08 SHOULD: requested_department uses
+        autocomplete widget."""
+        from django.contrib.admin.sites import AdminSite
+
+        from accounts.admin import CustomUserAdmin
+        from accounts.models import CustomUser
+
+        admin_obj = CustomUserAdmin(CustomUser, AdminSite())
+        assert hasattr(
+            admin_obj, "autocomplete_fields"
+        ), "CustomUserAdmin must define autocomplete_fields"
+        assert "requested_department" in (admin_obj.autocomplete_fields), (
+            "autocomplete_fields must include " "requested_department"
+        )
+
+
+# ============================================================
 # BATCH 5: S2.10.5 USER PROFILE GAP TESTS
 # ============================================================
 

@@ -23,11 +23,17 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
         "display_user",
         "email",
         "display_groups",
-        "display_departments_list",
+        "display_department",
         "display_staff",
         "display_active",
     ]
-    list_filter = ["is_staff", "is_active", "groups"]
+    list_filter = [
+        "is_active",
+        "is_staff",
+        "is_superuser",
+        "groups",
+        "requested_department",
+    ]
     search_fields = [
         "username",
         "email",
@@ -36,23 +42,29 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
         "last_name",
     ]
     filter_horizontal = ["groups", "user_permissions"]
+    autocomplete_fields = ["requested_department"]
     fieldsets = (
-        (None, {"fields": ("username", "password")}),
         (
-            "Personal Info",
+            "Profile",
             {
+                "classes": ["tab"],
                 "fields": (
+                    "username",
+                    "password",
                     "display_name",
                     "first_name",
                     "last_name",
                     "email",
                     "phone_number",
-                )
+                    "requested_department",
+                    "organisation",
+                ),
             },
         ),
         (
             "Permissions",
             {
+                "classes": ["tab"],
                 "fields": (
                     "is_active",
                     "is_staff",
@@ -63,24 +75,27 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             },
         ),
         (
-            "Department Management",
+            "Activity",
             {
-                "fields": ("display_managed_departments",),
-                "description": (
-                    "Departments this user manages."
-                    " Edit from the Department admin."
+                "classes": ["tab"],
+                "fields": (
+                    "last_login",
+                    "date_joined",
+                    "approved_by",
+                    "approved_at",
+                    "rejection_reason",
+                    "display_managed_departments",
                 ),
             },
-        ),
-        (
-            "Important dates",
-            {"fields": ("last_login", "date_joined")},
         ),
     )
     readonly_fields = [
         "display_managed_departments",
         "last_login",
         "date_joined",
+        "approved_by",
+        "approved_at",
+        "rejection_reason",
     ]
     add_fieldsets = UserAdmin.add_fieldsets + (
         (
@@ -111,11 +126,10 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
             return ", ".join(g.name for g in groups)
         return "-"
 
-    @display(description="Departments")
-    def display_departments_list(self, obj):
-        depts = obj.managed_departments.all()
-        if depts:
-            return ", ".join(d.name for d in depts)
+    @display(description="Department")
+    def display_department(self, obj):
+        if obj.requested_department:
+            return obj.requested_department.name
         return "-"
 
     @display(description="Staff", boolean=True)
