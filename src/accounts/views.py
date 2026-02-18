@@ -474,7 +474,20 @@ def approve_user_view(request, user_pk):
         if dept_ids
         else []
     )
-    _send_approval_email(pending_user, group_name, dept_names)
+    try:
+        _send_approval_email(pending_user, group_name, dept_names)
+    except Exception:
+        logger.exception(
+            "Failed to send approval email to %s",
+            pending_user.email,
+        )
+        messages.warning(
+            request,
+            f"{pending_user.get_display_name()} has been approved"
+            f" as {group_name}, but the notification email"
+            f" could not be sent.",
+        )
+        return redirect("accounts:approval_queue")
 
     messages.success(
         request,
@@ -513,11 +526,25 @@ def reject_user_view(request, user_pk):
     )
 
     # Send rejection email (S2.15.5-02)
-    _send_rejection_email(pending_user)
+    try:
+        _send_rejection_email(pending_user)
+    except Exception:
+        logger.exception(
+            "Failed to send rejection email to %s",
+            pending_user.email,
+        )
+        messages.warning(
+            request,
+            f"{pending_user.get_display_name()}'s registration"
+            f" has been rejected, but the notification email"
+            f" could not be sent.",
+        )
+        return redirect("accounts:approval_queue")
 
     messages.success(
         request,
-        f"{pending_user.get_display_name()}'s registration has been rejected.",
+        f"{pending_user.get_display_name()}'s registration"
+        f" has been rejected.",
     )
     return redirect("accounts:approval_queue")
 

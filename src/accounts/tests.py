@@ -724,6 +724,62 @@ class TestApprovalQueue:
         assert pending.approved_at is not None
 
 
+class TestApprovalEmailFailure:
+    """Approval/rejection must succeed even when email fails."""
+
+    @patch(
+        "accounts.views._send_approval_email",
+        side_effect=Exception("SMTP down"),
+    )
+    def test_approve_succeeds_when_email_fails(
+        self, mock_email, admin_client, admin_user, db
+    ):
+        from django.contrib.auth.models import Group
+
+        Group.objects.get_or_create(name="Member")
+        pending = User.objects.create_user(
+            username="emailfail",
+            email="emailfail@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        response = admin_client.post(
+            reverse("accounts:approve_user", args=[pending.pk]),
+            {"role": "Member"},
+        )
+        assert response.status_code == 302
+        pending.refresh_from_db()
+        assert pending.is_active is True
+
+    @patch(
+        "accounts.views._send_rejection_email",
+        side_effect=Exception("SMTP down"),
+    )
+    def test_reject_succeeds_when_email_fails(
+        self, mock_email, admin_client, admin_user, db
+    ):
+        pending = User.objects.create_user(
+            username="rejectfail",
+            email="rejectfail@example.com",
+            password="pass123!",
+            is_active=False,
+        )
+        pending.email_verified = True
+        pending.save(update_fields=["email_verified"])
+
+        response = admin_client.post(
+            reverse("accounts:reject_user", args=[pending.pk]),
+            {"rejection_reason": "Not suitable"},
+        )
+        assert response.status_code == 302
+        pending.refresh_from_db()
+        assert pending.is_active is False
+        assert pending.rejection_reason == "Not suitable"
+
+
 class TestRejection:
     """S2.15.5: Rejection flow."""
 
