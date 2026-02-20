@@ -5,7 +5,7 @@ testpaths = ["src"]
 python_files = ["tests.py", "test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short -n auto"
+addopts = "-v --tb=short -n auto --cov=. --cov-report=term-missing:skip-covered"
 
 [tool.black]
 line-length = 79
@@ -18,7 +18,6 @@ known_django = ["django"]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
 
 [tool.coverage.run]
-source = ["src"]
 omit = [
     "*/migrations/*",
     "*/tests.py",

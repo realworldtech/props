@@ -50,4 +50,4 @@ isort
 pytest-django
 pytest-xdist
 factory-boy
-coverage
+pytest-cov

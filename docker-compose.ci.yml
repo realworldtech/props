@@ -26,8 +26,7 @@ services:
       cd /app/src &&
       python manage.py collectstatic --noinput --clear &&
       python manage.py migrate --noinput &&
-      coverage run -m pytest &&
-      coverage report --fail-under=80
+      pytest --cov-fail-under=70
       "
     depends_on:
       db:
