@@ -20,6 +20,8 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.html import format_html
 
+from assets.services.print_dispatch import dispatch_print_job
+
 from .models import (
     Asset,
     AssetImage,
@@ -330,6 +332,7 @@ class AssetAdmin(ModelAdmin):
     )
 
     actions_detail = ["print_label_action"]
+    actions = ["bulk_remote_print"]
 
     # --- Display methods ---
 
@@ -696,6 +699,43 @@ class AssetAdmin(ModelAdmin):
         "add_to_hold_list",
         "generate_kit_labels",
     ]
+
+    @action(description="Print to Remote Printer")
+    def bulk_remote_print(self, request, queryset):
+        """S2.4.5-11: Bulk print labels to a remote print client."""
+        client_pk = request.POST.get("client_pk")
+        printer_id = request.POST.get("printer_id", "")
+
+        try:
+            pc = PrintClient.objects.get(
+                pk=client_pk,
+                status="approved",
+                is_active=True,
+                is_connected=True,
+            )
+        except (PrintClient.DoesNotExist, ValueError, TypeError):
+            messages.error(
+                request,
+                "Print client not found or not connected.",
+            )
+            return
+
+        count = 0
+        for asset in queryset:
+            pr = PrintRequest.objects.create(
+                asset=asset,
+                print_client=pc,
+                printer_id=printer_id,
+                quantity=1,
+                requested_by=request.user,
+            )
+            dispatch_print_job(pr)
+            count += 1
+
+        messages.success(
+            request,
+            f"{count} label(s) sent to {pc.name}.",
+        )
 
     @action(
         description="Print Label",

@@ -13,6 +13,8 @@ import asyncio
 import hashlib
 import secrets
 import uuid
+from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from channels.db import database_sync_to_async
@@ -20,12 +22,16 @@ from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 
+from django.contrib import admin
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.contrib.sessions.backends.db import SessionStore
 from django.core.exceptions import ValidationError
+from django.test import RequestFactory
 from django.urls import path, reverse
 from django.utils import timezone
 
 from assets.consumers import PrintServiceConsumer
-from assets.models import PrintClient, PrintRequest
+from assets.models import Asset, PrintClient, PrintRequest
 
 # ---------------------------------------------------------------------------
 # §8.1.13-01 — PrintClient model tests
@@ -3550,3 +3556,214 @@ class TestRemotePrintSubmit:
         url = self._submit_url(asset.pk)
         response = client_logged_in.get(url)
         assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# §S2.4.5-11 — Bulk remote print admin action
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulkRemotePrintAction:
+    """S2.4.5-11: Bulk print to remote printer from Asset changelist."""
+
+    def _get_admin_obj(self):
+        from assets.admin import AssetAdmin
+
+        return AssetAdmin(Asset, admin.site)
+
+    def test_bulk_remote_print_creates_print_requests(self, admin_user, asset):
+        """Bulk action creates one PrintRequest per selected asset."""
+        pc = _make_approved_connected_client()
+        printer_id = pc.printers[0]["id"]
+
+        # Create a second asset
+        asset2 = Asset.objects.create(
+            name="Asset 2",
+            category=asset.category,
+            current_location=asset.current_location,
+            created_by=admin_user,
+        )
+
+        admin_obj = self._get_admin_obj()
+        qs = Asset.objects.filter(pk__in=[asset.pk, asset2.pk])
+
+        request = RequestFactory().post(
+            "/admin/",
+            data={
+                "client_pk": pc.pk,
+                "printer_id": printer_id,
+            },
+        )
+        request.user = admin_user
+        request.session = SessionStore()
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        with patch("assets.admin.dispatch_print_job") as mock_dispatch:
+            mock_dispatch.return_value = True
+            admin_obj.bulk_remote_print(request, qs)
+
+        assert PrintRequest.objects.filter(print_client=pc).count() == 2
+        assert mock_dispatch.call_count == 2
+
+    def test_bulk_remote_print_success_message(self, admin_user, asset):
+        """Bulk action shows success message with count."""
+        pc = _make_approved_connected_client()
+        admin_obj = self._get_admin_obj()
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        request = RequestFactory().post(
+            "/admin/",
+            data={
+                "client_pk": pc.pk,
+                "printer_id": pc.printers[0]["id"],
+            },
+        )
+        request.user = admin_user
+        request.session = SessionStore()
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        with patch("assets.admin.dispatch_print_job") as mock_dispatch:
+            mock_dispatch.return_value = True
+            admin_obj.bulk_remote_print(request, qs)
+
+        stored = [m.message for m in messages_storage._queued_messages]
+        assert any("1" in m and "sent" in m.lower() for m in stored)
+
+    def test_bulk_remote_print_no_connected_client(self, admin_user, asset):
+        """Action with invalid client returns error."""
+        admin_obj = self._get_admin_obj()
+        qs = Asset.objects.filter(pk=asset.pk)
+
+        request = RequestFactory().post(
+            "/admin/",
+            data={
+                "client_pk": 99999,
+                "printer_id": "printer-1",
+            },
+        )
+        request.user = admin_user
+        request.session = SessionStore()
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.bulk_remote_print(request, qs)
+
+        assert PrintRequest.objects.count() == 0
+        stored = [m.message for m in messages_storage._queued_messages]
+        assert any(
+            "error" in m.lower() or "not found" in m.lower() for m in stored
+        )
+
+
+# ---------------------------------------------------------------------------
+# §4.3.3.5 — Stale job cleanup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestStaleJobCleanup:
+    """Stale print jobs should be transitioned to failed."""
+
+    def test_stale_sent_job_marked_failed(self, asset):
+        """Jobs in 'sent' status past timeout are failed."""
+        from assets.services.print_dispatch import (
+            cleanup_stale_print_jobs,
+        )
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="sent",
+            sent_at=timezone.now() - timedelta(seconds=600),
+        )
+
+        cleanup_stale_print_jobs(timeout_seconds=300)
+
+        pr.refresh_from_db()
+        assert pr.status == "failed"
+        assert "timeout" in pr.error_message.lower()
+
+    def test_recent_sent_job_not_affected(self, asset):
+        """Jobs within timeout window are not touched."""
+        from assets.services.print_dispatch import (
+            cleanup_stale_print_jobs,
+        )
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="sent",
+            sent_at=timezone.now() - timedelta(seconds=60),
+        )
+
+        cleanup_stale_print_jobs(timeout_seconds=300)
+
+        pr.refresh_from_db()
+        assert pr.status == "sent"
+
+    def test_stale_acked_job_marked_failed(self, asset):
+        """Jobs in 'acked' status past timeout are also failed."""
+        from assets.services.print_dispatch import (
+            cleanup_stale_print_jobs,
+        )
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="acked",
+            sent_at=timezone.now() - timedelta(seconds=600),
+            acked_at=timezone.now() - timedelta(seconds=500),
+        )
+
+        cleanup_stale_print_jobs(timeout_seconds=300)
+
+        pr.refresh_from_db()
+        assert pr.status == "failed"
+
+    def test_completed_job_not_affected(self, asset):
+        """Completed jobs are never cleaned up."""
+        from assets.services.print_dispatch import (
+            cleanup_stale_print_jobs,
+        )
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="completed",
+            sent_at=timezone.now() - timedelta(seconds=600),
+        )
+
+        cleanup_stale_print_jobs(timeout_seconds=300)
+
+        pr.refresh_from_db()
+        assert pr.status == "completed"
+
+    def test_cleanup_returns_count(self, asset):
+        """cleanup_stale_print_jobs returns number of failed jobs."""
+        from assets.services.print_dispatch import (
+            cleanup_stale_print_jobs,
+        )
+
+        pc = _make_approved_connected_client()
+        for _ in range(3):
+            PrintRequest.objects.create(
+                asset=asset,
+                print_client=pc,
+                printer_id="printer-1",
+                status="sent",
+                sent_at=timezone.now() - timedelta(seconds=600),
+            )
+
+        count = cleanup_stale_print_jobs(timeout_seconds=300)
+        assert count == 3

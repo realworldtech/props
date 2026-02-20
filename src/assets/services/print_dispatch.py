@@ -10,7 +10,9 @@ import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from assets.models import PrintClient
+from django.utils import timezone
+
+from assets.models import PrintClient, PrintRequest
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +87,38 @@ def dispatch_print_job(print_request):
     async_to_sync(channel_layer.group_send)(group_name, message)
 
     return True
+
+
+def cleanup_stale_print_jobs(timeout_seconds=300):
+    """Transition timed-out print jobs to failed status.
+
+    Jobs in 'sent' or 'acked' status that have exceeded the
+    timeout are marked as failed.
+
+    Args:
+        timeout_seconds: Number of seconds after which a job
+            is considered stale. Default 300 (5 minutes).
+
+    Returns:
+        Number of jobs that were marked as failed.
+    """
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=timeout_seconds)
+    stale_jobs = PrintRequest.objects.filter(
+        status__in=["sent", "acked"],
+        sent_at__lt=cutoff,
+    )
+
+    count = 0
+    for pr in stale_jobs:
+        pr.transition_to(
+            "failed",
+            error_message=(
+                f"Timeout: client did not respond "
+                f"within {timeout_seconds}s"
+            ),
+        )
+        count += 1
+
+    return count
