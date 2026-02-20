@@ -26,6 +26,11 @@ celery[redis]
 django-celery-beat
 redis
 
+# WebSocket / ASGI support
+channels
+channels-redis
+daphne
+
 # Barcode & QR
 python-barcode[images]
 qrcode[pil]
@@ -48,6 +53,7 @@ isort
 
 # Testing
 pytest-django
+pytest-asyncio
 pytest-xdist
 factory-boy
 pytest-cov

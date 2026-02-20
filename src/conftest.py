@@ -24,6 +24,13 @@ settings.CACHES = {
     }
 }
 
+# Use in-memory channel layer for tests (avoids Redis for WS tests)
+settings.CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
+
 from assets.factories import (  # noqa: E402
     AssetFactory,
     AssetSerialFactory,
