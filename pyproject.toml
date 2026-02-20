@@ -5,7 +5,7 @@ testpaths = ["src"]
 python_files = ["tests.py", "test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -n auto"
 
 [tool.black]
 line-length = 79

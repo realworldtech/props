@@ -92,6 +92,8 @@ docstring-parser==0.17.0
     # via anthropic
 et-xmlfile==2.0.0
     # via openpyxl
+execnet==2.1.2
+    # via pytest-xdist
 factory-boy==3.3.3
     # via -r requirements.in
 faker==40.1.2
@@ -182,8 +184,12 @@ pyproject-hooks==1.2.0
     #   build
     #   pip-tools
 pytest==9.0.2
-    # via pytest-django
+    # via
+    #   pytest-django
+    #   pytest-xdist
 pytest-django==4.11.1
+    # via -r requirements.in
+pytest-xdist==3.8.0
     # via -r requirements.in
 python-barcode[images]==0.16.1
     # via -r requirements.in

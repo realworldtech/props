@@ -48,5 +48,6 @@ isort
 
 # Testing
 pytest-django
+pytest-xdist
 factory-boy
 coverage
