@@ -2743,3 +2743,555 @@ class TestPrintAckEdgeCases:
         assert response["type"] == "error"
 
         await communicator.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# §8.3.11-01 — Print Service Admin UI tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminRegistered:
+    """PrintClientAdmin must be registered in the Django admin."""
+
+    def test_print_client_admin_is_registered(self):
+        """§8.3.11-01: PrintClient must have a registered ModelAdmin."""
+        from django.contrib import admin
+
+        assert (
+            PrintClient in admin.site._registry
+        ), "PrintClient must be registered in the Django admin"
+
+    def test_print_client_changelist_accessible_by_admin(self, admin_client):
+        """§8.3.11-01: Admin users can access PrintClient changelist."""
+        from django.urls import reverse
+
+        url = reverse("admin:assets_printclient_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+
+    def test_print_client_changelist_denied_for_non_staff(
+        self, client, member_user, password
+    ):
+        """§8.3.11-01: Non-admin users cannot access admin views."""
+        from django.urls import reverse
+
+        client.login(username=member_user.username, password=password)
+        url = reverse("admin:assets_printclient_changelist")
+        response = client.get(url)
+        # Non-staff users get redirected to admin login
+        assert response.status_code == 302
+
+
+@pytest.mark.django_db
+class TestPrintRequestAdminRegistered:
+    """PrintRequestAdmin must be registered in the Django admin."""
+
+    def test_print_request_admin_is_registered(self):
+        """§8.3.11-01: PrintRequest must have a registered ModelAdmin."""
+        from django.contrib import admin
+
+        assert (
+            PrintRequest in admin.site._registry
+        ), "PrintRequest must be registered in the Django admin"
+
+    def test_print_request_changelist_accessible_by_admin(self, admin_client):
+        """§8.3.11-01: Admin users can access PrintRequest changelist."""
+        from django.urls import reverse
+
+        url = reverse("admin:assets_printrequest_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+
+    def test_print_request_changelist_denied_for_non_staff(
+        self, client, member_user, password
+    ):
+        """§8.3.11-01: Non-admin users cannot access admin views."""
+        from django.urls import reverse
+
+        client.login(username=member_user.username, password=password)
+        url = reverse("admin:assets_printrequest_changelist")
+        response = client.get(url)
+        assert response.status_code == 302
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminListDisplay:
+    """PrintClientAdmin list_display fields (§8.3.11-01)."""
+
+    def test_list_display_includes_name(self):
+        """§4.3.5: Changelist shows client name."""
+        from assets.admin import PrintClientAdmin
+
+        cols = [str(c) for c in PrintClientAdmin.list_display]
+        has_name = any("name" in c.lower() for c in cols)
+        assert has_name, (
+            f"PrintClientAdmin.list_display must include name. " f"Got: {cols}"
+        )
+
+    def test_list_display_includes_status(self):
+        """§4.3.5: Changelist shows status."""
+        from assets.admin import PrintClientAdmin
+
+        cols = [str(c) for c in PrintClientAdmin.list_display]
+        has_status = any("status" in c.lower() for c in cols)
+        assert has_status, (
+            f"PrintClientAdmin.list_display must include status. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_is_connected(self):
+        """§4.3.5: Connected Client Dashboard shows connection status."""
+        from assets.admin import PrintClientAdmin
+
+        cols = [str(c) for c in PrintClientAdmin.list_display]
+        has_connected = any("connect" in c.lower() for c in cols)
+        assert has_connected, (
+            f"PrintClientAdmin.list_display must include connection "
+            f"status. Got: {cols}"
+        )
+
+    def test_list_display_includes_last_seen(self):
+        """§4.3.5: Dashboard shows last seen timestamp."""
+        from assets.admin import PrintClientAdmin
+
+        cols = [str(c) for c in PrintClientAdmin.list_display]
+        has_last_seen = any("last_seen" in c.lower() for c in cols)
+        assert has_last_seen, (
+            f"PrintClientAdmin.list_display must include last_seen. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_is_active(self):
+        """§4.3.5: Dashboard shows active state."""
+        from assets.admin import PrintClientAdmin
+
+        cols = [str(c) for c in PrintClientAdmin.list_display]
+        has_active = any("active" in c.lower() for c in cols)
+        assert has_active, (
+            f"PrintClientAdmin.list_display must include is_active. "
+            f"Got: {cols}"
+        )
+
+    def test_changelist_renders_with_data(self, admin_client):
+        """§4.3.5: Changelist renders with existing PrintClient data."""
+        from django.urls import reverse
+
+        _make_print_client("admin-list-1")
+        url = reverse("admin:assets_printclient_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Station-admin-list-1" in content
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminFilters:
+    """PrintClientAdmin list_filter fields (§8.3.11-01)."""
+
+    def test_list_filter_includes_status(self):
+        """§4.3.5: Filter by status (pending/approved)."""
+        from assets.admin import PrintClientAdmin
+
+        filter_fields = _flatten_filter_names(PrintClientAdmin.list_filter)
+        assert "status" in filter_fields, (
+            f"PrintClientAdmin.list_filter must include status. "
+            f"Got: {PrintClientAdmin.list_filter}"
+        )
+
+    def test_list_filter_includes_is_connected(self):
+        """§4.3.5: Filter by connection status."""
+        from assets.admin import PrintClientAdmin
+
+        filter_fields = _flatten_filter_names(PrintClientAdmin.list_filter)
+        assert "is_connected" in filter_fields, (
+            f"PrintClientAdmin.list_filter must include is_connected. "
+            f"Got: {PrintClientAdmin.list_filter}"
+        )
+
+    def test_list_filter_includes_is_active(self):
+        """§4.3.5: Filter by active/deactivated."""
+        from assets.admin import PrintClientAdmin
+
+        filter_fields = _flatten_filter_names(PrintClientAdmin.list_filter)
+        assert "is_active" in filter_fields, (
+            f"PrintClientAdmin.list_filter must include is_active. "
+            f"Got: {PrintClientAdmin.list_filter}"
+        )
+
+
+@pytest.mark.django_db
+class TestPrintRequestAdminListDisplay:
+    """PrintRequestAdmin list_display fields (§8.3.11-01)."""
+
+    def test_list_display_includes_job_id(self):
+        """§4.3.5: Job History shows job ID."""
+        from assets.admin import PrintRequestAdmin
+
+        cols = [str(c) for c in PrintRequestAdmin.list_display]
+        has_job_id = any("job_id" in c.lower() for c in cols)
+        assert has_job_id, (
+            f"PrintRequestAdmin.list_display must include job_id. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_asset(self):
+        """§4.3.5: Job History shows asset."""
+        from assets.admin import PrintRequestAdmin
+
+        cols = [str(c) for c in PrintRequestAdmin.list_display]
+        has_asset = any("asset" in c.lower() for c in cols)
+        assert has_asset, (
+            f"PrintRequestAdmin.list_display must include asset. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_status(self):
+        """§4.3.5: Job History shows status."""
+        from assets.admin import PrintRequestAdmin
+
+        cols = [str(c) for c in PrintRequestAdmin.list_display]
+        has_status = any("status" in c.lower() for c in cols)
+        assert has_status, (
+            f"PrintRequestAdmin.list_display must include status. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_printer(self):
+        """§4.3.5: Job History shows printer."""
+        from assets.admin import PrintRequestAdmin
+
+        cols = [str(c) for c in PrintRequestAdmin.list_display]
+        has_printer = any("printer" in c.lower() for c in cols)
+        assert has_printer, (
+            f"PrintRequestAdmin.list_display must include printer. "
+            f"Got: {cols}"
+        )
+
+    def test_list_display_includes_created_at(self):
+        """§4.3.5: Job History shows timestamps."""
+        from assets.admin import PrintRequestAdmin
+
+        cols = [str(c) for c in PrintRequestAdmin.list_display]
+        has_created = any("created" in c.lower() for c in cols)
+        assert has_created, (
+            f"PrintRequestAdmin.list_display must include created_at. "
+            f"Got: {cols}"
+        )
+
+    def test_changelist_renders_with_data(self, admin_client, asset):
+        """§4.3.5: Changelist renders with existing PrintRequest data."""
+        from django.urls import reverse
+
+        pc = _make_print_client("admin-req-list-1")
+        PrintRequest.objects.create(
+            print_client=pc,
+            asset=asset,
+            printer_id="printer-001",
+        )
+        url = reverse("admin:assets_printrequest_changelist")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestPrintRequestAdminFilters:
+    """PrintRequestAdmin list_filter fields (§8.3.11-01)."""
+
+    def test_list_filter_includes_status(self):
+        """§4.3.5: Filter jobs by status."""
+        from assets.admin import PrintRequestAdmin
+
+        filter_fields = _flatten_filter_names(PrintRequestAdmin.list_filter)
+        assert "status" in filter_fields, (
+            f"PrintRequestAdmin.list_filter must include status. "
+            f"Got: {PrintRequestAdmin.list_filter}"
+        )
+
+    def test_list_filter_includes_print_client(self):
+        """§4.3.5: Filter jobs by client."""
+        from assets.admin import PrintRequestAdmin
+
+        filter_fields = _flatten_filter_names(PrintRequestAdmin.list_filter)
+        assert "print_client" in filter_fields, (
+            f"PrintRequestAdmin.list_filter must include print_client. "
+            f"Got: {PrintRequestAdmin.list_filter}"
+        )
+
+    def test_list_filter_includes_created_at(self):
+        """§4.3.5: Filter jobs by date range."""
+        from assets.admin import PrintRequestAdmin
+
+        filter_fields = _flatten_filter_names(PrintRequestAdmin.list_filter)
+        assert "created_at" in filter_fields, (
+            f"PrintRequestAdmin.list_filter must include created_at. "
+            f"Got: {PrintRequestAdmin.list_filter}"
+        )
+
+
+def _flatten_filter_names(list_filter):
+    """Extract field names from list_filter entries.
+
+    Handles plain strings, tuples like ("field", FilterClass),
+    and filter class references.
+    """
+    names = []
+    for entry in list_filter:
+        if isinstance(entry, str):
+            names.append(entry)
+        elif isinstance(entry, (list, tuple)):
+            names.append(entry[0])
+        elif hasattr(entry, "parameter_name"):
+            names.append(entry.parameter_name)
+    return names
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminApproveAction:
+    """Approve action on PrintClient (§8.3.11-01).
+
+    §4.3.5: Approval sends token via WebSocket channel layer.
+    Only System Admins can approve.
+    """
+
+    def test_approve_action_sets_status_to_approved(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Approve action transitions status to approved."""
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("approve-test-1")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.approve_clients(request, qs)
+        pc.refresh_from_db()
+        assert pc.status == "approved"
+
+    def test_approve_action_sets_approved_by_and_at(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Approval sets approved_by and approved_at fields."""
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("approve-test-2")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.approve_clients(request, qs)
+        pc.refresh_from_db()
+        assert pc.approved_by == admin_user
+        assert pc.approved_at is not None
+
+    def test_approve_action_sends_channel_layer_message(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Approval sends pairing_approved via channel layer.
+
+        The approve action must send a message to the print client's
+        channel group so the WebSocket consumer can deliver the token.
+        """
+        from unittest.mock import patch
+
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("approve-ws-test")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_async_to_sync:
+            mock_async_to_sync.return_value
+            admin_obj.approve_clients(request, qs)
+            assert mock_async_to_sync.called
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminDenyAction:
+    """Deny action on pending PrintClient (§8.3.11-01).
+
+    §4.3.5: Denial sends pairing_denied via channel layer
+    and deletes the PrintClient record.
+    """
+
+    def test_deny_action_deletes_print_client(self, admin_client, admin_user):
+        """§4.3.5: Deny action deletes the pending PrintClient."""
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("deny-test-1")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+        pc_pk = pc.pk
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc_pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.deny_clients(request, qs)
+        assert not PrintClient.objects.filter(pk=pc_pk).exists()
+
+    def test_deny_action_sends_pairing_denied_via_channel_layer(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Deny sends pairing_denied message via channel layer."""
+        from unittest.mock import patch
+
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("deny-ws-test")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_async_to_sync:
+            mock_async_to_sync.return_value
+            admin_obj.deny_clients(request, qs)
+            assert mock_async_to_sync.called
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminDeactivateAction:
+    """Deactivation action on PrintClient (§8.3.11-01).
+
+    §4.3.5: Deactivation sets is_active=False and sends
+    force_disconnect via channel layer. Deactivated clients
+    cannot authenticate.
+    """
+
+    def test_deactivate_action_sets_is_active_false(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Deactivate action sets is_active=False."""
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("deactivate-test-1")
+        pc.status = "approved"
+        pc.save()
+        assert pc.is_active is True
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        admin_obj.deactivate_clients(request, qs)
+        pc.refresh_from_db()
+        assert pc.is_active is False
+
+    def test_deactivate_action_sends_force_disconnect(
+        self, admin_client, admin_user
+    ):
+        """§4.3.5: Deactivation sends force_disconnect via channel layer."""
+        from unittest.mock import patch
+
+        from django.contrib.admin.sites import AdminSite
+        from django.contrib.messages.storage.fallback import (
+            FallbackStorage,
+        )
+        from django.test import RequestFactory
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("deactivate-ws-test")
+        pc.status = "approved"
+        pc.save()
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+        qs = PrintClient.objects.filter(pk=pc.pk)
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", "session")
+        messages_storage = FallbackStorage(request)
+        setattr(request, "_messages", messages_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_async_to_sync:
+            mock_async_to_sync.return_value
+            admin_obj.deactivate_clients(request, qs)
+            assert mock_async_to_sync.called
