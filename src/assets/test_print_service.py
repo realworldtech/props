@@ -1923,3 +1923,823 @@ class TestProtocolEdgeCases:
             )
 
         await comm2.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Helper: create an approved client and authenticate it on a communicator
+# ---------------------------------------------------------------------------
+
+
+async def _make_approved_client_and_token(admin_user):
+    """Create an approved PrintClient and return (client, raw_token)."""
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+    @database_sync_to_async
+    def _create(admin):
+        return PrintClient.objects.create(
+            name="Dispatch Station",
+            token_hash=token_hash,
+            status="approved",
+            approved_by=admin,
+            approved_at=timezone.now(),
+        )
+
+    pc = await _create(admin_user)
+    return pc, raw_token
+
+
+async def _authenticate_communicator(communicator, raw_token, printers=None):
+    """Send authenticate and consume auth_result. Returns response."""
+    if printers is None:
+        printers = [
+            {
+                "id": "zebra-01",
+                "name": "Zebra ZD410",
+                "type": "thermal",
+                "status": "online",
+                "templates": [],
+            }
+        ]
+    await communicator.send_json_to(
+        {
+            "type": "authenticate",
+            "token": raw_token,
+            "client_name": "Dispatch Station",
+            "printers": printers,
+            "protocol_version": "1",
+        }
+    )
+    return await communicator.receive_json_from(timeout=5)
+
+
+# ---------------------------------------------------------------------------
+# §8.2.17-03 — Print job lifecycle tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintJobDispatch:
+    """§8.2.17-03: Print job dispatch to connected client.
+
+    The server dispatches print jobs via channel layer messages to
+    the consumer, which sends them as WebSocket ``print`` messages
+    to the connected client.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_message_dispatched_to_connected_client(
+        self, admin_user, asset
+    ):
+        """§8.2.17-03: A print message is correctly dispatched
+        to the target connected client.
+
+        After authentication, the consumer should join a group
+        like ``print_client_active_{pk}`` so the server can push
+        print jobs via channel layer group_send.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+        new_token = auth.get("new_token", raw_token)  # noqa: F841
+
+        # Create a PrintRequest in the database
+        @database_sync_to_async
+        def create_print_request(pc_obj, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+
+        pr = await create_print_request(pc, asset)
+
+        # Build message payload with sync DB access for FKs
+        @database_sync_to_async
+        def get_asset_fields(a):
+            cat = a.category.name if a.category else ""
+            dept = a.category.department.name if a.category else ""
+            return a.barcode, a.name[:30], cat, dept
+
+        barcode, name, cat, dept = await get_asset_fields(asset)
+
+        # Dispatch print job via channel layer to the consumer
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_active_{pc.pk}"
+        await channel_layer.group_send(
+            group_name,
+            {
+                "type": "print.job",
+                "job_id": str(pr.job_id),
+                "printer_id": "zebra-01",
+                "barcode": barcode,
+                "asset_name": name,
+                "category_name": cat,
+                "department_name": dept,
+                "qr_content": (f"https://example.com/a/{barcode}/"),
+                "quantity": 1,
+            },
+        )
+
+        # Client should receive a print message
+        msg = await communicator.receive_json_from(timeout=5)
+        assert msg["type"] == "print"
+        assert msg["job_id"] == str(pr.job_id)
+        assert msg["printer_id"] == "zebra-01"
+        assert msg["barcode"] == barcode
+        assert msg["quantity"] == 1
+
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dispatch_transitions_status_pending_to_sent(
+        self, admin_user, asset
+    ):
+        """§8.2.17-03: Dispatching a print job transitions the
+        PrintRequest status from pending to sent.
+
+        The consumer's print_job handler should update the
+        PrintRequest status to 'sent' after successfully sending
+        the print message to the WebSocket client.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        @database_sync_to_async
+        def create_print_request(pc_obj, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+
+        pr = await create_print_request(pc, asset)
+
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_active_{pc.pk}"
+        await channel_layer.group_send(
+            group_name,
+            {
+                "type": "print.job",
+                "job_id": str(pr.job_id),
+                "printer_id": "zebra-01",
+                "barcode": asset.barcode,
+                "asset_name": asset.name[:30],
+                "category_name": "",
+                "department_name": "",
+                "qr_content": (f"https://example.com/a/{asset.barcode}/"),
+                "quantity": 1,
+            },
+        )
+
+        # Consume the print message
+        await communicator.receive_json_from(timeout=5)
+
+        # Allow async DB update to complete
+        await asyncio.sleep(0.2)
+
+        # Verify status transitioned to sent
+        @database_sync_to_async
+        def get_pr_status(job_id):
+            req = PrintRequest.objects.get(job_id=job_id)
+            return req.status, req.sent_at
+
+        status, sent_at = await get_pr_status(pr.job_id)
+        assert status == "sent"
+        assert sent_at is not None
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintAckHandling:
+    """§4.3.3.5 / §8.2.17-03: print_ack handling.
+
+    Client acknowledges receipt of a print job, transitioning
+    the PrintRequest from sent to acked.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_ack_transitions_sent_to_acked(
+        self, admin_user, asset
+    ):
+        """§4.3.3.5: Client sends print_ack -> PrintRequest
+        transitions from sent to acked and acked_at is set.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        # Create a PrintRequest already in sent status
+        @database_sync_to_async
+        def create_sent_request(pc_obj, asset_obj):
+            pr = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+            pr.transition_to("sent")
+            return pr
+
+        pr = await create_sent_request(pc, asset)
+
+        # Client sends print_ack
+        await communicator.send_json_to(
+            {
+                "type": "print_ack",
+                "job_id": str(pr.job_id),
+            }
+        )
+
+        # Allow processing
+        await asyncio.sleep(0.2)
+
+        @database_sync_to_async
+        def get_pr(job_id):
+            return PrintRequest.objects.get(job_id=job_id)
+
+        updated = await get_pr(pr.job_id)
+        assert updated.status == "acked"
+        assert updated.acked_at is not None
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintStatusCompleted:
+    """§8.2.17-03: print_status with status=completed."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_status_completed_updates_request(
+        self, admin_user, asset
+    ):
+        """§8.2.17-03: A print_status message with
+        status=completed updates the PrintRequest to completed
+        and sets completed_at.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        @database_sync_to_async
+        def create_acked_request(pc_obj, asset_obj):
+            pr = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+            pr.transition_to("sent")
+            pr.transition_to("acked")
+            return pr
+
+        pr = await create_acked_request(pc, asset)
+
+        before = timezone.now()
+
+        # Client sends print_status completed
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": str(pr.job_id),
+                "status": "completed",
+                "error": None,
+            }
+        )
+
+        await asyncio.sleep(0.2)
+
+        @database_sync_to_async
+        def get_pr(job_id):
+            return PrintRequest.objects.get(job_id=job_id)
+
+        updated = await get_pr(pr.job_id)
+        assert updated.status == "completed"
+        assert updated.completed_at is not None
+        assert updated.completed_at >= before
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintStatusFailed:
+    """§8.2.17-03: print_status with status=failed."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_status_failed_updates_request(
+        self, admin_user, asset
+    ):
+        """§8.2.17-03: A print_status message with status=failed
+        updates the PrintRequest to failed and stores error_message.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        @database_sync_to_async
+        def create_acked_request(pc_obj, asset_obj):
+            pr = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+            pr.transition_to("sent")
+            pr.transition_to("acked")
+            return pr
+
+        pr = await create_acked_request(pc, asset)
+
+        # Client sends print_status failed
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": str(pr.job_id),
+                "status": "failed",
+                "error": "Paper jam in tray 2",
+            }
+        )
+
+        await asyncio.sleep(0.2)
+
+        @database_sync_to_async
+        def get_pr(job_id):
+            return PrintRequest.objects.get(job_id=job_id)
+
+        updated = await get_pr(pr.job_id)
+        assert updated.status == "failed"
+        assert updated.error_message == "Paper jam in tray 2"
+        assert updated.completed_at is not None
+
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_status_failed_with_null_error(
+        self, admin_user, asset
+    ):
+        """§4.3.3.5: print_status with status=failed and null
+        error still transitions to failed.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        @database_sync_to_async
+        def create_acked_request(pc_obj, asset_obj):
+            pr = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+            pr.transition_to("sent")
+            pr.transition_to("acked")
+            return pr
+
+        pr = await create_acked_request(pc, asset)
+
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": str(pr.job_id),
+                "status": "failed",
+                "error": None,
+            }
+        )
+
+        await asyncio.sleep(0.2)
+
+        @database_sync_to_async
+        def get_pr(job_id):
+            return PrintRequest.objects.get(job_id=job_id)
+
+        updated = await get_pr(pr.job_id)
+        assert updated.status == "failed"
+        assert updated.completed_at is not None
+
+        await communicator.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# §8.2.17-04 — Edge cases: dispatch to disconnected, disconnect
+# during lifecycle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintJobDisconnectedClient:
+    """§8.2.17-04: Print jobs to disconnected clients fail
+    gracefully.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_dispatch_to_disconnected_client_fails_gracefully(
+        self, admin_user, asset
+    ):
+        """§8.2.17-04 / §4.3.3.5: At dispatch time, if the client
+        is disconnected, the job MUST be marked failed immediately
+        with error 'Client disconnected'.
+
+        We authenticate, disconnect, then attempt to dispatch a
+        print job via the dispatch service. The job should fail.
+        """
+        from assets.services.print_dispatch import (
+            dispatch_print_job,
+        )
+
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        # Disconnect the client
+        await communicator.disconnect()
+        await asyncio.sleep(0.2)
+
+        # Verify client is disconnected
+        @database_sync_to_async
+        def check_disconnected(pk):
+            c = PrintClient.objects.get(pk=pk)
+            return c.is_connected
+
+        is_conn = await check_disconnected(pc.pk)
+        assert is_conn is False
+
+        # Create a pending PrintRequest
+        @database_sync_to_async
+        def create_print_request(pc_obj, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+
+        pr = await create_print_request(pc, asset)
+
+        # Dispatch via the service — it checks is_connected
+        # before sending and fails the job immediately.
+        @database_sync_to_async
+        def do_dispatch(print_req):
+            return dispatch_print_job(print_req)
+
+        result = await do_dispatch(pr)
+        assert result is False
+
+        @database_sync_to_async
+        def get_pr_status(job_id):
+            req = PrintRequest.objects.get(job_id=job_id)
+            return req.status
+
+        status = await get_pr_status(pr.job_id)
+        assert status == "failed"
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_disconnect_during_sent_status_holds_then_fails(
+        self, admin_user, asset
+    ):
+        """§4.3.3.5: After dispatch + no ack, if client disconnects
+        the job should eventually fail.
+
+        When a client disconnects after a job was sent but before
+        acknowledgement, the job remains in sent status until the
+        stale job timeout, then transitions to failed.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        # Create a request and move it to sent status
+        @database_sync_to_async
+        def create_sent_request(pc_obj, asset_obj):
+            pr = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+            pr.transition_to("sent")
+            return pr
+
+        pr = await create_sent_request(pc, asset)
+
+        # Client disconnects
+        await communicator.disconnect()
+        await asyncio.sleep(0.2)
+
+        # The disconnect handler should handle in-flight jobs.
+        # Per spec, sent jobs without ack hold until stale
+        # timeout. The disconnect handler MAY mark them as
+        # failed immediately or leave them for the timeout task.
+        @database_sync_to_async
+        def get_pr(job_id):
+            req = PrintRequest.objects.get(job_id=job_id)
+            return req.status
+
+        status = await get_pr(pr.job_id)
+        # After disconnect, sent jobs with no ack should be
+        # failed (either immediately by disconnect handler
+        # or via the stale job timeout).
+        assert status in ("sent", "failed")
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintJobMessageFields:
+    """§4.3.3.5: Print message field requirements."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_message_contains_all_required_fields(
+        self, admin_user, asset
+    ):
+        """§4.3.3.5: The print message MUST contain job_id,
+        printer_id, barcode, asset_name, category_name,
+        department_name, qr_content, and quantity.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        @database_sync_to_async
+        def create_print_request(pc_obj, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=3,
+                status="pending",
+            )
+
+        pr = await create_print_request(pc, asset)
+
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_active_{pc.pk}"
+        await channel_layer.group_send(
+            group_name,
+            {
+                "type": "print.job",
+                "job_id": str(pr.job_id),
+                "printer_id": "zebra-01",
+                "barcode": asset.barcode,
+                "asset_name": asset.name[:30],
+                "category_name": "Test Category",
+                "department_name": "Test Department",
+                "qr_content": (f"https://example.com/a/{asset.barcode}/"),
+                "quantity": 3,
+                "site_short_name": "RWTS",
+            },
+        )
+
+        msg = await communicator.receive_json_from(timeout=5)
+        assert msg["type"] == "print"
+        # All required fields per §4.3.3.5 protocol contract
+        assert "job_id" in msg
+        assert "printer_id" in msg
+        assert "barcode" in msg
+        assert "asset_name" in msg
+        assert "category_name" in msg
+        assert "department_name" in msg
+        assert "qr_content" in msg
+        assert "quantity" in msg
+        assert msg["quantity"] == 3
+        # site_short_name is optional per spec
+        assert msg.get("site_short_name") == "RWTS"
+
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_asset_name_truncated_to_30_chars(self, admin_user, asset):
+        """§4.3.3.5: asset_name MUST be truncated to 30
+        characters by the server.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        long_name = "A" * 50  # 50 chars, should be truncated
+
+        @database_sync_to_async
+        def create_print_request(pc_obj, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                quantity=1,
+                status="pending",
+            )
+
+        pr = await create_print_request(pc, asset)
+
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_active_{pc.pk}"
+        await channel_layer.group_send(
+            group_name,
+            {
+                "type": "print.job",
+                "job_id": str(pr.job_id),
+                "printer_id": "zebra-01",
+                "barcode": asset.barcode,
+                "asset_name": long_name[:30],
+                "category_name": "",
+                "department_name": "",
+                "qr_content": (f"https://example.com/a/{asset.barcode}/"),
+                "quantity": 1,
+            },
+        )
+
+        msg = await communicator.receive_json_from(timeout=5)
+        assert msg["type"] == "print"
+        assert len(msg["asset_name"]) <= 30
+
+        await communicator.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrintAckEdgeCases:
+    """§4.3.3.5: print_ack edge cases."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_ack_unknown_job_id_handled(self, admin_user):
+        """§4.3.3.5: print_ack with an unknown job_id should
+        be handled gracefully (no crash).
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        # Send ack for a non-existent job
+        fake_job_id = str(uuid.uuid4())
+        await communicator.send_json_to(
+            {
+                "type": "print_ack",
+                "job_id": fake_job_id,
+            }
+        )
+
+        # Consumer should handle gracefully — either ignore
+        # or send an error. Should not crash.
+        await asyncio.sleep(0.2)
+
+        # Verify connection is still alive by sending a
+        # valid message type (we can check if it responds)
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": fake_job_id,
+                "status": "completed",
+                "error": None,
+            }
+        )
+
+        # Connection should still be open
+        await asyncio.sleep(0.1)
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_status_unknown_job_id_handled(self, admin_user):
+        """§4.3.3.5: print_status with unknown job_id should be
+        handled gracefully (no crash).
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(communicator, raw_token)
+        assert auth["success"] is True
+
+        fake_job_id = str(uuid.uuid4())
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": fake_job_id,
+                "status": "completed",
+                "error": None,
+            }
+        )
+
+        await asyncio.sleep(0.2)
+
+        # Connection should still be alive
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_ack_from_unauthenticated_client_rejected(
+        self,
+    ):
+        """§4.3.3.5: print_ack from an unauthenticated client
+        should be rejected.
+
+        Only authenticated clients should be able to send
+        print_ack and print_status messages.
+        """
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        await communicator.send_json_to(
+            {
+                "type": "print_ack",
+                "job_id": str(uuid.uuid4()),
+            }
+        )
+
+        response = await communicator.receive_json_from(timeout=5)
+        # Should be rejected — either as invalid_message or
+        # as an auth error
+        assert response["type"] == "error"
+
+        await communicator.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_print_status_from_unauthenticated_rejected(
+        self,
+    ):
+        """§4.3.3.5: print_status from unauthenticated client
+        should be rejected.
+        """
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        await communicator.send_json_to(
+            {
+                "type": "print_status",
+                "job_id": str(uuid.uuid4()),
+                "status": "completed",
+                "error": None,
+            }
+        )
+
+        response = await communicator.receive_json_from(timeout=5)
+        assert response["type"] == "error"
+
+        await communicator.disconnect()

@@ -11,7 +11,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
 from django.utils import timezone
 
-from assets.models import PrintClient
+from assets.models import PrintClient, PrintRequest
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +73,18 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
             except Exception:
                 pass
 
-        # Update PrintClient on disconnect
+        # Leave active and connection groups
         if self.print_client_pk and self.authenticated:
+            for grp in (
+                f"print_client_active_{self.print_client_pk}",
+                f"print_client_conn_{self.print_client_pk}",
+            ):
+                try:
+                    await self.channel_layer.group_discard(
+                        grp, self.channel_name
+                    )
+                except Exception:
+                    pass
 
             @database_sync_to_async
             def update_disconnect(pk):
@@ -82,7 +92,12 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
                     client = PrintClient.objects.get(pk=pk)
                     client.is_connected = False
                     client.last_seen_at = timezone.now()
-                    client.save(update_fields=["is_connected", "last_seen_at"])
+                    client.save(
+                        update_fields=[
+                            "is_connected",
+                            "last_seen_at",
+                        ]
+                    )
                 except PrintClient.DoesNotExist:
                     pass
 
@@ -95,6 +110,20 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
             await self._handle_pairing_request(content)
         elif msg_type == "authenticate":
             await self._handle_authenticate(content)
+        elif msg_type in ("print_ack", "print_status"):
+            if not self.authenticated:
+                await self.send_json(
+                    {
+                        "type": "error",
+                        "code": "not_authenticated",
+                        "message": "Authentication required",
+                    }
+                )
+                return
+            if msg_type == "print_ack":
+                await self._handle_print_ack(content)
+            else:
+                await self._handle_print_status(content)
         else:
             await self.send_json(
                 {
@@ -346,6 +375,10 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         conn_group = f"print_client_conn_{print_client.pk}"
         await self.channel_layer.group_add(conn_group, self.channel_name)
 
+        # Join the active group for print job dispatch
+        active_group = f"print_client_active_{print_client.pk}"
+        await self.channel_layer.group_add(active_group, self.channel_name)
+
         server_name = getattr(settings, "SITE_NAME", "PROPS")
 
         await self.send_json(
@@ -364,3 +397,101 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
     async def force_disconnect(self, event):
         """Close this connection — superseded by a new connection."""
         await self.close()
+
+    # -----------------------------------------------------------------
+    # Print job dispatch (channel layer → WebSocket)
+    # -----------------------------------------------------------------
+
+    async def print_job(self, event):
+        """Handle print.job from channel layer.
+
+        Forwards the job as a WebSocket ``print`` message and
+        transitions the PrintRequest from pending to sent.
+        """
+        job_id = event.get("job_id")
+
+        # Forward all fields to the client as a print message
+        msg = {
+            "type": "print",
+            "job_id": job_id,
+            "printer_id": event.get("printer_id", ""),
+            "barcode": event.get("barcode", ""),
+            "asset_name": event.get("asset_name", "")[:30],
+            "category_name": event.get("category_name", ""),
+            "department_name": event.get("department_name", ""),
+            "qr_content": event.get("qr_content", ""),
+            "quantity": event.get("quantity", 1),
+        }
+        # Pass through optional fields
+        if "site_short_name" in event:
+            msg["site_short_name"] = event["site_short_name"]
+
+        await self.send_json(msg)
+
+        # Transition PrintRequest to sent
+        @database_sync_to_async
+        def mark_sent(j_id):
+            try:
+                pr = PrintRequest.objects.get(job_id=j_id)
+                pr.transition_to("sent")
+            except PrintRequest.DoesNotExist:
+                logger.warning(
+                    "PrintRequest %s not found for mark_sent",
+                    j_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Error transitioning PrintRequest %s to sent",
+                    j_id,
+                )
+
+        await mark_sent(job_id)
+
+    # -----------------------------------------------------------------
+    # Print ack / status from client (WebSocket → model update)
+    # -----------------------------------------------------------------
+
+    async def _handle_print_ack(self, content):
+        """Handle print_ack from authenticated client."""
+        job_id = content.get("job_id")
+        if not job_id:
+            return
+
+        @database_sync_to_async
+        def ack_job(j_id):
+            try:
+                pr = PrintRequest.objects.get(job_id=j_id)
+                pr.transition_to("acked")
+            except PrintRequest.DoesNotExist:
+                logger.warning("print_ack for unknown job_id %s", j_id)
+            except Exception:
+                logger.exception("Error handling print_ack for %s", j_id)
+
+        await ack_job(job_id)
+
+    async def _handle_print_status(self, content):
+        """Handle print_status from authenticated client."""
+        job_id = content.get("job_id")
+        status = content.get("status")
+        error = content.get("error")
+        if not job_id or not status:
+            return
+
+        @database_sync_to_async
+        def update_status(j_id, new_status, err):
+            try:
+                pr = PrintRequest.objects.get(job_id=j_id)
+                error_msg = err if err else ""
+                pr.transition_to(new_status, error_message=error_msg)
+            except PrintRequest.DoesNotExist:
+                logger.warning(
+                    "print_status for unknown job_id %s",
+                    j_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Error handling print_status for %s",
+                    j_id,
+                )
+
+        await update_status(job_id, status, error)
