@@ -21,7 +21,7 @@ from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 
 from django.core.exceptions import ValidationError
-from django.urls import path
+from django.urls import path, reverse
 from django.utils import timezone
 
 from assets.consumers import PrintServiceConsumer
@@ -3295,3 +3295,258 @@ class TestPrintClientAdminDeactivateAction:
             mock_async_to_sync.return_value
             admin_obj.deactivate_clients(request, qs)
             assert mock_async_to_sync.called
+
+
+# ---------------------------------------------------------------------------
+# §S2.4.5 — Remote print action on asset detail view
+# ---------------------------------------------------------------------------
+
+
+def _make_approved_connected_client(name="Test Station", printers=None):
+    """Helper: create an approved, connected PrintClient with printers."""
+    if printers is None:
+        printers = [
+            {
+                "id": "printer-1",
+                "name": "Zebra ZD421",
+                "type": "zpl",
+                "status": "ready",
+                "templates": [],
+            }
+        ]
+    token_hash = hashlib.sha256(
+        f"token-{name}-{secrets.token_hex(4)}".encode()
+    ).hexdigest()
+    return PrintClient.objects.create(
+        name=name,
+        token_hash=token_hash,
+        status="approved",
+        is_active=True,
+        is_connected=True,
+        last_seen_at=timezone.now(),
+        printers=printers,
+    )
+
+
+@pytest.mark.django_db
+class TestAssetDetailRemotePrintContext:
+    """S2.4.5-09/10: asset_detail includes remote print context vars."""
+
+    def test_remote_print_available_true_when_connected_client(
+        self, client_logged_in, asset
+    ):
+        """S2.4.5c-02: Button shown when >=1 approved connected client."""
+        _make_approved_connected_client()
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        assert response.context["remote_print_available"] is True
+
+    def test_remote_print_available_false_when_no_connected_clients(
+        self, client_logged_in, asset
+    ):
+        """S2.4.5c-02: Button hidden when no approved connected clients."""
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        assert response.context["remote_print_available"] is False
+
+    def test_remote_print_available_false_when_client_pending(
+        self, client_logged_in, asset
+    ):
+        """Pending (unapproved) clients do not count."""
+        token_hash = hashlib.sha256(b"pending-tok").hexdigest()
+        PrintClient.objects.create(
+            name="Pending Station",
+            token_hash=token_hash,
+            status="pending",
+            is_connected=True,
+        )
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        assert response.context["remote_print_available"] is False
+
+    def test_remote_print_available_false_when_client_disconnected(
+        self, client_logged_in, asset
+    ):
+        """Approved but disconnected clients do not count."""
+        token_hash = hashlib.sha256(b"disco-tok").hexdigest()
+        PrintClient.objects.create(
+            name="Offline Station",
+            token_hash=token_hash,
+            status="approved",
+            is_connected=False,
+        )
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        assert response.context["remote_print_available"] is False
+
+    def test_connected_printers_populated(self, client_logged_in, asset):
+        """S2.4.5-10: Dropdown data includes client/printer details."""
+        printers = [
+            {
+                "id": "lp1",
+                "name": "Label Printer 1",
+                "type": "zpl",
+                "status": "ready",
+                "templates": [],
+            },
+            {
+                "id": "lp2",
+                "name": "Label Printer 2",
+                "type": "cups",
+                "status": "ready",
+                "templates": [],
+            },
+        ]
+        pc = _make_approved_connected_client(
+            name="Backstage", printers=printers
+        )
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        connected = response.context["connected_printers"]
+        assert len(connected) == 2
+        # Each entry should carry client and printer info
+        entry = connected[0]
+        assert entry["client_pk"] == pc.pk
+        assert entry["client_name"] == "Backstage"
+        assert entry["printer_id"] in ("lp1", "lp2")
+        assert "printer_name" in entry
+        assert "printer_type" in entry
+
+    def test_connected_printers_empty_when_none(self, client_logged_in, asset):
+        """No connected printers means empty list."""
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        assert response.context["connected_printers"] == []
+
+
+@pytest.mark.django_db
+class TestRemotePrintSubmit:
+    """S2.4.5-09: POST endpoint to submit a remote print request."""
+
+    def _submit_url(self, asset_pk):
+        return reverse("assets:remote_print_submit", args=[asset_pk])
+
+    def test_submit_creates_print_request(self, client_logged_in, asset, user):
+        """Successful submit creates a PrintRequest record."""
+        pc = _make_approved_connected_client()
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        assert response.status_code == 200
+        pr = PrintRequest.objects.get(asset=asset, print_client=pc)
+        assert pr.printer_id == "printer-1"
+        assert pr.quantity == 1
+        assert pr.requested_by == user
+        assert pr.status in ("pending", "sent")
+
+    def test_submit_returns_json_success(self, client_logged_in, asset):
+        """Submit returns JSON with success status."""
+        pc = _make_approved_connected_client()
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_submit_toctou_disconnected_client(self, client_logged_in, asset):
+        """S2.4.5c-01: Re-validate is_connected at submission time."""
+        pc = _make_approved_connected_client()
+        # Simulate disconnect between page load and submit
+        pc.is_connected = False
+        pc.save()
+
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "no longer connected" in data["error"].lower()
+        # No PrintRequest should be created
+        assert not PrintRequest.objects.filter(
+            asset=asset, print_client=pc
+        ).exists()
+
+    def test_submit_nonexistent_client(self, client_logged_in, asset):
+        """Invalid client_pk returns error."""
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": 99999,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+
+    def test_submit_unapproved_client(self, client_logged_in, asset):
+        """Unapproved client should be rejected."""
+        token_hash = hashlib.sha256(b"unapproved-tok").hexdigest()
+        pc = PrintClient.objects.create(
+            name="Unapproved",
+            token_hash=token_hash,
+            status="pending",
+            is_connected=True,
+        )
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+
+    def test_submit_requires_authentication(self, client, asset):
+        """Unauthenticated users cannot submit print requests."""
+        pc = _make_approved_connected_client()
+        url = reverse("assets:remote_print_submit", args=[asset.pk])
+        response = client.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "printer-1",
+                "quantity": 1,
+            },
+        )
+        # Should redirect to login
+        assert response.status_code == 302
+        assert "/accounts/login/" in response.url
+
+    def test_submit_get_method_not_allowed(self, client_logged_in, asset):
+        """GET requests to the submit endpoint should be rejected."""
+        url = self._submit_url(asset.pk)
+        response = client_logged_in.get(url)
+        assert response.status_code == 405

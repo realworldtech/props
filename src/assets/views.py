@@ -14,7 +14,12 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.db.models.functions import Coalesce
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import (
+    HttpResponse,
+    HttpResponseForbidden,
+    HttpResponseNotAllowed,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -35,6 +40,8 @@ from .models import (
     Department,
     Location,
     NFCTag,
+    PrintClient,
+    PrintRequest,
     StocktakeItem,
     StocktakeSession,
     Tag,
@@ -481,6 +488,26 @@ def asset_detail(request, pk):
             )
         )
 
+    # S2.4.5-09/10: Remote print availability
+    connected_clients = PrintClient.objects.filter(
+        status="approved",
+        is_active=True,
+        is_connected=True,
+    )
+    connected_printers = []
+    for pc in connected_clients:
+        for printer in pc.printers or []:
+            connected_printers.append(
+                {
+                    "client_pk": pc.pk,
+                    "client_name": pc.name,
+                    "printer_id": printer.get("id", ""),
+                    "printer_name": printer.get("name", ""),
+                    "printer_type": printer.get("type", ""),
+                }
+            )
+    remote_print_available = len(connected_printers) > 0
+
     return render(
         request,
         "assets/asset_detail.html",
@@ -500,6 +527,8 @@ def asset_detail(request, pk):
             "can_convert": can_convert,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
+            "remote_print_available": remote_print_available,
+            "connected_printers": connected_printers,
         },
     )
 
@@ -2100,6 +2129,57 @@ def asset_label_zpl(request, pk):
             "Failed to send label to printer. Check printer configuration.",
         )
     return redirect("assets:asset_detail", pk=pk)
+
+
+@login_required
+def remote_print_submit(request, pk):
+    """Submit a remote print request (S2.4.5-09)."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    asset = get_object_or_404(Asset, pk=pk)
+    client_pk = request.POST.get("client_pk")
+    printer_id = request.POST.get("printer_id", "")
+    quantity = int(request.POST.get("quantity", 1))
+
+    # Validate the print client exists and is eligible
+    try:
+        pc = PrintClient.objects.get(pk=client_pk)
+    except (PrintClient.DoesNotExist, ValueError, TypeError):
+        return JsonResponse(
+            {"success": False, "error": "Print client not found."}
+        )
+
+    if pc.status != "approved" or not pc.is_active:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Print client is not approved or active.",
+            }
+        )
+
+    # S2.4.5c-01: TOCTOU check — re-validate connectivity
+    if not pc.is_connected:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Client is no longer connected.",
+            }
+        )
+
+    pr = PrintRequest.objects.create(
+        asset=asset,
+        print_client=pc,
+        printer_id=printer_id,
+        quantity=quantity,
+        requested_by=request.user,
+    )
+
+    from .services.print_dispatch import dispatch_print_job
+
+    dispatch_print_job(pr)
+
+    return JsonResponse({"success": True, "job_id": str(pr.job_id)})
 
 
 @login_required
