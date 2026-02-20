@@ -24,6 +24,7 @@ services:
     command: >
       sh -c "
       cd /app/src &&
+      python manage.py collectstatic --noinput --clear &&
       python manage.py migrate --noinput &&
       coverage run -m pytest &&
       coverage report --fail-under=80
