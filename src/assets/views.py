@@ -2137,6 +2137,11 @@ def remote_print_submit(request, pk):
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
+    # V89: Permission check — Members+, deny Viewers/Borrowers
+    role = get_user_role(request.user)
+    if role in ("viewer", "borrower"):
+        raise PermissionDenied
+
     asset = get_object_or_404(Asset, pk=pk)
     client_pk = request.POST.get("client_pk")
     printer_id = request.POST.get("printer_id", "")
@@ -4750,3 +4755,31 @@ def kit_remove_component(request, pk, component_pk):
         AssetKit.objects.filter(kit_id=pk, pk=component_pk).delete()
         messages.success(request, "Component removed from kit.")
     return redirect("assets:kit_contents", pk=pk)
+
+
+# --- Print Job Status & History ---
+
+
+@login_required
+def print_job_status(request, pk, job_id):
+    """V92: HTMX polling endpoint for print job status."""
+    pr = get_object_or_404(PrintRequest, asset_id=pk, job_id=job_id)
+    data = {
+        "status": pr.status,
+        "error": pr.error_message or "",
+    }
+    return JsonResponse(data)
+
+
+@login_required
+def print_history(request, pk):
+    """V96: Print history for an asset."""
+    asset = get_object_or_404(Asset, pk=pk)
+    requests = PrintRequest.objects.filter(asset=asset).select_related(
+        "print_client", "requested_by"
+    )[:50]
+    return render(
+        request,
+        "assets/print_history.html",
+        {"asset": asset, "print_requests": requests},
+    )

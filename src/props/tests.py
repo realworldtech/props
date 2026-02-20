@@ -900,10 +900,10 @@ class TestDockerComposeServices:
         assert "image: dxflrs/garage" in content
 
     def test_web_service_exists(self):
-        """V609: Web service Docker config."""
+        """V609/V59: Web service Docker config (Daphne ASGI)."""
         content = _compose_file().read_text()
         assert "web:" in content
-        assert "gunicorn" in content
+        assert "daphne" in content
 
     def test_postgres_service_exists(self):
         """V610: PostgreSQL service."""

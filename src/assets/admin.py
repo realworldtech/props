@@ -698,6 +698,7 @@ class AssetAdmin(ModelAdmin):
         "bulk_serialise",
         "add_to_hold_list",
         "generate_kit_labels",
+        "bulk_remote_print",
     ]
 
     @action(description="Print to Remote Printer")
@@ -705,6 +706,40 @@ class AssetAdmin(ModelAdmin):
         """S2.4.5-11: Bulk print labels to a remote print client."""
         client_pk = request.POST.get("client_pk")
         printer_id = request.POST.get("printer_id", "")
+
+        if not client_pk:
+            # First POST: show printer selection form
+            clients = PrintClient.objects.filter(
+                status="approved",
+                is_active=True,
+                is_connected=True,
+            )
+            printer_choices = []
+            for pc in clients:
+                for printer in pc.printers or []:
+                    printer_choices.append(
+                        {
+                            "client_pk": pc.pk,
+                            "printer_id": printer.get("id", ""),
+                            "label": (
+                                f"{pc.name} \u2014 "
+                                f"{printer.get('name', 'Unknown')} "
+                                f"({printer.get('type', 'unknown')})"
+                            ),
+                        }
+                    )
+            return TemplateResponse(
+                request,
+                "admin/assets/bulk_remote_print.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "assets": queryset,
+                    "printer_choices": printer_choices,
+                    "action": "bulk_remote_print",
+                    "opts": self.model._meta,
+                    "title": "Print labels to remote printer",
+                },
+            )
 
         try:
             pc = PrintClient.objects.get(
@@ -1162,11 +1197,16 @@ class PrintRequestAdmin(ModelAdmin):
         "print_client",
         "printer_id",
         "status",
+        "sent_at",
+        "acked_at",
+        "completed_at",
+        "error_message",
         "created_at",
     ]
     list_filter = [
         ("status", ChoicesDropdownFilter),
         ("print_client", RelatedDropdownFilter),
+        "printer_id",
         "created_at",
     ]
     search_fields = ["job_id", "printer_id"]

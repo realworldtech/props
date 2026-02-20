@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, models
 from django.urls import reverse
 from django.utils import timezone
@@ -1756,7 +1756,7 @@ class PrintRequest(models.Model):
     printer_id = models.CharField(max_length=50)
     quantity = models.PositiveIntegerField(
         default=1,
-        validators=[MinValueValidator(1)],
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
     )
     status = models.CharField(
         max_length=20,

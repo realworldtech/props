@@ -10,6 +10,7 @@ import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
+from django.conf import settings
 from django.utils import timezone
 
 from assets.models import PrintClient, PrintRequest
@@ -53,6 +54,20 @@ def dispatch_print_job(print_request):
         )
         return False
 
+    # V28: Validate printer_id against client's printers list
+    printer_ids = {
+        p.get("id") for p in (pc.printers or []) if isinstance(p, dict)
+    }
+    if print_request.printer_id not in printer_ids:
+        print_request.transition_to(
+            "failed",
+            error_message=(
+                f"Printer '{print_request.printer_id}' not found "
+                f"on client '{pc.name}'"
+            ),
+        )
+        return False
+
     asset = print_request.asset
     asset_name = ""
     category_name = ""
@@ -67,7 +82,12 @@ def dispatch_print_job(print_request):
             category_name = asset.category.name or ""
             if asset.category.department:
                 department_name = asset.category.department.name or ""
-        qr_content = f"/a/{barcode_val}/"
+        # V30/V31: qr_content must be full URL
+        site_url = getattr(settings, "SITE_URL", "")
+        if site_url:
+            qr_content = f"{site_url.rstrip('/')}/a/{barcode_val}/"
+        else:
+            qr_content = f"/a/{barcode_val}/"
 
     channel_layer = get_channel_layer()
     group_name = f"print_client_active_{pc.pk}"
@@ -84,7 +104,20 @@ def dispatch_print_job(print_request):
         "quantity": print_request.quantity,
     }
 
-    async_to_sync(channel_layer.group_send)(group_name, message)
+    # V40: Catch send failures and transition to failed
+    try:
+        async_to_sync(channel_layer.group_send)(group_name, message)
+    except Exception as exc:
+        logger.exception(
+            "Failed to send print job %s: %s",
+            print_request.job_id,
+            exc,
+        )
+        print_request.transition_to(
+            "failed",
+            error_message=f"Send failed: {exc}",
+        )
+        return False
 
     return True
 

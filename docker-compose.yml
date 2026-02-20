@@ -92,7 +92,7 @@ services:
       CREDENTIALS_FILE: /var/lib/garage/credentials.env
     restart: "no"
 
-  # Dev profile - direct access on port 8003 with hot reload
+  # Dev profile - direct access on port 8003 with Daphne (ASGI)
   web:
     build: .
     restart: unless-stopped
@@ -106,10 +106,10 @@ services:
       cd /app/src &&
       python manage.py migrate --noinput &&
       python manage.py collectstatic --noinput &&
-      gunicorn --bind 0.0.0.0:8000 --workers 2 --reload props.wsgi:application
+      daphne -b 0.0.0.0 -p 8000 props.asgi:application
       "
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/accounts/login/\")'"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health/\")'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -195,7 +195,7 @@ services:
     environment:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
 
-  # Prod profile - behind Traefik
+  # Prod profile - behind Traefik (single-process Daphne for ASGI/WS)
   web-prod:
     build: .
     restart: unless-stopped
@@ -210,8 +210,14 @@ services:
       cd /app/src &&
       python manage.py migrate --noinput &&
       python manage.py collectstatic --noinput &&
-      gunicorn --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-4} --access-logfile - --error-logfile - --log-level info props.wsgi:application
+      daphne -b 0.0.0.0 -p 8000 props.asgi:application
       "
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health/\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
       - static_volume:/app/src/staticfiles
       - garage_data:/var/lib/garage:ro

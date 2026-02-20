@@ -280,6 +280,11 @@ PRINT_JOB_TIMEOUT_SECONDS = int(
     os.environ.get("PRINT_JOB_TIMEOUT_SECONDS", "300")
 )
 
+# V21: Require wss:// in production (default True when not DEBUG)
+SECURE_WEBSOCKET = os.environ.get(
+    "SECURE_WEBSOCKET", str(not DEBUG)
+).lower() in ("true", "1", "yes")
+
 # Zebra printer configuration
 ZEBRA_PRINTER_HOST = os.environ.get("ZEBRA_PRINTER_HOST", "")
 ZEBRA_PRINTER_PORT = int(os.environ.get("ZEBRA_PRINTER_PORT", "9100"))

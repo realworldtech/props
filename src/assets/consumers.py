@@ -9,6 +9,7 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from assets.models import PrintClient, PrintRequest
@@ -21,6 +22,10 @@ SUPPORTED_PROTOCOL_VERSIONS = {"1"}
 # Unauthenticated connection timeout in seconds.
 # Configurable via settings.PRINT_SERVICE_AUTH_TIMEOUT (default 30).
 AUTH_TIMEOUT_SECONDS = getattr(settings, "PRINT_SERVICE_AUTH_TIMEOUT", 30)
+
+# V20: Auth rate limit — max attempts per minute per IP
+AUTH_RATE_LIMIT_MAX = 5
+AUTH_RATE_LIMIT_WINDOW = 60  # seconds
 
 
 class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
@@ -35,6 +40,14 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         self.authenticated = False
         self.pairing_group = None
         self._timeout_handle = None
+
+        # §4.3.3.4-26: Reject non-TLS in production
+        if getattr(settings, "SECURE_WEBSOCKET", True):
+            scheme = self.scope.get("scheme", "")
+            if scheme == "ws":  # not wss
+                await self.close()
+                return
+
         await self.accept()
         self._schedule_auth_timeout()
 
@@ -61,6 +74,13 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
             self._timeout_handle.cancel()
             self._timeout_handle = None
 
+    def _get_client_ip(self):
+        """Extract IP address from scope for rate limiting."""
+        client = self.scope.get("client")
+        if client:
+            return client[0]
+        return "unknown"
+
     async def disconnect(self, close_code):
         self._cancel_timeout()
 
@@ -75,6 +95,11 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
 
         # Leave active and connection groups
         if self.print_client_pk and self.authenticated:
+            # V18: Fail in-flight jobs on disconnect
+            await self._fail_inflight_jobs(
+                self.print_client_pk, "Connection lost"
+            )
+
             for grp in (
                 f"print_client_active_{self.print_client_pk}",
                 f"print_client_conn_{self.print_client_pk}",
@@ -102,6 +127,19 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
                     pass
 
             await update_disconnect(self.print_client_pk)
+
+    @database_sync_to_async
+    def _fail_inflight_jobs(self, client_pk, reason):
+        """V18: Transition pending/sent/acked jobs to failed."""
+        inflight = PrintRequest.objects.filter(
+            print_client_id=client_pk,
+            status__in=["pending", "sent", "acked"],
+        )
+        for pr in inflight:
+            try:
+                pr.transition_to("failed", error_message=reason)
+            except Exception:
+                logger.exception("Error failing in-flight job %s", pr.job_id)
 
     async def receive_json(self, content, **kwargs):
         msg_type = content.get("type")
@@ -261,6 +299,64 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
     # Authentication flow
     # -----------------------------------------------------------------
 
+    def _validate_printers(self, printers):
+        """V24/V25/V26: Validate printer list from authenticate.
+
+        Returns (is_valid, error_message).
+        """
+        if not isinstance(printers, list):
+            return False, "Printers must be a list"
+
+        # V25: Max 10 printers per client
+        if len(printers) > 10:
+            return False, "Maximum 10 printers allowed per client"
+
+        seen_ids = set()
+        for p in printers:
+            if not isinstance(p, dict):
+                return False, "Each printer must be an object"
+            # V24: id and name keys required
+            if "id" not in p:
+                return False, "Printer missing required 'id' key"
+            if "name" not in p:
+                return False, "Printer missing required 'name' key"
+            # V26: Unique printer ids
+            pid = p["id"]
+            if pid in seen_ids:
+                return (
+                    False,
+                    f"Duplicate printer id: {pid}",
+                )
+            seen_ids.add(pid)
+
+        return True, ""
+
+    async def _check_rate_limit(self, ip):
+        """V20: Rate limit auth attempts — 5/min/IP.
+
+        Returns True if rate limited (should reject).
+        Only counts failed attempts.
+        """
+        cache_key = f"print_auth_attempts:{ip}"
+
+        @database_sync_to_async
+        def _check():
+            attempts = cache.get(cache_key, 0)
+            return attempts >= AUTH_RATE_LIMIT_MAX
+
+        return await _check()
+
+    @database_sync_to_async
+    def _increment_rate_limit(self, ip):
+        """Increment failed auth attempt counter."""
+        cache_key = f"print_auth_attempts:{ip}"
+        attempts = cache.get(cache_key, 0)
+        cache.set(
+            cache_key,
+            attempts + 1,
+            AUTH_RATE_LIMIT_WINDOW,
+        )
+
     async def _handle_authenticate(self, content):
         """Handle authenticate message per §4.3.3.4."""
         protocol_version = content.get("protocol_version", "")
@@ -279,6 +375,21 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
             )
             return
 
+        # V20: Rate limiting
+        ip = self._get_client_ip()
+        if await self._check_rate_limit(ip):
+            await self.send_json(
+                {
+                    "type": "error",
+                    "code": "rate_limited",
+                    "message": (
+                        "Too many authentication attempts. " "Try again later."
+                    ),
+                }
+            )
+            await self.close()
+            return
+
         raw_token = content.get("token", "")
         client_name = content.get("client_name", "")
         printers = content.get("printers", [])
@@ -289,6 +400,19 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
                     "type": "auth_result",
                     "success": False,
                     "message": "Token is required",
+                }
+            )
+            await self.close()
+            return
+
+        # V24/V25/V26: Validate printers
+        valid, error_msg = self._validate_printers(printers)
+        if not valid:
+            await self.send_json(
+                {
+                    "type": "auth_result",
+                    "success": False,
+                    "message": error_msg,
                 }
             )
             await self.close()
@@ -307,6 +431,7 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         print_client = await lookup_client(token_hash)
 
         if print_client is None:
+            await self._increment_rate_limit(ip)
             await self.send_json(
                 {
                     "type": "auth_result",
@@ -319,11 +444,12 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
 
         # Check approval and active status
         if print_client.status != "approved" or not print_client.is_active:
+            await self._increment_rate_limit(ip)
             await self.send_json(
                 {
                     "type": "auth_result",
                     "success": False,
-                    "message": "Client is not approved or is inactive",
+                    "message": ("Client is not approved or is inactive"),
                 }
             )
             await self.close()
@@ -332,6 +458,10 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         # Single connection enforcement: if already connected,
         # close the old connection via channel layer
         if print_client.is_connected:
+            # V18: Fail in-flight jobs on the old connection
+            await self._fail_inflight_jobs(
+                print_client.pk, "Connection superseded"
+            )
             conn_group = f"print_client_conn_{print_client.pk}"
             try:
                 await self.channel_layer.group_send(

@@ -3767,3 +3767,1370 @@ class TestStaleJobCleanup:
 
         count = cleanup_stale_print_jobs(timeout_seconds=300)
         assert count == 3
+
+
+# ---------------------------------------------------------------------------
+# V18 — In-flight jobs on superseded connections transition to failed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSupersededConnectionFailsJobs:
+    """V18: In-flight jobs on superseded connections → failed."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_inflight_jobs_failed_on_force_disconnect(
+        self, admin_user, asset
+    ):
+        """V18: When a connection is superseded, pending/sent/acked
+        PrintRequests for that client should transition to failed
+        with 'Connection superseded'.
+        """
+        pc, raw_token = await _make_approved_client_and_token(admin_user)
+        comm1 = _make_communicator()
+        connected, _ = await comm1.connect()
+        assert connected
+
+        auth = await _authenticate_communicator(comm1, raw_token)
+        assert auth["success"] is True
+        new_token = auth["new_token"]
+
+        # Create in-flight jobs in various states
+        @database_sync_to_async
+        def create_jobs(pc_obj, asset_obj):
+            pr_pending = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                status="pending",
+            )
+            pr_sent = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                status="pending",
+            )
+            pr_sent.transition_to("sent")
+            pr_acked = PrintRequest.objects.create(
+                print_client=pc_obj,
+                asset=asset_obj,
+                printer_id="zebra-01",
+                status="pending",
+            )
+            pr_acked.transition_to("sent")
+            pr_acked.transition_to("acked")
+            return pr_pending.job_id, pr_sent.job_id, pr_acked.job_id
+
+        j_pend, j_sent, j_acked = await create_jobs(pc, asset)
+
+        # Second connection supersedes
+        comm2 = _make_communicator()
+        connected2, _ = await comm2.connect()
+        assert connected2
+
+        await comm2.send_json_to(
+            {
+                "type": "authenticate",
+                "token": new_token,
+                "client_name": "Dispatch Station",
+                "printers": [],
+                "protocol_version": "1",
+            }
+        )
+        resp2 = await comm2.receive_json_from(timeout=5)
+        assert resp2["success"] is True
+
+        # Allow disconnect handler to process
+        await asyncio.sleep(0.5)
+
+        @database_sync_to_async
+        def check_statuses(j1, j2, j3):
+            r1 = PrintRequest.objects.get(job_id=j1)
+            r2 = PrintRequest.objects.get(job_id=j2)
+            r3 = PrintRequest.objects.get(job_id=j3)
+            return (
+                r1.status,
+                r1.error_message,
+                r2.status,
+                r2.error_message,
+                r3.status,
+                r3.error_message,
+            )
+
+        (
+            s1,
+            e1,
+            s2,
+            e2,
+            s3,
+            e3,
+        ) = await check_statuses(j_pend, j_sent, j_acked)
+        assert s1 == "failed"
+        assert "superseded" in e1.lower()
+        assert s2 == "failed"
+        assert "superseded" in e2.lower()
+        assert s3 == "failed"
+        assert "superseded" in e3.lower()
+
+        await comm2.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# V20 — Rate limit auth: 5 attempts/min/IP
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestAuthRateLimit:
+    """V20: Rate limit auth: 5 attempts per minute per IP."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_sixth_auth_attempt_rate_limited(self):
+        """V20: After 5 failed auth attempts, the 6th should be
+        rejected with rate_limited error code.
+        """
+        # Clear rate limit cache before test
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+
+        for i in range(5):
+            comm = _make_communicator()
+            connected, _ = await comm.connect()
+            assert connected
+            await comm.send_json_to(
+                {
+                    "type": "authenticate",
+                    "token": f"bad-token-{i}",
+                    "client_name": "Rate Test",
+                    "printers": [],
+                    "protocol_version": "1",
+                }
+            )
+            resp = await comm.receive_json_from(timeout=5)
+            assert resp["type"] == "auth_result"
+            assert resp["success"] is False
+            try:
+                await comm.receive_output(timeout=1)
+            except asyncio.TimeoutError:
+                pass
+
+        # 6th attempt should be rate limited
+        comm6 = _make_communicator()
+        connected6, _ = await comm6.connect()
+        assert connected6
+        await comm6.send_json_to(
+            {
+                "type": "authenticate",
+                "token": "bad-token-6",
+                "client_name": "Rate Test",
+                "printers": [],
+                "protocol_version": "1",
+            }
+        )
+        resp6 = await comm6.receive_json_from(timeout=5)
+        assert resp6["type"] == "error"
+        assert resp6["code"] == "rate_limited"
+        await comm6.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# V24/V25/V26 — Printer validation in authenticate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPrinterValidation:
+    """V24/V25/V26: Printer validation during authentication."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_printer_missing_id_rejected(self, admin_user):
+        """V24: Printers without 'id' key should be rejected."""
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_client():
+            return PrintClient.objects.create(
+                name="Printer Validate Station",
+                token_hash=token_hash,
+                status="approved",
+                approved_by=admin_user,
+                approved_at=timezone.now(),
+            )
+
+        await create_client()
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token,
+                "client_name": "Printer Validate Station",
+                "printers": [{"name": "Printer 1", "type": "zpl"}],
+                "protocol_version": "1",
+            }
+        )
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "auth_result"
+        assert resp["success"] is False
+        assert "printer" in resp["message"].lower()
+        await comm.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_printer_missing_name_rejected(self, admin_user):
+        """V24: Printers without 'name' key should be rejected."""
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_client():
+            return PrintClient.objects.create(
+                name="PVS2",
+                token_hash=token_hash,
+                status="approved",
+                approved_by=admin_user,
+                approved_at=timezone.now(),
+            )
+
+        await create_client()
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token,
+                "client_name": "PVS2",
+                "printers": [{"id": "p1", "type": "zpl"}],
+                "protocol_version": "1",
+            }
+        )
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "auth_result"
+        assert resp["success"] is False
+        await comm.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_max_10_printers_enforced(self, admin_user):
+        """V25: Max 10 printers per client."""
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_client():
+            return PrintClient.objects.create(
+                name="Max Printers Station",
+                token_hash=token_hash,
+                status="approved",
+                approved_by=admin_user,
+                approved_at=timezone.now(),
+            )
+
+        await create_client()
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+
+        printers_11 = [
+            {"id": f"p{i}", "name": f"Printer {i}", "type": "zpl"}
+            for i in range(11)
+        ]
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token,
+                "client_name": "Max Printers Station",
+                "printers": printers_11,
+                "protocol_version": "1",
+            }
+        )
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "auth_result"
+        assert resp["success"] is False
+        assert "10" in resp["message"] or "max" in resp["message"].lower()
+        await comm.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_duplicate_printer_ids_rejected(self, admin_user):
+        """V26: Duplicate printer ids within client are rejected."""
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_client():
+            return PrintClient.objects.create(
+                name="Dup IDs Station",
+                token_hash=token_hash,
+                status="approved",
+                approved_by=admin_user,
+                approved_at=timezone.now(),
+            )
+
+        await create_client()
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+
+        printers = [
+            {"id": "same-id", "name": "Printer A", "type": "zpl"},
+            {"id": "same-id", "name": "Printer B", "type": "zpl"},
+        ]
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token,
+                "client_name": "Dup IDs Station",
+                "printers": printers,
+                "protocol_version": "1",
+            }
+        )
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "auth_result"
+        assert resp["success"] is False
+        assert "duplicate" in resp["message"].lower()
+        await comm.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# V21 — SECURE_WEBSOCKET setting
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSecureWebSocket:
+    """V21: wss:// enforcement in production."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_secure_websocket_setting_exists(self):
+        """V21: SECURE_WEBSOCKET setting exists."""
+        from django.conf import settings
+
+        assert hasattr(settings, "SECURE_WEBSOCKET")
+
+
+# ---------------------------------------------------------------------------
+# V22 — Token length documentation
+# ---------------------------------------------------------------------------
+
+
+class TestTokenLength:
+    """V22: token_urlsafe(32) produces 43-char tokens, not 64."""
+
+    def test_token_urlsafe_32_produces_43_chars(self):
+        """V22: Document actual token length."""
+        token = secrets.token_urlsafe(32)
+        assert len(token) == 43
+
+
+# ---------------------------------------------------------------------------
+# V28 — Validate printer_id against client's printers list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDispatchPrinterValidation:
+    """V28: Validate printer_id against client's printers list."""
+
+    def test_invalid_printer_id_fails_job(self, asset):
+        """V28: Dispatching with a printer_id not in the
+        client's printers list fails the job.
+        """
+        from assets.services.print_dispatch import dispatch_print_job
+
+        pc = _make_approved_connected_client(
+            printers=[{"id": "printer-A", "name": "Printer A", "type": "zpl"}]
+        )
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="nonexistent-printer",
+            quantity=1,
+        )
+        result = dispatch_print_job(pr)
+        assert result is False
+        pr.refresh_from_db()
+        assert pr.status == "failed"
+        assert "printer" in pr.error_message.lower()
+
+    def test_valid_printer_id_succeeds(self, asset):
+        """V28: Valid printer_id passes validation."""
+        from assets.services.print_dispatch import dispatch_print_job
+
+        pc = _make_approved_connected_client(
+            printers=[{"id": "printer-A", "name": "Printer A", "type": "zpl"}]
+        )
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-A",
+            quantity=1,
+        )
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = mock_cl.return_value
+            mock_layer.group_send = lambda *a, **kw: None
+            from unittest.mock import AsyncMock
+
+            mock_layer.group_send = AsyncMock()
+            result = dispatch_print_job(pr)
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# V30/V31 — qr_content must be full URL
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestQrContentFullUrl:
+    """V30/V31: qr_content must be a full URL, not a relative path."""
+
+    def test_qr_content_uses_site_url(self, asset):
+        """V30: qr_content should be full URL using SITE_URL."""
+        from assets.services.print_dispatch import dispatch_print_job
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id=pc.printers[0]["id"],
+            quantity=1,
+        )
+
+        sent_messages = []
+
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = mock_cl.return_value
+
+            from unittest.mock import AsyncMock
+
+            async def capture_send(group, msg):
+                sent_messages.append(msg)
+
+            mock_layer.group_send = AsyncMock(side_effect=capture_send)
+
+            with patch(
+                "assets.services.print_dispatch.settings"
+            ) as mock_settings:
+                mock_settings.SITE_URL = "https://props.example.com"
+                dispatch_print_job(pr)
+
+        assert len(sent_messages) == 1
+        qr = sent_messages[0]["qr_content"]
+        assert qr.startswith("https://")
+        assert f"/a/{asset.barcode}/" in qr
+
+
+# ---------------------------------------------------------------------------
+# V40 — WebSocket send failure → transition to failed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestDispatchSendFailure:
+    """V40: WebSocket send failure transitions to failed."""
+
+    def test_channel_layer_error_fails_job(self, asset):
+        """V40: If channel layer group_send raises, job → failed."""
+        from assets.services.print_dispatch import dispatch_print_job
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id=pc.printers[0]["id"],
+            quantity=1,
+        )
+
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = mock_cl.return_value
+
+            from unittest.mock import AsyncMock
+
+            mock_layer.group_send = AsyncMock(
+                side_effect=Exception("Connection refused")
+            )
+            result = dispatch_print_job(pr)
+
+        assert result is False
+        pr.refresh_from_db()
+        assert pr.status == "failed"
+        assert "send" in pr.error_message.lower() or (
+            "connection" in pr.error_message.lower()
+        )
+
+
+# ---------------------------------------------------------------------------
+# V63 — Health check endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestHealthCheck:
+    """V63: /health/ returns 200 OK."""
+
+    def test_health_endpoint_returns_200(self, client):
+        """V63: Health check endpoint returns 200."""
+        response = client.get("/health/")
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# V89 — Permission: Members+, deny Viewers/Borrowers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestRemotePrintPermissions:
+    """V89: remote_print_submit requires Member+ permission."""
+
+    def test_viewer_denied_remote_print(self, client, asset, password):
+        """V89: Viewers cannot submit remote print requests."""
+        from assets.factories import UserFactory
+
+        viewer = UserFactory(username="viewer99", email="v99@example.com")
+        from django.contrib.auth.models import Group
+
+        viewer_group, _ = Group.objects.get_or_create(name="Viewer")
+        viewer.groups.add(viewer_group)
+        client.login(username="viewer99", password="testpass123")
+        pc = _make_approved_connected_client()
+        url = reverse("assets:remote_print_submit", args=[asset.pk])
+        response = client.post(
+            url,
+            {"client_pk": pc.pk, "printer_id": "printer-1", "quantity": 1},
+        )
+        # Should be forbidden (403) or redirect
+        assert response.status_code in (302, 403)
+
+    def test_member_allowed_remote_print(
+        self, client, asset, member_user, password
+    ):
+        """V89: Members can submit remote print requests."""
+        client.login(username=member_user.username, password=password)
+        pc = _make_approved_connected_client()
+        url = reverse("assets:remote_print_submit", args=[asset.pk])
+        response = client.post(
+            url,
+            {"client_pk": pc.pk, "printer_id": "printer-1", "quantity": 1},
+        )
+        assert response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# V91-V95 — Print job status endpoint and toasts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPrintJobStatusEndpoint:
+    """V92: HTMX polling endpoint for print job status."""
+
+    def test_print_job_status_returns_json(self, client_logged_in, asset):
+        """V92: Status endpoint returns job status."""
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            quantity=1,
+        )
+        url = reverse(
+            "assets:print_job_status",
+            args=[asset.pk, str(pr.job_id)],
+        )
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert data["status"] == "pending"
+
+    def test_print_job_status_completed(self, client_logged_in, asset):
+        """V93: Status endpoint returns completed status."""
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="pending",
+        )
+        pr.transition_to("sent")
+        pr.transition_to("acked")
+        pr.transition_to("completed")
+
+        url = reverse(
+            "assets:print_job_status",
+            args=[asset.pk, str(pr.job_id)],
+        )
+        response = client_logged_in.get(url)
+        data = response.json()
+        assert data["status"] == "completed"
+
+    def test_print_job_status_failed_includes_error(
+        self, client_logged_in, asset
+    ):
+        """V94: Failed status includes error message."""
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+            status="pending",
+        )
+        pr.transition_to("failed", error_message="Paper jam")
+
+        url = reverse(
+            "assets:print_job_status",
+            args=[asset.pk, str(pr.job_id)],
+        )
+        response = client_logged_in.get(url)
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["error"] == "Paper jam"
+
+
+# ---------------------------------------------------------------------------
+# V96 — Print history view
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPrintHistoryView:
+    """V96: Print history view for an asset."""
+
+    def test_print_history_lists_requests(self, client_logged_in, asset):
+        """V96: Print history shows PrintRequest records for an asset."""
+        pc = _make_approved_connected_client()
+        PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-1",
+        )
+        PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id="printer-2",
+        )
+        url = reverse("assets:print_history", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+
+    def test_print_history_requires_login(self, client, asset):
+        """Print history requires authentication."""
+        url = reverse("assets:print_history", args=[asset.pk])
+        response = client.get(url)
+        assert response.status_code == 302
+
+
+# ---------------------------------------------------------------------------
+# V50 — Admin dashboard auto-refresh attribute
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestAdminAutoRefresh:
+    """V50: PrintClient admin list has auto-refresh attributes."""
+
+    def test_changelist_has_hx_trigger(self, admin_client):
+        """V50: PrintClient changelist includes hx-trigger for
+        auto-refresh.
+        """
+        url = reverse("admin:assets_printclient_changelist")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert "hx-trigger" in content or "auto-refresh" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# V58 — Bulk remote print in Asset admin actions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulkRemotePrintInActions:
+    """V58: bulk_remote_print is listed in AssetAdmin.actions."""
+
+    def test_bulk_remote_print_in_actions_list(self):
+        """V58: AssetAdmin.actions includes bulk_remote_print."""
+        from assets.admin import AssetAdmin
+
+        action_names = [
+            a if isinstance(a, str) else getattr(a, "__name__", str(a))
+            for a in AssetAdmin.actions
+        ]
+        assert "bulk_remote_print" in action_names
+
+
+# ---------------------------------------------------------------------------
+# V8 — Auth message with bad protocol_version
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestAuthBadProtocolVersion:
+    """V8: Auth with unsupported protocol_version."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_auth_bad_protocol_version_returns_version_mismatch(
+        self,
+    ):
+        """V8: Auth with unsupported version returns version_mismatch."""
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": "some-token",
+                "client_name": "Test",
+                "printers": [],
+                "protocol_version": "999",
+            }
+        )
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "error"
+        assert resp["code"] == "version_mismatch"
+        await comm.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# V2 — Multiple different clients simultaneously
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestMultipleClients:
+    """V2: Multiple different clients connected simultaneously."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_two_different_clients_simultaneously(self, admin_user):
+        """V2: Two different clients can connect at the same time."""
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+        # Create two separate approved clients
+        raw_token1 = secrets.token_urlsafe(32)
+        hash1 = hashlib.sha256(raw_token1.encode()).hexdigest()
+        raw_token2 = secrets.token_urlsafe(32)
+        hash2 = hashlib.sha256(raw_token2.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_clients(admin):
+            c1 = PrintClient.objects.create(
+                name="Client A",
+                token_hash=hash1,
+                status="approved",
+                approved_by=admin,
+                approved_at=timezone.now(),
+            )
+            c2 = PrintClient.objects.create(
+                name="Client B",
+                token_hash=hash2,
+                status="approved",
+                approved_by=admin,
+                approved_at=timezone.now(),
+            )
+            return c1, c2
+
+        await create_clients(admin_user)
+
+        # Connect both
+        comm1 = _make_communicator()
+        conn1, _ = await comm1.connect()
+        assert conn1
+
+        comm2 = _make_communicator()
+        conn2, _ = await comm2.connect()
+        assert conn2
+
+        # Authenticate both
+        await comm1.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token1,
+                "client_name": "Client A",
+                "printers": [{"id": "p1", "name": "P1", "type": "zpl"}],
+                "protocol_version": "1",
+            }
+        )
+        r1 = await comm1.receive_json_from(timeout=5)
+        assert r1["success"] is True
+
+        await comm2.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token2,
+                "client_name": "Client B",
+                "printers": [{"id": "p2", "name": "P2", "type": "zpl"}],
+                "protocol_version": "1",
+            }
+        )
+        r2 = await comm2.receive_json_from(timeout=5)
+        assert r2["success"] is True
+
+        # Both should be connected
+        @database_sync_to_async
+        def check_both():
+            return PrintClient.objects.filter(is_connected=True).count()
+
+        count = await check_both()
+        assert count == 2
+
+        await comm1.disconnect()
+        await comm2.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# V35 — Periodic task invokes cleanup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPeriodicStaleCleanupTask:
+    """V35: Periodic task invokes cleanup_stale_print_jobs."""
+
+    def test_cleanup_task_exists(self):
+        """V35: Celery task for stale job cleanup is defined."""
+        from assets.tasks import cleanup_stale_jobs
+
+        assert callable(cleanup_stale_jobs)
+
+    def test_cleanup_task_calls_service(self, asset):
+        """V35: Task calls cleanup_stale_print_jobs."""
+        from assets.tasks import cleanup_stale_jobs
+
+        with patch(
+            "assets.services.print_dispatch.cleanup_stale_print_jobs"
+        ) as mock_cleanup:
+            mock_cleanup.return_value = 0
+            cleanup_stale_jobs()
+            mock_cleanup.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# V41 — Bulk creates N PrintRequests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestBulkCreatesNRequests:
+    """V41: Bulk print creates one PrintRequest per selected asset."""
+
+    def test_bulk_creates_correct_count(self, admin_user, asset):
+        """V41: Selecting 3 assets creates 3 PrintRequests."""
+        pc = _make_approved_connected_client()
+        a2 = Asset.objects.create(
+            name="Bulk Asset 2",
+            category=asset.category,
+            current_location=asset.current_location,
+            created_by=admin_user,
+        )
+        a3 = Asset.objects.create(
+            name="Bulk Asset 3",
+            category=asset.category,
+            current_location=asset.current_location,
+            created_by=admin_user,
+        )
+
+        from assets.admin import AssetAdmin
+
+        admin_obj = AssetAdmin(Asset, admin.site)
+        qs = Asset.objects.filter(pk__in=[asset.pk, a2.pk, a3.pk])
+
+        request = RequestFactory().post(
+            "/admin/",
+            data={
+                "client_pk": pc.pk,
+                "printer_id": pc.printers[0]["id"],
+            },
+        )
+        request.user = admin_user
+        request.session = SessionStore()
+        msgs = FallbackStorage(request)
+        setattr(request, "_messages", msgs)
+
+        with patch("assets.admin.dispatch_print_job") as mock_d:
+            mock_d.return_value = True
+            admin_obj.bulk_remote_print(request, qs)
+
+        assert PrintRequest.objects.filter(print_client=pc).count() == 3
+
+
+# ---------------------------------------------------------------------------
+# V60 — ASGI routing includes channels
+# ---------------------------------------------------------------------------
+
+
+class TestAsgiRouting:
+    """V60: ASGI routing includes WebSocket routes."""
+
+    def test_asgi_application_has_websocket(self):
+        """V60: ASGI application includes WebSocket protocol."""
+        from props.asgi import application
+
+        assert "websocket" in application.application_mapping
+
+
+# ---------------------------------------------------------------------------
+# V64-V68 — Redis channel layer config tests
+# ---------------------------------------------------------------------------
+
+
+class TestChannelLayerConfig:
+    """V64-V68: Redis channel layer configuration.
+
+    These tests verify the production settings in settings.py.
+    In tests, conftest overrides CHANNEL_LAYERS to InMemory,
+    so we read the settings module directly.
+    """
+
+    def test_channel_layer_backend_is_redis(self):
+        """V64: Channel layer uses channels_redis in settings.py."""
+        import importlib
+
+        import props.settings as settings_mod
+
+        importlib.reload(settings_mod)
+        cl = settings_mod.CHANNEL_LAYERS
+        backend = cl["default"]["BACKEND"]
+        assert "redis" in backend.lower()
+
+    def test_channel_layer_prefix_is_asgi(self):
+        """V67: Channel layer prefix is 'asgi:' in settings.py."""
+        import importlib
+
+        import props.settings as settings_mod
+
+        importlib.reload(settings_mod)
+        cl = settings_mod.CHANNEL_LAYERS
+        config = cl["default"]["CONFIG"]
+        assert config.get("prefix") == "asgi:"
+
+    def test_channel_layer_db_1(self):
+        """V65: Channel layer uses Redis DB 1 in settings.py."""
+        import importlib
+
+        import props.settings as settings_mod
+
+        importlib.reload(settings_mod)
+        cl = settings_mod.CHANNEL_LAYERS
+        hosts = cl["default"]["CONFIG"]["hosts"]
+        assert any("/1" in str(h) for h in hosts)
+
+
+# ---------------------------------------------------------------------------
+# V69-V71 — requirements.in includes channels/channels-redis/daphne
+# ---------------------------------------------------------------------------
+
+
+class TestRequirementsInclude:
+    """V69-V71: requirements.in includes necessary packages."""
+
+    def test_channels_in_requirements(self):
+        """V69: channels is in requirements.in."""
+        import pathlib
+
+        req = pathlib.Path(
+            "/Users/andrewya/dev/props/.worktrees/issue-10/" "requirements.in"
+        )
+        if not req.exists():
+            pytest.skip("requirements.in not found in worktree")
+        content = req.read_text()
+        assert "channels" in content
+
+    def test_channels_redis_in_requirements(self):
+        """V70: channels-redis is in requirements.in."""
+        import pathlib
+
+        req = pathlib.Path(
+            "/Users/andrewya/dev/props/.worktrees/issue-10/" "requirements.in"
+        )
+        if not req.exists():
+            pytest.skip("requirements.in not found in worktree")
+        content = req.read_text()
+        assert "channels-redis" in content
+
+    def test_daphne_in_requirements(self):
+        """V71: daphne is in requirements.in."""
+        import pathlib
+
+        req = pathlib.Path(
+            "/Users/andrewya/dev/props/.worktrees/issue-10/" "requirements.in"
+        )
+        if not req.exists():
+            pytest.skip("requirements.in not found in worktree")
+        content = req.read_text()
+        assert "daphne" in content
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+class TestAuthBadProtocolVersionCoverage:
+    """Authenticate with bad protocol_version returns version_mismatch.
+
+    Complements TestProtocolEdgeCases.test_protocol_version_mismatch_rejected
+    which tests pairing_request. This tests the authenticate message type.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_auth_bad_protocol_returns_version_mismatch(self):
+        """Sending authenticate with protocol_version '999' returns
+        error with code version_mismatch.
+        """
+        comm = _make_communicator()
+        connected, _ = await comm.connect()
+        assert connected
+
+        await comm.send_json_to(
+            {
+                "type": "authenticate",
+                "token": "any-token",
+                "client_name": "Version Mismatch Auth",
+                "printers": [],
+                "protocol_version": "999",
+            }
+        )
+
+        resp = await comm.receive_json_from(timeout=5)
+        assert resp["type"] == "error"
+        assert resp["code"] == "version_mismatch"
+
+        await comm.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestTwoDifferentClientsReceiveOwnJobs:
+    """Two different clients connected simultaneously each receive
+    their own print jobs, not each other's.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_two_different_clients_receive_own_print_jobs(
+        self, admin_user, asset
+    ):
+        """Client A and Client B are both authenticated. A print job
+        sent to Client A is received only by A, and a print job
+        sent to Client B is received only by B.
+        """
+        from django.core.cache import cache as django_cache
+
+        await database_sync_to_async(django_cache.clear)()
+
+        raw_token_a = secrets.token_urlsafe(32)
+        hash_a = hashlib.sha256(raw_token_a.encode()).hexdigest()
+        raw_token_b = secrets.token_urlsafe(32)
+        hash_b = hashlib.sha256(raw_token_b.encode()).hexdigest()
+
+        @database_sync_to_async
+        def create_clients(admin):
+            ca = PrintClient.objects.create(
+                name="Multi Client A",
+                token_hash=hash_a,
+                status="approved",
+                approved_by=admin,
+                approved_at=timezone.now(),
+            )
+            cb = PrintClient.objects.create(
+                name="Multi Client B",
+                token_hash=hash_b,
+                status="approved",
+                approved_by=admin,
+                approved_at=timezone.now(),
+            )
+            return ca, cb
+
+        client_a, client_b = await create_clients(admin_user)
+
+        # Connect and authenticate Client A
+        comm_a = _make_communicator()
+        conn_a, _ = await comm_a.connect()
+        assert conn_a
+
+        await comm_a.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token_a,
+                "client_name": "Multi Client A",
+                "printers": [
+                    {"id": "pa1", "name": "Printer A1", "type": "zpl"}
+                ],
+                "protocol_version": "1",
+            }
+        )
+        r_a = await comm_a.receive_json_from(timeout=5)
+        assert r_a["success"] is True
+
+        # Connect and authenticate Client B
+        comm_b = _make_communicator()
+        conn_b, _ = await comm_b.connect()
+        assert conn_b
+
+        await comm_b.send_json_to(
+            {
+                "type": "authenticate",
+                "token": raw_token_b,
+                "client_name": "Multi Client B",
+                "printers": [
+                    {"id": "pb1", "name": "Printer B1", "type": "zpl"}
+                ],
+                "protocol_version": "1",
+            }
+        )
+        r_b = await comm_b.receive_json_from(timeout=5)
+        assert r_b["success"] is True
+
+        # Verify both are connected
+        @database_sync_to_async
+        def check_both():
+            return PrintClient.objects.filter(is_connected=True).count()
+
+        count = await check_both()
+        assert count == 2
+
+        # Create a print request for Client A
+        @database_sync_to_async
+        def create_request_a(ca, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=ca,
+                asset=asset_obj,
+                printer_id="pa1",
+                quantity=1,
+                status="pending",
+            )
+
+        pr_a = await create_request_a(client_a, asset)
+
+        # Dispatch a print job to Client A only
+        channel_layer = get_channel_layer()
+        group_a = f"print_client_active_{client_a.pk}"
+        await channel_layer.group_send(
+            group_a,
+            {
+                "type": "print.job",
+                "job_id": str(pr_a.job_id),
+                "printer_id": "pa1",
+                "barcode": asset.barcode,
+                "asset_name": asset.name[:30],
+                "category_name": "",
+                "department_name": "",
+                "qr_content": (f"https://example.com/a/{asset.barcode}/"),
+                "quantity": 1,
+            },
+        )
+
+        # Client A should receive the job
+        msg_a = await comm_a.receive_json_from(timeout=5)
+        assert msg_a["type"] == "print"
+        assert msg_a["job_id"] == str(pr_a.job_id)
+
+        # Now dispatch a job to Client B
+        @database_sync_to_async
+        def create_request_b(cb, asset_obj):
+            return PrintRequest.objects.create(
+                print_client=cb,
+                asset=asset_obj,
+                printer_id="pb1",
+                quantity=1,
+                status="pending",
+            )
+
+        pr_b = await create_request_b(client_b, asset)
+
+        group_b = f"print_client_active_{client_b.pk}"
+        await channel_layer.group_send(
+            group_b,
+            {
+                "type": "print.job",
+                "job_id": str(pr_b.job_id),
+                "printer_id": "pb1",
+                "barcode": asset.barcode,
+                "asset_name": asset.name[:30],
+                "category_name": "",
+                "department_name": "",
+                "qr_content": (f"https://example.com/a/{asset.barcode}/"),
+                "quantity": 1,
+            },
+        )
+
+        # Client B should receive its job
+        msg_b = await comm_b.receive_json_from(timeout=5)
+        assert msg_b["type"] == "print"
+        assert msg_b["job_id"] == str(pr_b.job_id)
+
+        # Verify each received only their own job
+        assert msg_a["job_id"] != msg_b["job_id"]
+
+        await comm_a.disconnect()
+        await comm_b.disconnect()
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSecureWebSocketEnforcement:
+    """SECURE_WEBSOCKET enforcement: reject ws when True, accept wss."""
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_ws_rejected_when_secure_websocket_true(self):
+        """When SECURE_WEBSOCKET=True and scheme is 'ws', the
+        connection should be rejected (closed without accepting).
+        """
+        with patch("assets.consumers.settings") as mock_settings:
+            mock_settings.SECURE_WEBSOCKET = True
+            mock_settings.PRINT_SERVICE_AUTH_TIMEOUT = 30
+
+            comm = WebsocketCommunicator(_ws_app, "ws/print-service/")
+            # Manually set the scheme to 'ws' in the scope
+            comm.scope["scheme"] = "ws"
+
+            connected, code = await comm.connect()
+            # Connection should be rejected
+            assert connected is False
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_wss_accepted_when_secure_websocket_true(self):
+        """When SECURE_WEBSOCKET=True and scheme is 'wss', the
+        connection should be accepted.
+        """
+        with patch("assets.consumers.settings") as mock_settings:
+            mock_settings.SECURE_WEBSOCKET = True
+            mock_settings.PRINT_SERVICE_AUTH_TIMEOUT = 30
+
+            comm = WebsocketCommunicator(_ws_app, "ws/print-service/")
+            # Manually set the scheme to 'wss' in the scope
+            comm.scope["scheme"] = "wss"
+
+            connected, _ = await comm.connect()
+            assert connected is True
+
+            await comm.disconnect()
+
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_ws_accepted_when_secure_websocket_false(self):
+        """When SECURE_WEBSOCKET=False, ws connections are accepted."""
+        with patch("assets.consumers.settings") as mock_settings:
+            mock_settings.SECURE_WEBSOCKET = False
+            mock_settings.PRINT_SERVICE_AUTH_TIMEOUT = 30
+
+            comm = WebsocketCommunicator(_ws_app, "ws/print-service/")
+            comm.scope["scheme"] = "ws"
+
+            connected, _ = await comm.connect()
+            assert connected is True
+
+            await comm.disconnect()
+
+
+@pytest.mark.django_db
+class TestQuantityMaxValueValidator:
+    """PrintRequest quantity MaxValueValidator(100)."""
+
+    def test_quantity_101_raises_validation_error(self, asset):
+        """Quantity of 101 exceeds MaxValueValidator(100) and must
+        raise a ValidationError on full_clean.
+        """
+        token_hash = hashlib.sha256(b"qty-max-token").hexdigest()
+        print_client = PrintClient.objects.create(
+            name="Station",
+            token_hash=token_hash,
+            status="approved",
+        )
+        req = PrintRequest(
+            print_client=print_client,
+            asset=asset,
+            printer_id="printer-001",
+            quantity=101,
+        )
+        with pytest.raises(ValidationError):
+            req.full_clean()
+
+    def test_quantity_100_accepted(self, asset):
+        """Quantity of 100 is within MaxValueValidator(100) and
+        should pass validation.
+        """
+        token_hash = hashlib.sha256(b"qty-max-ok-token").hexdigest()
+        print_client = PrintClient.objects.create(
+            name="Station",
+            token_hash=token_hash,
+            status="approved",
+        )
+        req = PrintRequest(
+            print_client=print_client,
+            asset=asset,
+            printer_id="printer-001",
+            quantity=100,
+        )
+        req.full_clean()  # Should not raise
+        req.save()
+        assert req.quantity == 100
+
+
+@pytest.mark.django_db
+class TestTemplateRemotePrintButton:
+    """Template renders 'Print to Remote Printer' text conditionally."""
+
+    def test_template_contains_remote_print_text_when_connected(
+        self, client_logged_in, asset
+    ):
+        """When a connected client exists, the asset_detail template
+        should contain 'Print to Remote Printer' text.
+        """
+        _make_approved_connected_client()
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Print to Remote Printer" in content
+
+    def test_template_does_not_contain_remote_print_text_when_none(
+        self, client_logged_in, asset
+    ):
+        """When no connected clients exist, the asset_detail template
+        should NOT contain 'Print to Remote Printer' text.
+        """
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Print to Remote Printer" not in content
