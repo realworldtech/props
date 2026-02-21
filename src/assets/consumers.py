@@ -591,17 +591,27 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         job_id = event.get("job_id")
 
         # Forward all fields to the client as a print message
+        label_type = event.get("label_type", "asset")
         msg = {
             "type": "print",
             "job_id": job_id,
             "printer_id": event.get("printer_id", ""),
-            "barcode": event.get("barcode", ""),
-            "asset_name": event.get("asset_name", "")[:30],
-            "category_name": event.get("category_name", ""),
-            "department_name": event.get("department_name", ""),
+            "label_type": label_type,
             "qr_content": event.get("qr_content", ""),
             "quantity": event.get("quantity", 1),
         }
+
+        if label_type == "location":
+            msg["location_name"] = event.get("location_name", "")
+            msg["location_description"] = event.get("location_description", "")
+            msg["location_categories"] = event.get("location_categories", "")
+            msg["location_departments"] = event.get("location_departments", "")
+        else:
+            msg["barcode"] = event.get("barcode", "")
+            msg["asset_name"] = event.get("asset_name", "")[:30]
+            msg["category_name"] = event.get("category_name", "")
+            msg["department_name"] = event.get("department_name", "")
+
         # Pass through optional fields
         if "site_short_name" in event:
             msg["site_short_name"] = event["site_short_name"]
