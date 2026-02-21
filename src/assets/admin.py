@@ -38,6 +38,8 @@ from .models import (
     NFCTag,
     PrintClient,
     PrintRequest,
+    Project,
+    ProjectDateRange,
     SiteBranding,
     StocktakeSession,
     Tag,
@@ -1060,6 +1062,63 @@ class HoldListStatusAdmin(ModelAdmin):
     list_display = ["name", "is_default", "is_terminal", "sort_order", "color"]
     list_filter = ["is_default", "is_terminal"]
     search_fields = ["name"]
+
+
+class HoldListItemInline(TabularInline):
+    model = HoldListItem
+    extra = 0
+    fields = [
+        "asset",
+        "serial",
+        "quantity",
+        "pull_status",
+        "notes",
+    ]
+    readonly_fields = []
+    autocomplete_fields = ["asset"]
+
+
+@admin.register(HoldList)
+class HoldListAdmin(ModelAdmin):
+    list_display = [
+        "name",
+        "project",
+        "department",
+        "status",
+        "start_date",
+        "end_date",
+        "is_locked",
+        "created_by",
+    ]
+    list_filter = [
+        ("status", RelatedDropdownFilter),
+        ("department", RelatedDropdownFilter),
+        ("project", RelatedDropdownFilter),
+        "is_locked",
+    ]
+    search_fields = ["name", "notes"]
+    readonly_fields = ["created_at", "updated_at"]
+    inlines = [HoldListItemInline]
+
+
+class ProjectDateRangeInline(TabularInline):
+    model = ProjectDateRange
+    extra = 1
+    fields = ["label", "start_date", "end_date", "department", "category"]
+
+
+@admin.register(Project)
+class ProjectAdmin(ModelAdmin):
+    list_display = [
+        "name",
+        "is_active",
+        "created_by",
+        "created_at",
+    ]
+    list_filter = ["is_active"]
+    search_fields = ["name", "description"]
+    readonly_fields = ["created_at", "updated_at"]
+    inlines = [ProjectDateRangeInline]
 
 
 @admin.register(SiteBranding)

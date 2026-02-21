@@ -83,6 +83,11 @@
                             </button>
                             <div id="manage-menu" class="hidden absolute top-full left-0 mt-1 w-48 bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden z-50">
                                 <div class="py-1">
+                                    <p class="px-4 py-1.5 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Productions</p>
+                                    <a href="{% url 'assets:project_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Projects</a>
+                                    <a href="{% url 'assets:holdlist_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Hold Lists</a>
+                                </div>
+                                <div class="border-t border-stage-200 dark:border-white/5 py-1">
                                     <p class="px-4 py-1.5 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Organisation</p>
                                     <a href="{% url 'assets:category_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Categories</a>
                                     <a href="{% url 'assets:location_list' %}" class="block px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 transition-colors">Locations</a>
@@ -161,6 +166,11 @@
                         </a>
                         {% endif %}
                         {% if can_manage %}
+                        <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
+                            <p class="px-4 py-1 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Productions</p>
+                            <a href="{% url 'assets:project_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Projects</a>
+                            <a href="{% url 'assets:holdlist_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Hold Lists</a>
+                        </div>
                         <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
                             <p class="px-4 py-1 text-xs font-medium text-stage-500 dark:text-cream/40 uppercase tracking-wider">Manage</p>
                             <a href="{% url 'assets:category_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Categories</a>

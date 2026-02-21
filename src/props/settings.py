@@ -422,6 +422,27 @@ UNFOLD = {
                 ],
             },
             {
+                "title": "Productions",
+                "icon": "theater_comedy",
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Projects",
+                        "icon": "movie",
+                        "link": reverse_lazy(
+                            "admin:assets_project_changelist"
+                        ),
+                    },
+                    {
+                        "title": "Hold Lists",
+                        "icon": "playlist_add",
+                        "link": reverse_lazy(
+                            "admin:assets_holdlist_changelist"
+                        ),
+                    },
+                ],
+            },
+            {
                 "title": "Printing",
                 "icon": "print",
                 "collapsible": True,
