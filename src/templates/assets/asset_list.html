@@ -193,6 +193,7 @@
     var bulkBorrowerSelect = document.getElementById('bulk-borrower');
     var bulkCheckinLocationSelect = document.getElementById('bulk-checkin-location');
     var bulkActionDateInput = document.getElementById('bulk-action-date');
+    var bulkRemotePrinter = document.getElementById('bulk-remote-printer');
 
     if (actionSelect) {
         actionSelect.addEventListener('change', function() {
@@ -203,6 +204,7 @@
             bulkBorrowerSelect.classList.add('hidden');
             bulkCheckinLocationSelect.classList.add('hidden');
             bulkActionDateInput.classList.add('hidden');
+            if (bulkRemotePrinter) bulkRemotePrinter.classList.add('hidden');
             if (this.value === 'transfer') {
                 locationSelect.classList.remove('hidden');
             } else if (this.value === 'status_change') {
@@ -221,6 +223,8 @@
             } else if (this.value === 'bulk_checkin') {
                 bulkCheckinLocationSelect.classList.remove('hidden');
                 bulkActionDateInput.classList.remove('hidden');
+            } else if (this.value === 'remote_print') {
+                if (bulkRemotePrinter) bulkRemotePrinter.classList.remove('hidden');
             }
         });
     }

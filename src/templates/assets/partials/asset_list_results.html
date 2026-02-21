@@ -159,7 +159,17 @@
             <option value="bulk_checkout">Bulk Check Out</option>
             <option value="bulk_checkin">Bulk Check In</option>
             <option value="print_labels">Print labels</option>
+            {% if remote_print_available %}
+            <option value="remote_print">Remote Print Labels</option>
+            {% endif %}
         </select>
+        {% if remote_print_available %}
+        <select name="remote_printer" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm hidden" id="bulk-remote-printer">
+            {% for p in connected_printers %}
+            <option value="{{ p.client_pk }}:{{ p.printer_id }}" {% if default_printer and default_printer.key == p.key %}selected{% endif %}>{{ p.client_name }} &mdash; {{ p.printer_name }}{% if p.printer_type %} ({{ p.printer_type }}){% endif %}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
         <select name="location" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm hidden" id="bulk-location">
             <option value="">Select location...</option>
             {% for loc in locations %}

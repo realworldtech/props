@@ -379,6 +379,37 @@ def asset_list(request):
         "username"
     )
 
+    # Connected remote printers for bulk remote print
+    connected_clients = PrintClient.objects.filter(
+        status="approved",
+        is_active=True,
+        is_connected=True,
+    )
+    connected_printers = []
+    for pc in connected_clients:
+        for printer in pc.printers or []:
+            printer_id = printer.get("id", "")
+            connected_printers.append(
+                {
+                    "client_pk": pc.pk,
+                    "client_name": pc.name,
+                    "printer_id": printer_id,
+                    "printer_name": printer.get("name", ""),
+                    "printer_type": printer.get("type", ""),
+                    "key": f"{pc.pk}:{printer_id}",
+                }
+            )
+    remote_print_available = len(connected_printers) > 0
+    last_printer = request.session.get("last_printer", "")
+    default_printer = None
+    if last_printer and connected_printers:
+        for p in connected_printers:
+            if p["key"] == last_printer:
+                default_printer = p
+                break
+    if default_printer is None and connected_printers:
+        default_printer = connected_printers[0]
+
     context = {
         "page_obj": page_obj,
         "q": q,
@@ -393,6 +424,9 @@ def asset_list(request):
         "page_size": page_size,
         "current_sort": sort,
         "active_users": active_users,
+        "remote_print_available": remote_print_available,
+        "connected_printers": connected_printers,
+        "default_printer": default_printer,
     }
 
     # HTMX: Return partial template for AJAX requests
@@ -3636,6 +3670,61 @@ def bulk_actions(request):
                 request,
                 "Failed to send labels to Zebra printer. "
                 "Check printer configuration.",
+            )
+
+    elif action == "remote_print":
+        # Bulk remote print via connected print client
+        remote_printer = request.POST.get("remote_printer", "")
+        if ":" not in remote_printer:
+            messages.error(request, "Please select a printer.")
+            return redirect("assets:asset_list")
+
+        client_pk, printer_id = remote_printer.split(":", 1)
+        try:
+            pc = PrintClient.objects.get(pk=client_pk)
+        except (PrintClient.DoesNotExist, ValueError, TypeError):
+            messages.error(request, "Print client not found.")
+            return redirect("assets:asset_list")
+
+        if pc.status != "approved" or not pc.is_active:
+            messages.error(request, "Print client is not approved or active.")
+            return redirect("assets:asset_list")
+
+        if not pc.is_connected:
+            messages.error(request, "Print client is no longer connected.")
+            return redirect("assets:asset_list")
+
+        from .services.print_dispatch import dispatch_print_job
+
+        assets = Asset.objects.filter(pk__in=asset_ids)
+        base_url = request.build_absolute_uri("/").rstrip("/")
+        sent = 0
+        failed = 0
+        for asset in assets:
+            pr = PrintRequest.objects.create(
+                asset=asset,
+                print_client=pc,
+                printer_id=printer_id,
+                quantity=1,
+                requested_by=request.user,
+            )
+            if dispatch_print_job(pr, site_url=base_url):
+                sent += 1
+            else:
+                failed += 1
+
+        # Remember last-used printer in session
+        request.session["last_printer"] = remote_printer
+
+        if sent:
+            messages.success(
+                request,
+                f"{sent} label(s) sent to {pc.name}.",
+            )
+        if failed:
+            messages.warning(
+                request,
+                f"{failed} label(s) failed to send.",
             )
 
     else:

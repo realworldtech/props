@@ -3455,7 +3455,8 @@ class TestQueryCounts:
     ):
         """Asset list should use a fixed number of queries."""
         # V500: +2 queries per non-serialised asset for available_count
-        with django_assert_num_queries(17):
+        # +1 for PrintClient query (bulk remote print)
+        with django_assert_num_queries(18):
             response = client_logged_in.get(reverse("assets:asset_list"))
         assert response.status_code == 200
 
@@ -16802,6 +16803,117 @@ class TestBulkZPLPrinting:
             },
         )
         assert resp.status_code == 302
+
+
+@pytest.mark.django_db
+class TestBulkRemotePrint:
+    """Bulk remote print via connected print client."""
+
+    def _make_print_client(self, printers=None):
+        from assets.models import PrintClient
+
+        return PrintClient.objects.create(
+            name="Test Station",
+            token_hash="bulkremotetest123",
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            printers=printers
+            or [{"id": "zebra1", "name": "Zebra", "type": "label"}],
+        )
+
+    @patch("assets.services.print_dispatch.dispatch_print_job")
+    def test_bulk_remote_print_success(
+        self, mock_dispatch, admin_client, asset
+    ):
+        """Bulk remote print dispatches jobs for each asset."""
+        mock_dispatch.return_value = True
+        pc = self._make_print_client()
+        url = reverse("assets:bulk_actions")
+        resp = admin_client.post(
+            url,
+            {
+                "asset_ids": [str(asset.pk)],
+                "bulk_action": "remote_print",
+                "remote_printer": f"{pc.pk}:zebra1",
+            },
+        )
+        assert resp.status_code == 302
+        mock_dispatch.assert_called_once()
+
+    def test_bulk_remote_print_no_printer(self, admin_client, asset):
+        """Returns error when no printer selected."""
+        url = reverse("assets:bulk_actions")
+        resp = admin_client.post(
+            url,
+            {
+                "asset_ids": [str(asset.pk)],
+                "bulk_action": "remote_print",
+                "remote_printer": "",
+            },
+        )
+        assert resp.status_code == 302
+
+    def test_bulk_remote_print_invalid_client(self, admin_client, asset):
+        """Returns error when print client not found."""
+        url = reverse("assets:bulk_actions")
+        resp = admin_client.post(
+            url,
+            {
+                "asset_ids": [str(asset.pk)],
+                "bulk_action": "remote_print",
+                "remote_printer": "9999:zebra1",
+            },
+        )
+        assert resp.status_code == 302
+
+    @patch("assets.services.print_dispatch.dispatch_print_job")
+    def test_bulk_remote_print_disconnected(
+        self, mock_dispatch, admin_client, asset
+    ):
+        """Returns error when print client is disconnected."""
+        pc = self._make_print_client()
+        pc.is_connected = False
+        pc.save()
+        url = reverse("assets:bulk_actions")
+        resp = admin_client.post(
+            url,
+            {
+                "asset_ids": [str(asset.pk)],
+                "bulk_action": "remote_print",
+                "remote_printer": f"{pc.pk}:zebra1",
+            },
+        )
+        assert resp.status_code == 302
+        mock_dispatch.assert_not_called()
+
+    @patch("assets.services.print_dispatch.dispatch_print_job")
+    def test_bulk_remote_print_saves_session(
+        self, mock_dispatch, admin_client, asset
+    ):
+        """Saves last-used printer to session."""
+        mock_dispatch.return_value = True
+        pc = self._make_print_client()
+        url = reverse("assets:bulk_actions")
+        admin_client.post(
+            url,
+            {
+                "asset_ids": [str(asset.pk)],
+                "bulk_action": "remote_print",
+                "remote_printer": f"{pc.pk}:zebra1",
+            },
+        )
+        assert admin_client.session["last_printer"] == f"{pc.pk}:zebra1"
+
+    def test_asset_list_shows_remote_print_option(self, admin_client, asset):
+        """Asset list includes remote print when printers connected."""
+        pc = self._make_print_client()
+        resp = admin_client.get(reverse("assets:asset_list"))
+        assert resp.context["remote_print_available"] is True
+        assert len(resp.context["connected_printers"]) == 1
+        assert resp.context["connected_printers"][0]["key"] == (
+            f"{pc.pk}:zebra1"
+        )
 
 
 @pytest.mark.django_db
