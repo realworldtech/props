@@ -273,8 +273,6 @@ services:
         condition: service_healthy
       garage-init:
         condition: service_completed_successfully
-      web-init:
-        condition: service_completed_successfully
     env_file: .env
     environment:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
