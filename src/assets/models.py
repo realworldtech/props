@@ -1734,6 +1734,7 @@ class PrintClient(models.Model):
         related_name="approved_print_clients",
     )
     approved_at = models.DateTimeField(null=True, blank=True)
+    protocol_version = models.CharField(max_length=10, default="1")
 
     class Meta:
         ordering = ["-created_at"]
@@ -1779,12 +1780,29 @@ class PrintRequest(models.Model):
         blank=True,
         related_name="print_requests",
     )
+    LABEL_TYPE_CHOICES = [
+        ("asset", "Asset"),
+        ("location", "Location"),
+    ]
+
     asset = models.ForeignKey(
         Asset,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="print_requests",
+    )
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="print_requests",
+    )
+    label_type = models.CharField(
+        max_length=20,
+        choices=LABEL_TYPE_CHOICES,
+        default="asset",
     )
     printer_id = models.CharField(max_length=50)
     quantity = models.PositiveIntegerField(

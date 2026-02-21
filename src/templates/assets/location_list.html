@@ -14,92 +14,53 @@
         </a>
     </div>
 
-    {% if locations %}
-    <div class="space-y-3">
-        {% for location in locations %}
-        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <svg class="w-5 h-5 text-stage-500 dark:text-cream/40 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                    <div>
-                        <h3 class="font-medium text-stage-900 dark:text-cream">
-                            <a href="{% url 'assets:location_detail' location.pk %}" class="hover:text-brand-400 transition-colors">{{ location.name }}</a>
-                        </h3>
-                        {% if location.address %}
-                        <p class="text-xs text-stage-500 dark:text-cream/40 mt-0.5">{{ location.address }}</p>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    {% if not location.is_active %}
-                    <span class="text-xs text-red-400/70 bg-red-500/10 px-2 py-0.5 rounded-full">Inactive</span>
-                    {% endif %}
-                    <a href="{% url 'assets:location_create' %}?parent={{ location.pk }}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream text-xs transition-colors" title="Add child location">+ Child</a>
-                    <a href="{% url 'assets:location_edit' location.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                    </a>
-                </div>
+    <!-- Search and Filters -->
+    <form method="get" class="space-y-4" id="location-filter-form">
+        <div class="flex gap-3">
+            <div class="relative flex-1">
+                <svg class="w-4 h-4 text-stage-500 dark:text-cream/30 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search locations..."
+                    class="form-input w-full rounded-lg pl-10 pr-4 py-2.5 text-stage-900 dark:text-cream"
+                    hx-get="{% url 'assets:location_list' %}"
+                    hx-trigger="input changed delay:300ms, search"
+                    hx-target="#location-results"
+                    hx-push-url="true"
+                    hx-include="[name='q'],[name='department'],[name='view']">
             </div>
-            {% if location.description %}
-            <p class="text-sm text-stage-500 dark:text-cream/50 mt-2">{{ location.description }}</p>
-            {% endif %}
+            <button type="submit" class="bg-brand-500 hover:bg-brand-400 text-stage-900 px-6 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
+                Search
+            </button>
+        </div>
 
-            {% if location.children.all %}
-            <div class="mt-3 ml-4 pl-4 border-l border-stage-200 dark:border-white/10 space-y-2">
-                {% for child in location.children.all %}
-                <div>
-                    <div class="flex items-center justify-between py-1">
-                        <div class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-stage-500 dark:text-cream/30 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                            <a href="{% url 'assets:location_detail' child.pk %}" class="text-sm text-stage-600 dark:text-cream/70 hover:text-brand-400 transition-colors">{{ child.name }}</a>
-                            {% if not child.is_active %}
-                            <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1.5 py-0.5 rounded-full">Inactive</span>
-                            {% endif %}
-                        </div>
-                        <a href="{% url 'assets:location_edit' child.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                        </a>
-                    </div>
-                    {% if child.children.all %}
-                    <div class="ml-4 pl-4 border-l border-stage-200 dark:border-white/5 space-y-1">
-                        {% for grandchild in child.children.all %}
-                        <div class="flex items-center justify-between py-0.5">
-                            <div class="flex items-center gap-2">
-                                <span class="w-1.5 h-1.5 rounded-full bg-stage-200 dark:bg-cream/20 flex-shrink-0"></span>
-                                <a href="{% url 'assets:location_detail' grandchild.pk %}" class="text-xs text-stage-500 dark:text-cream/50 hover:text-brand-400 transition-colors">{{ grandchild.name }}</a>
-                                {% if not grandchild.is_active %}
-                                <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1 py-0.5 rounded-full">Inactive</span>
-                                {% endif %}
-                            </div>
-                            <a href="{% url 'assets:location_edit' grandchild.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                            </a>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </div>
+        <div class="flex flex-wrap gap-3 items-center">
+            <select name="department" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
+                <option value="">All Departments</option>
+                {% for dept in departments %}
+                <option value="{{ dept.pk }}" {% if current_department == dept.pk|stringformat:"d" %}selected{% endif %}>{{ dept.name }}</option>
                 {% endfor %}
-            </div>
+            </select>
+
+            {% if q or current_department %}
+            <a href="{% url 'assets:location_list' %}{% if view_mode == 'flat' %}?view=flat{% endif %}" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Clear filters</a>
             {% endif %}
         </div>
-        {% endfor %}
+
+        <!-- View controls: tree/flat toggle -->
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <input type="hidden" name="view" id="view-input" value="{{ view_mode }}">
+                <button type="submit" onclick="document.getElementById('view-input').value='tree'" class="p-2 rounded-lg transition-colors {% if view_mode == 'tree' %}bg-stage-100 dark:bg-stage-700 text-stage-900 dark:text-cream{% else %}text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream{% endif %}" title="Tree view">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                </button>
+                <button type="submit" onclick="document.getElementById('view-input').value='flat'" class="p-2 rounded-lg transition-colors {% if view_mode == 'flat' %}bg-stage-100 dark:bg-stage-700 text-stage-900 dark:text-cream{% else %}text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream{% endif %}" title="Flat view">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 18h18M3 6h18"/></svg>
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <div id="location-results">
+        {% include "assets/partials/location_list_results.html" %}
     </div>
-    {% else %}
-    <div class="text-center py-16">
-        <svg class="w-16 h-16 mx-auto text-stage-200 dark:text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-        </svg>
-        <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70">No locations yet</h3>
-        <p class="text-stage-500 dark:text-cream/40 text-sm mt-1">Locations can be created in the admin panel.</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}

@@ -70,41 +70,101 @@ def dispatch_print_job(print_request, site_url=None):
         )
         return False
 
-    asset = print_request.asset
-    asset_name = ""
-    category_name = ""
-    department_name = ""
-    barcode_val = ""
-    qr_content = ""
+    label_type = getattr(print_request, "label_type", "asset") or "asset"
 
-    if asset:
-        asset_name = (asset.name or "")[:30]
-        barcode_val = asset.barcode or ""
-        if asset.category:
-            category_name = asset.category.name or ""
-            if asset.category.department:
-                department_name = asset.category.department.name or ""
-        # V30/V31: qr_content must be full URL
-        base_url = site_url or getattr(settings, "SITE_URL", "")
-        if base_url:
-            qr_content = f"{base_url.rstrip('/')}/a/{barcode_val}/"
-        else:
-            qr_content = f"/a/{barcode_val}/"
+    # v2 gate: location labels require protocol v2+
+    if label_type == "location" and pc.protocol_version < "2":
+        print_request.transition_to(
+            "failed",
+            error_message=(
+                "Location labels require protocol v2+. "
+                f"Client '{pc.name}' is v{pc.protocol_version}."
+            ),
+        )
+        return False
 
     channel_layer = get_channel_layer()
     group_name = f"print_client_active_{pc.pk}"
 
-    message = {
-        "type": "print.job",
-        "job_id": str(print_request.job_id),
-        "printer_id": print_request.printer_id,
-        "barcode": barcode_val,
-        "asset_name": asset_name,
-        "category_name": category_name,
-        "department_name": department_name,
-        "qr_content": qr_content,
-        "quantity": print_request.quantity,
-    }
+    if label_type == "location":
+        location = print_request.location
+        location_name = ""
+        location_description = ""
+        location_categories = ""
+        location_departments = ""
+        qr_content = ""
+        if location:
+            location_name = location.name or ""
+            location_description = location.description or ""
+            # Derive categories/departments from assets at location
+            from assets.models import Asset
+
+            loc_assets = Asset.objects.filter(
+                current_location=location, status="active"
+            ).select_related("category__department")
+            cats = set()
+            depts = set()
+            for a in loc_assets:
+                if a.category:
+                    cats.add(a.category.name)
+                    if a.category.department:
+                        depts.add(a.category.department.name)
+            location_categories = ", ".join(sorted(cats))
+            location_departments = ", ".join(sorted(depts))
+            base_url = site_url or getattr(settings, "SITE_URL", "")
+            if base_url:
+                qr_content = (
+                    f"{base_url.rstrip('/')}/locations/" f"{location.pk}/"
+                )
+            else:
+                qr_content = f"/locations/{location.pk}/"
+
+        message = {
+            "type": "print.job",
+            "job_id": str(print_request.job_id),
+            "printer_id": print_request.printer_id,
+            "label_type": "location",
+            "location_name": location_name,
+            "location_description": location_description,
+            "location_categories": location_categories,
+            "location_departments": location_departments,
+            "qr_content": qr_content,
+            "quantity": print_request.quantity,
+        }
+    else:
+        asset = print_request.asset
+        asset_name = ""
+        category_name = ""
+        department_name = ""
+        barcode_val = ""
+        qr_content = ""
+
+        if asset:
+            asset_name = (asset.name or "")[:30]
+            barcode_val = asset.barcode or ""
+            if asset.category:
+                category_name = asset.category.name or ""
+                if asset.category.department:
+                    department_name = asset.category.department.name or ""
+            # V30/V31: qr_content must be full URL
+            base_url = site_url or getattr(settings, "SITE_URL", "")
+            if base_url:
+                qr_content = f"{base_url.rstrip('/')}/a/{barcode_val}/"
+            else:
+                qr_content = f"/a/{barcode_val}/"
+
+        message = {
+            "type": "print.job",
+            "job_id": str(print_request.job_id),
+            "printer_id": print_request.printer_id,
+            "label_type": "asset",
+            "barcode": barcode_val,
+            "asset_name": asset_name,
+            "category_name": category_name,
+            "department_name": department_name,
+            "qr_content": qr_content,
+            "quantity": print_request.quantity,
+        }
 
     # V40: Catch send failures and transition to failed
     try:

@@ -24,6 +24,8 @@ from assets.models import (
     HoldListStatus,
     Location,
     NFCTag,
+    PrintClient,
+    PrintRequest,
     SiteBranding,
     StocktakeItem,
     StocktakeSession,
@@ -3443,7 +3445,7 @@ class TestQueryCounts:
     ):
         """Dashboard should use a fixed number of queries."""
         asset.tags.add(tag)
-        with django_assert_num_queries(19):
+        with django_assert_num_queries(20):
             response = client_logged_in.get(reverse("assets:dashboard"))
         assert response.status_code == 200
 
@@ -21436,3 +21438,1066 @@ class TestSessionDefaultPrinter:
         content = response.content.decode()
         # The second printer's option should be selected
         assert f'value="{pc.pk}:lp2" selected' in content
+
+
+@pytest.mark.django_db
+class TestLocationDetailTabs:
+    """S2.12.3: Location detail with tabbed sections."""
+
+    def _url(self, location, **params):
+        url = reverse("assets:location_detail", args=[location.pk])
+        if params:
+            from urllib.parse import urlencode
+
+            url += "?" + urlencode(params)
+        return url
+
+    def test_present_tab_shows_active_not_checked_out(
+        self, client_logged_in, location, category, user
+    ):
+        """Present tab shows active assets at location, not checked out."""
+        present = AssetFactory(
+            name="Present Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location, tab="present"))
+        assert response.status_code == 200
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert present.pk in asset_ids
+
+    def test_present_tab_excludes_checked_out(
+        self, client_logged_in, location, category, user
+    ):
+        """Present tab excludes assets that are checked out."""
+        checked_out = AssetFactory(
+            name="Checked Out Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            checked_out_to=user,
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location, tab="present"))
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert checked_out.pk not in asset_ids
+
+    def test_checked_out_tab_shows_home_location_checked_out(
+        self, client_logged_in, location, category, user
+    ):
+        """Checked-out tab shows assets with home_location here."""
+        co_asset = AssetFactory(
+            name="CO Asset",
+            category=category,
+            current_location=location,
+            home_location=location,
+            status="active",
+            checked_out_to=user,
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location, tab="checked_out"))
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert co_asset.pk in asset_ids
+
+    def test_draft_tab_shows_draft_assets(
+        self, client_logged_in, location, category, user
+    ):
+        """Draft tab shows draft status assets at location."""
+        draft = AssetFactory(
+            name="Draft Asset",
+            category=category,
+            current_location=location,
+            status="draft",
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location, tab="draft"))
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert draft.pk in asset_ids
+
+    def test_default_tab_is_present(
+        self, client_logged_in, location, category, user
+    ):
+        """No tab param defaults to present."""
+        present = AssetFactory(
+            name="Present Default",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location))
+        assert response.context["active_tab"] == "present"
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert present.pk in asset_ids
+
+    def test_tab_counts_in_context(
+        self, client_logged_in, location, category, user
+    ):
+        """Context includes counts for all three tabs."""
+        AssetFactory(
+            name="Present",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Draft",
+            category=category,
+            current_location=location,
+            status="draft",
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location))
+        assert response.context["present_count"] >= 1
+        assert response.context["draft_count"] >= 1
+
+    def test_includes_descendant_assets(
+        self, client_logged_in, location, child_location, category, user
+    ):
+        """All tabs include assets from child locations."""
+        child_asset = AssetFactory(
+            name="Child Asset",
+            category=category,
+            current_location=child_location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(self._url(location, tab="present"))
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert child_asset.pk in asset_ids
+
+    def test_filter_by_category(
+        self, client_logged_in, location, category, user, department
+    ):
+        """Filter param narrows assets by category."""
+        cat2 = CategoryFactory(name="Other Cat", department=department)
+        AssetFactory(
+            name="Cat1 Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        asset2 = AssetFactory(
+            name="Cat2 Asset",
+            category=cat2,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(
+            self._url(location, tab="present", category=cat2.pk)
+        )
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert asset2.pk in asset_ids
+        assert len(asset_ids) == 1
+
+    def test_filter_by_department(
+        self, client_logged_in, location, category, user
+    ):
+        """Filter param narrows assets by department."""
+        dept2 = DepartmentFactory(name="Other Dept")
+        cat2 = CategoryFactory(name="Dept2 Cat", department=dept2)
+        asset2 = AssetFactory(
+            name="Dept2 Asset",
+            category=cat2,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Dept1 Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(
+            self._url(location, tab="present", department=dept2.pk)
+        )
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert asset2.pk in asset_ids
+        assert len(asset_ids) == 1
+
+    def test_filter_by_condition(
+        self, client_logged_in, location, category, user
+    ):
+        """Filter param narrows assets by condition."""
+        asset_poor = AssetFactory(
+            name="Poor Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            condition="poor",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Good Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            condition="good",
+            created_by=user,
+        )
+        response = client_logged_in.get(
+            self._url(location, tab="present", condition="poor")
+        )
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert asset_poor.pk in asset_ids
+        assert len(asset_ids) == 1
+
+    def test_sort_by_name(self, client_logged_in, location, category, user):
+        """Sort param orders assets."""
+        AssetFactory(
+            name="Zebra",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Apple",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        response = client_logged_in.get(
+            self._url(location, tab="present", sort="name")
+        )
+        names = [a.name for a in response.context["page_obj"]]
+        assert names == sorted(names)
+
+
+@pytest.mark.django_db
+class TestLocationDetailStats:
+    """S2.12.3-06: Summary statistics on location detail."""
+
+    def test_summary_stats_in_context(
+        self, client_logged_in, location, category, user
+    ):
+        """Context includes summary statistics."""
+        from decimal import Decimal
+
+        AssetFactory(
+            name="Valued Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            estimated_value=Decimal("100.00"),
+            created_by=user,
+        )
+        AssetFactory(
+            name="Another Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            estimated_value=Decimal("50.00"),
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        assert "stats" in response.context
+        stats = response.context["stats"]
+        assert stats["total_count"] >= 2
+        assert stats["total_value"] >= Decimal("150.00")
+
+    def test_stats_include_category_breakdown(
+        self, client_logged_in, location, category, user, department
+    ):
+        """Stats include category breakdown."""
+        cat2 = CategoryFactory(name="Stats Cat", department=department)
+        AssetFactory(
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            category=cat2,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        stats = response.context["stats"]
+        assert len(stats["category_breakdown"]) >= 2
+
+    def test_stats_include_department_breakdown(
+        self, client_logged_in, location, category, user
+    ):
+        """Stats include department breakdown."""
+        dept2 = DepartmentFactory(name="Stats Dept")
+        cat2 = CategoryFactory(name="D2 Cat", department=dept2)
+        AssetFactory(
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            category=cat2,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        stats = response.context["stats"]
+        assert len(stats["department_breakdown"]) >= 2
+
+
+@pytest.mark.django_db
+class TestLocationDetailTemplate:
+    """S2.12.3: Template renders tabs, stats, filters, print button."""
+
+    def test_tab_buttons_rendered(self, client_logged_in, location):
+        """Template renders tab buttons."""
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Present" in content
+        assert "Checked Out" in content
+        assert "Draft" in content
+
+    def test_filter_controls_rendered(self, client_logged_in, location):
+        """Template renders filter controls."""
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert 'name="category"' in content or "category" in content
+        assert 'name="sort"' in content or "sort" in content
+
+    def test_print_label_button_shows_when_v2_printers(
+        self, client_logged_in, location
+    ):
+        """Print button shows when v2+ printers are available."""
+        PrintClient.objects.create(
+            name="V2 Test",
+            token_hash="ptlb" + "0" * 60,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="2",
+            printers=[{"id": "lp1", "name": "LP"}],
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Print Location Label" in content
+
+    def test_print_label_button_hidden_without_v2(
+        self, client_logged_in, location
+    ):
+        """Print button hidden when no v2+ printers."""
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Print Location Label" not in content
+
+    def test_pagination_preserves_tab_param(
+        self, client_logged_in, location, category, user
+    ):
+        """Pagination links include tab param."""
+        for i in range(30):
+            AssetFactory(
+                name=f"Asset {i}",
+                category=category,
+                current_location=location,
+                status="active",
+                created_by=user,
+            )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url + "?tab=present")
+        content = response.content.decode()
+        assert "tab=present" in content
+
+    def test_department_column_shown(
+        self, client_logged_in, location, category, user
+    ):
+        """Asset table shows department column (S2.12.3-02)."""
+        AssetFactory(
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Department" in content
+
+
+@pytest.mark.django_db
+class TestLocationDetailCheckedOutDueDate:
+    """S2.12.3-05: Checked-out tab shows borrower and due date."""
+
+    def test_checked_out_tab_shows_due_date(
+        self, client_logged_in, location, category, user
+    ):
+        """Checked-out tab shows due date from checkout transaction."""
+        from datetime import timedelta
+
+        asset = AssetFactory(
+            name="Borrowed Asset",
+            category=category,
+            current_location=location,
+            home_location=location,
+            status="active",
+            checked_out_to=user,
+            created_by=user,
+        )
+        due = timezone.now() + timedelta(days=7)
+        Transaction.objects.create(
+            asset=asset,
+            user=user,
+            action="checkout",
+            borrower=user,
+            due_date=due,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url + "?tab=checked_out")
+        content = response.content.decode()
+        assert "Due" in content
+
+    def test_checked_out_tab_shows_no_due_date_gracefully(
+        self, client_logged_in, location, category, user
+    ):
+        """Checked-out tab handles missing due date gracefully."""
+        AssetFactory(
+            name="No Due Date Asset",
+            category=category,
+            current_location=location,
+            home_location=location,
+            status="active",
+            checked_out_to=user,
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url + "?tab=checked_out")
+        assert response.status_code == 200
+
+
+@pytest.mark.django_db
+class TestLocationDetailStatusFilter:
+    """S2.12.3-07: Status filter within location detail sections."""
+
+    def test_filter_by_status(
+        self, client_logged_in, location, category, user
+    ):
+        """Status filter narrows assets in the present tab."""
+        # Present tab only shows active, so status filter is more
+        # relevant for other contexts, but verify it works
+        AssetFactory(
+            name="Active Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url + "?tab=present&status=active")
+        assert response.status_code == 200
+        asset_ids = [a.pk for a in response.context["page_obj"]]
+        assert len(asset_ids) >= 1
+
+    def test_status_filter_control_rendered(self, client_logged_in, location):
+        """Template renders status filter control."""
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert 'name="status"' in content
+
+
+# ============================================================
+# LOCATION LIST VIEW TESTS (S2.12.4)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestLocationListView:
+    """S2.12.4: Location list/browse with tree/flat modes."""
+
+    def test_tree_mode_default_returns_top_level_only(
+        self, client_logged_in, location, child_location
+    ):
+        """Default tree mode only returns top-level locations."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        locations = response.context["locations"]
+        location_pks = [loc.pk for loc in locations]
+        assert location.pk in location_pks
+        assert child_location.pk not in location_pks
+
+    def test_flat_mode_returns_all_locations(
+        self, client_logged_in, location, child_location
+    ):
+        """Flat mode returns all active locations."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        assert response.status_code == 200
+        locations = response.context["locations"]
+        location_pks = [loc.pk for loc in locations]
+        assert location.pk in location_pks
+        assert child_location.pk in location_pks
+
+    def test_view_mode_cookie_persistence(self, client_logged_in, location):
+        """View mode is persisted in cookie."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        assert response.cookies.get("location_view_mode")
+        assert response.cookies["location_view_mode"].value == "flat"
+
+    def test_view_mode_reads_from_cookie(self, client_logged_in, location):
+        """When no ?view= param, reads view mode from cookie."""
+        url = reverse("assets:location_list")
+        client_logged_in.cookies["location_view_mode"] = "flat"
+        response = client_logged_in.get(url)
+        assert response.context["view_mode"] == "flat"
+
+    def test_search_by_name(self, client_logged_in, user):
+        """Search filters locations by name."""
+        from assets.factories import LocationFactory
+
+        loc1 = LocationFactory(name="Backstage Left")
+        LocationFactory(name="Front of House")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?q=Backstage&view=flat")
+        locations = response.context["locations"]
+        location_pks = [loc.pk for loc in locations]
+        assert loc1.pk in location_pks
+        assert len(location_pks) == 1
+
+    def test_filter_by_department(
+        self, client_logged_in, location, category, department, user
+    ):
+        """Filter locations by department of contained assets."""
+        from assets.factories import AssetFactory
+
+        AssetFactory(
+            name="Dept Asset",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(
+            url + f"?department={department.pk}&view=flat"
+        )
+        locations = response.context["locations"]
+        location_pks = [loc.pk for loc in locations]
+        assert location.pk in location_pks
+
+    def test_asset_count_annotations(
+        self, client_logged_in, location, category, user
+    ):
+        """Locations are annotated with asset counts."""
+        from assets.factories import AssetFactory
+
+        AssetFactory(
+            name="Active 1",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Active 2",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Draft 1",
+            category=category,
+            current_location=location,
+            status="draft",
+            created_by=user,
+        )
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        locations = list(response.context["locations"])
+        loc = [x for x in locations if x.pk == location.pk][0]
+        assert loc.asset_count_active == 2
+        assert loc.asset_count_draft == 1
+
+    def test_htmx_returns_partial(self, client_logged_in, location):
+        """HTMX request returns partial template."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url, HTTP_HX_REQUEST="true")
+        assert response.status_code == 200
+        content = response.content.decode()
+        # Partial should NOT contain the full page chrome
+        assert "<!DOCTYPE" not in content
+
+    def test_flat_mode_pagination(self, client_logged_in, user):
+        """Flat mode paginates results."""
+        from assets.factories import LocationFactory
+
+        for i in range(30):
+            LocationFactory(name=f"Location {i:02d}")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        assert response.context["page_obj"].paginator.count == 30
+        assert len(response.context["page_obj"]) == 25
+
+    def test_tree_mode_no_pagination(self, client_logged_in, location):
+        """Tree mode does not paginate (shows all top-level)."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url)
+        # In tree mode, no page_obj - just locations queryset
+        assert "locations" in response.context
+
+    def test_inactive_locations_excluded(self, client_logged_in, user):
+        """Inactive locations are excluded from list."""
+        from assets.factories import LocationFactory
+
+        active = LocationFactory(name="Active Loc")
+        LocationFactory(name="Inactive Loc", is_active=False)
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        location_pks = [loc.pk for loc in response.context["locations"]]
+        assert active.pk in location_pks
+
+    def test_search_by_address(self, client_logged_in, user):
+        """Search also matches address field."""
+        from assets.factories import LocationFactory
+
+        loc = LocationFactory(name="Stage", address="42 Broadway Ave")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?q=Broadway&view=flat")
+        location_pks = [loc.pk for loc in response.context["locations"]]
+        assert loc.pk in location_pks
+
+
+# ============================================================
+# NAVIGATION & DASHBOARD TESTS (S2.12.6, S2.11.3-05)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestLocationNavigation:
+    """S2.12.6: Locations in top-level navigation."""
+
+    def test_desktop_nav_has_top_level_locations_link(
+        self, client_logged_in, location
+    ):
+        """Desktop nav has top-level Locations link after Assets."""
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        loc_url = reverse("assets:location_list")
+        # Should appear as a top-level nav link in the desktop nav
+        assert f'href="{loc_url}"' in content
+
+    def test_mobile_nav_has_locations_link(self, client_logged_in, location):
+        """Mobile nav has Locations link at top level."""
+        response = client_logged_in.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        assert "Locations" in content
+
+
+@pytest.mark.django_db
+class TestDashboardLocations:
+    """S2.11.3-05: Dashboard locations card enhancements."""
+
+    def test_dashboard_has_total_locations(self, admin_client, location):
+        """Dashboard context includes total_locations count."""
+        cache.clear()
+        response = admin_client.get(reverse("assets:dashboard"))
+        assert "total_locations" in response.context
+
+    def test_dashboard_location_card_has_detail_links(
+        self, admin_client, location, category, user
+    ):
+        """Location names in dashboard card link to detail views."""
+        from assets.factories import AssetFactory
+
+        AssetFactory(
+            name="Test",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        cache.clear()
+        response = admin_client.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        detail_url = reverse("assets:location_detail", args=[location.pk])
+        assert detail_url in content
+
+    def test_dashboard_has_view_all_locations_link(
+        self, admin_client, location
+    ):
+        """Dashboard By Location card has 'View all' link."""
+        response = admin_client.get(reverse("assets:dashboard"))
+        content = response.content.decode()
+        assert reverse("assets:location_list") in content
+
+
+# ============================================================
+# PROTOCOL V2 & PRINTREQUEST EXTENSION (§4.3.3.6)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestProtocolV2Models:
+    """§4.3.3.6: Protocol v2 model changes."""
+
+    def test_print_client_has_protocol_version(self, db):
+        """PrintClient has protocol_version field with default '1'."""
+        from assets.factories import UserFactory
+
+        u = UserFactory()
+        pc = PrintClient.objects.create(
+            name="Test Client",
+            token_hash="a" * 64,
+            status="approved",
+            protocol_version="2",
+            approved_by=u,
+        )
+        pc.refresh_from_db()
+        assert pc.protocol_version == "2"
+
+    def test_print_client_protocol_version_default(self, db):
+        """PrintClient protocol_version defaults to '1'."""
+        pc = PrintClient.objects.create(
+            name="Default Client",
+            token_hash="b" * 64,
+        )
+        pc.refresh_from_db()
+        assert pc.protocol_version == "1"
+
+    def test_print_request_has_label_type(self, db, asset, user):
+        """PrintRequest has label_type field."""
+        pc = PrintClient.objects.create(
+            name="Client",
+            token_hash="c" * 64,
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            asset=asset,
+            printer_id="printer1",
+            label_type="location",
+            requested_by=user,
+        )
+        pr.refresh_from_db()
+        assert pr.label_type == "location"
+
+    def test_print_request_label_type_default(self, db, user):
+        """PrintRequest label_type defaults to 'asset'."""
+        pc = PrintClient.objects.create(
+            name="Client",
+            token_hash="d" * 64,
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            printer_id="printer1",
+            requested_by=user,
+        )
+        pr.refresh_from_db()
+        assert pr.label_type == "asset"
+
+    def test_print_request_has_location_fk(self, db, location, user):
+        """PrintRequest has nullable location FK."""
+        pc = PrintClient.objects.create(
+            name="Client",
+            token_hash="e" * 64,
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            printer_id="printer1",
+            label_type="location",
+            location=location,
+            requested_by=user,
+        )
+        pr.refresh_from_db()
+        assert pr.location == location
+
+    def test_print_request_location_nullable(self, db, user):
+        """PrintRequest location FK is nullable."""
+        pc = PrintClient.objects.create(
+            name="Client",
+            token_hash="f" * 64,
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            printer_id="printer1",
+            requested_by=user,
+        )
+        pr.refresh_from_db()
+        assert pr.location is None
+
+
+@pytest.mark.django_db
+class TestProtocolV2Dispatch:
+    """§4.3.3.6: Version-aware dispatch."""
+
+    def test_dispatch_location_label_builds_location_message(
+        self, db, location, user
+    ):
+        """Dispatch with label_type='location' builds location msg."""
+        from assets.services.print_dispatch import (
+            dispatch_print_job,
+        )
+
+        pc = PrintClient.objects.create(
+            name="V2 Client",
+            token_hash="g" * 64,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="2",
+            printers=[{"id": "lp1", "name": "Label Printer"}],
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            printer_id="lp1",
+            label_type="location",
+            location=location,
+            requested_by=user,
+        )
+        result = dispatch_print_job(pr, site_url="https://ex.com")
+        assert result is True
+
+    def test_dispatch_refuses_location_label_to_v1_client(
+        self, db, location, user
+    ):
+        """Dispatch refuses location label to v1 client."""
+        from assets.services.print_dispatch import (
+            dispatch_print_job,
+        )
+
+        pc = PrintClient.objects.create(
+            name="V1 Client",
+            token_hash="h" * 64,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="1",
+            printers=[{"id": "lp1", "name": "Label Printer"}],
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            printer_id="lp1",
+            label_type="location",
+            location=location,
+            requested_by=user,
+        )
+        result = dispatch_print_job(pr, site_url="https://ex.com")
+        assert result is False
+        pr.refresh_from_db()
+        assert pr.status == "failed"
+        assert "v2" in pr.error_message.lower() or (
+            "protocol" in pr.error_message.lower()
+        )
+
+    def test_v1_clients_still_work_for_asset_labels(self, db, asset, user):
+        """v1 clients still work for asset label dispatch."""
+        from assets.services.print_dispatch import (
+            dispatch_print_job,
+        )
+
+        pc = PrintClient.objects.create(
+            name="V1 OK Client",
+            token_hash="i" * 64,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="1",
+            printers=[{"id": "lp1", "name": "Label Printer"}],
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            asset=asset,
+            printer_id="lp1",
+            label_type="asset",
+            requested_by=user,
+        )
+        result = dispatch_print_job(pr, site_url="https://ex.com")
+        assert result is True
+
+    def test_dispatch_asset_label_includes_label_type(self, db, asset, user):
+        """Asset label dispatch includes label_type='asset'."""
+        from unittest.mock import patch
+
+        from assets.services.print_dispatch import (
+            dispatch_print_job,
+        )
+
+        pc = PrintClient.objects.create(
+            name="V2 Client",
+            token_hash="j" * 64,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="2",
+            printers=[{"id": "lp1", "name": "Label Printer"}],
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            asset=asset,
+            printer_id="lp1",
+            label_type="asset",
+            requested_by=user,
+        )
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = MagicMock()
+            mock_cl.return_value = mock_layer
+            dispatch_print_job(pr, site_url="https://ex.com")
+            call_args = mock_layer.group_send.call_args
+            msg = call_args[0][1]
+            assert msg.get("label_type") == "asset"
+
+
+# ============================================================
+# LOCATION LABEL PRINTING (S2.12.5) + S2.12.3-09
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestLocationPrintLabel:
+    """S2.12.5: Location label printing."""
+
+    def _make_v2_client(self):
+        return PrintClient.objects.create(
+            name="V2 Printer",
+            token_hash="v2test" + "0" * 58,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="2",
+            printers=[{"id": "lp1", "name": "Label Printer"}],
+        )
+
+    def test_location_detail_has_v2_printers_context(
+        self, client_logged_in, location
+    ):
+        """location_detail context includes v2_printers."""
+        self._make_v2_client()
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        assert "v2_printers" in response.context
+
+    def test_print_button_visible_when_v2_available(
+        self, client_logged_in, location
+    ):
+        """Print button enabled when v2+ clients connected."""
+        self._make_v2_client()
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        # Should no longer have the disabled placeholder
+        assert "cursor-not-allowed" not in content or (
+            "Print Location Label" in content
+        )
+
+    def test_print_button_hidden_when_no_v2(self, client_logged_in, location):
+        """Print button hidden when no v2+ clients connected."""
+        url = reverse("assets:location_detail", args=[location.pk])
+        response = client_logged_in.get(url)
+        ctx = response.context
+        v2_printers = ctx.get("v2_printers", [])
+        assert len(v2_printers) == 0
+
+    def test_location_print_creates_print_request(
+        self, client_logged_in, location, user
+    ):
+        """POST creates PrintRequest with label_type=location."""
+        pc = self._make_v2_client()
+        url = reverse("assets:location_print_label", args=[location.pk])
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "lp1",
+                "quantity": 1,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        assert response.status_code == 200
+        pr = PrintRequest.objects.filter(
+            location=location, label_type="location"
+        ).first()
+        assert pr is not None
+        assert pr.location == location
+
+    def test_location_print_rejects_no_v2_client(
+        self, client_logged_in, location
+    ):
+        """Rejects when the selected client is v1."""
+        pc = PrintClient.objects.create(
+            name="V1 Client",
+            token_hash="v1test" + "0" * 58,
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            protocol_version="1",
+            printers=[{"id": "lp1", "name": "LP"}],
+        )
+        url = reverse("assets:location_print_label", args=[location.pk])
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "lp1",
+                "quantity": 1,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        content = response.content.decode()
+        assert "v2" in content.lower() or "protocol" in content.lower()
+
+    def test_location_print_permission_check(self, viewer_client, location):
+        """Viewers cannot print location labels."""
+        pc = self._make_v2_client()
+        url = reverse("assets:location_print_label", args=[location.pk])
+        response = viewer_client.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "lp1",
+                "quantity": 1,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        assert response.status_code == 403
+
+    def test_location_print_qr_content(self, client_logged_in, location, user):
+        """qr_content includes location detail URL."""
+        pc = self._make_v2_client()
+        url = reverse("assets:location_print_label", args=[location.pk])
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = MagicMock()
+            mock_cl.return_value = mock_layer
+            client_logged_in.post(
+                url,
+                {
+                    "client_pk": pc.pk,
+                    "printer_id": "lp1",
+                    "quantity": 1,
+                },
+                HTTP_HX_REQUEST="true",
+            )
+            call_args = mock_layer.group_send.call_args
+            if call_args:
+                msg = call_args[0][1]
+                assert f"/locations/{location.pk}/" in msg.get(
+                    "qr_content", ""
+                )
+
+    def test_location_print_post_only(self, client_logged_in, location):
+        """GET request is rejected."""
+        url = reverse("assets:location_print_label", args=[location.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 405

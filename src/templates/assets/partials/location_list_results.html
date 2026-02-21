@@ -1,0 +1,181 @@
+{% if view_mode == "flat" %}
+<!-- Flat mode: table view -->
+{% if locations %}
+<div class="overflow-x-auto">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="border-b border-stage-200 dark:border-white/10 text-left">
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50">Name</th>
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50">Path</th>
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50 text-center">Active</th>
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50 text-center">Checked Out</th>
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50 text-center">Draft</th>
+                <th class="pb-3 font-medium text-stage-500 dark:text-cream/50"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-stage-100 dark:divide-white/5">
+            {% for loc in locations %}
+            <tr class="hover:bg-stage-50 dark:hover:bg-stage-800/30 transition-colors">
+                <td class="py-3">
+                    <a href="{% url 'assets:location_detail' loc.pk %}" class="font-medium text-stage-900 dark:text-cream hover:text-brand-400 transition-colors">{{ loc.name }}</a>
+                </td>
+                <td class="py-3 text-stage-500 dark:text-cream/50">{{ loc.full_path }}</td>
+                <td class="py-3 text-center">
+                    {% if loc.asset_count_active %}
+                    <span class="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-600 dark:text-green-400">{{ loc.asset_count_active }}</span>
+                    {% else %}
+                    <span class="text-stage-300 dark:text-cream/20">—</span>
+                    {% endif %}
+                </td>
+                <td class="py-3 text-center">
+                    {% if loc.asset_count_checked_out %}
+                    <span class="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">{{ loc.asset_count_checked_out }}</span>
+                    {% else %}
+                    <span class="text-stage-300 dark:text-cream/20">—</span>
+                    {% endif %}
+                </td>
+                <td class="py-3 text-center">
+                    {% if loc.asset_count_draft %}
+                    <span class="inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded-full text-xs font-medium bg-stage-500/10 text-stage-500 dark:text-cream/50">{{ loc.asset_count_draft }}</span>
+                    {% else %}
+                    <span class="text-stage-300 dark:text-cream/20">—</span>
+                    {% endif %}
+                </td>
+                <td class="py-3 text-right">
+                    <a href="{% url 'assets:location_detail' loc.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page_obj and page_obj.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between mt-6 pt-4 border-t border-stage-200 dark:border-white/10">
+    <div class="text-sm text-stage-500 dark:text-cream/50">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        ({{ page_obj.paginator.count }} location{{ page_obj.paginator.count|pluralize }})
+    </div>
+    <div class="flex gap-2">
+        {% if page_obj.has_previous %}
+        <a href="?view=flat&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}"
+           class="px-3 py-1.5 rounded-lg text-sm bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream transition-colors">
+            Previous
+        </a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?view=flat&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}"
+           class="px-3 py-1.5 rounded-lg text-sm bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream transition-colors">
+            Next
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="text-center py-16">
+    <svg class="w-16 h-16 mx-auto text-stage-200 dark:text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+    </svg>
+    <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70">No locations found</h3>
+    <p class="text-stage-500 dark:text-cream/40 text-sm mt-1">Try adjusting your search or filters.</p>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Tree mode: hierarchical cards -->
+{% if locations %}
+<div class="space-y-3">
+    {% for location in locations %}
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-5 card-hover">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-stage-500 dark:text-cream/40 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <div>
+                    <h3 class="font-medium text-stage-900 dark:text-cream">
+                        <a href="{% url 'assets:location_detail' location.pk %}" class="hover:text-brand-400 transition-colors">{{ location.name }}</a>
+                    </h3>
+                    {% if location.address %}
+                    <p class="text-xs text-stage-500 dark:text-cream/40 mt-0.5">{{ location.address }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                {% if location.asset_count_active %}
+                <span class="text-xs text-green-600 dark:text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">{{ location.asset_count_active }} active</span>
+                {% endif %}
+                {% if location.asset_count_checked_out %}
+                <span class="text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">{{ location.asset_count_checked_out }} out</span>
+                {% endif %}
+                <a href="{% url 'assets:location_create' %}?parent={{ location.pk }}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream text-xs transition-colors" title="Add child location">+ Child</a>
+                <a href="{% url 'assets:location_edit' location.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                </a>
+            </div>
+        </div>
+        {% if location.description %}
+        <p class="text-sm text-stage-500 dark:text-cream/50 mt-2">{{ location.description }}</p>
+        {% endif %}
+
+        {% if location.children.all %}
+        <div class="mt-3 ml-4 pl-4 border-l border-stage-200 dark:border-white/10 space-y-2">
+            {% for child in location.children.all %}
+            <div>
+                <div class="flex items-center justify-between py-1">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-stage-500 dark:text-cream/30 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <a href="{% url 'assets:location_detail' child.pk %}" class="text-sm text-stage-600 dark:text-cream/70 hover:text-brand-400 transition-colors">{{ child.name }}</a>
+                        {% if not child.is_active %}
+                        <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1.5 py-0.5 rounded-full">Inactive</span>
+                        {% endif %}
+                    </div>
+                    <a href="{% url 'assets:location_edit' child.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </a>
+                </div>
+                {% if child.children.all %}
+                <div class="ml-4 pl-4 border-l border-stage-200 dark:border-white/5 space-y-1">
+                    {% for grandchild in child.children.all %}
+                    <div class="flex items-center justify-between py-0.5">
+                        <div class="flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-stage-200 dark:bg-cream/20 flex-shrink-0"></span>
+                            <a href="{% url 'assets:location_detail' grandchild.pk %}" class="text-xs text-stage-500 dark:text-cream/50 hover:text-brand-400 transition-colors">{{ grandchild.name }}</a>
+                            {% if not grandchild.is_active %}
+                            <span class="text-[10px] text-red-400/70 bg-red-500/10 px-1 py-0.5 rounded-full">Inactive</span>
+                            {% endif %}
+                        </div>
+                        <a href="{% url 'assets:location_edit' grandchild.pk %}" class="text-stage-500 dark:text-cream/30 hover:text-stage-900 dark:hover:text-cream transition-colors" title="Edit">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-16">
+    <svg class="w-16 h-16 mx-auto text-stage-200 dark:text-cream/20 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+    </svg>
+    <h3 class="text-lg font-medium text-stage-600 dark:text-cream/70">No locations yet</h3>
+    <p class="text-stage-500 dark:text-cream/40 text-sm mt-1">Create your first location to get started.</p>
+</div>
+{% endif %}
+{% endif %}

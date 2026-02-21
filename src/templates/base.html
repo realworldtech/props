@@ -63,6 +63,7 @@
                     <div class="hidden md:flex items-center gap-1">
                         <a href="{% url 'assets:dashboard' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">Dashboard</a>
                         <a href="{% url 'assets:asset_list' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">Assets</a>
+                        <a href="{% url 'assets:location_list' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">Locations</a>
                         {% if can_capture %}
                         <a href="{% url 'assets:scan' %}" class="nav-link px-4 py-2 text-sm text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream transition-colors">
                             <span class="flex items-center gap-1.5">
@@ -155,6 +156,7 @@
                         {% endif %}
                         <a href="{% url 'assets:dashboard' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Dashboard</a>
                         <a href="{% url 'assets:asset_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Assets</a>
+                        <a href="{% url 'assets:location_list' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Locations</a>
                         {% if can_capture %}
                         <a href="{% url 'assets:scan' %}" class="block px-4 py-2.5 text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
                             <span class="flex items-center gap-2">

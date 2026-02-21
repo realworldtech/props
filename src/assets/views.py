@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.http import (
     HttpResponse,
@@ -131,8 +131,11 @@ def _compute_dashboard_aggregates(role, user_depts, dept_filter):
             )
         )
     loc_counts = list(
-        loc_qs.order_by("-asset_count").values("name", "asset_count")[:10]
+        loc_qs.order_by("-asset_count").values("pk", "name", "asset_count")[
+            :10
+        ]
     )
+    total_locations = Location.objects.filter(is_active=True).count()
 
     # Top 10 tags
     if role == "department_manager":
@@ -157,6 +160,7 @@ def _compute_dashboard_aggregates(role, user_depts, dept_filter):
         "dept_counts": dept_counts,
         "cat_counts": cat_counts,
         "loc_counts": loc_counts,
+        "total_locations": total_locations,
         "top_tags": top_tags,
     }
 
@@ -2257,36 +2261,330 @@ def category_list(request):
 
 @login_required
 def location_list(request):
-    """List all locations."""
-    locations = Location.objects.filter(parent__isnull=True).prefetch_related(
-        "children"
+    """List all locations with tree/flat modes, search, and filtering."""
+    # View mode: tree (default) or flat
+    view_mode = request.GET.get(
+        "view", request.COOKIES.get("location_view_mode", "tree")
     )
-    return render(
-        request,
-        "assets/location_list.html",
-        {"locations": locations},
+    if view_mode not in ("tree", "flat"):
+        view_mode = "tree"
+
+    q = request.GET.get("q", "")
+    department_filter = request.GET.get("department", "")
+
+    # Annotation for asset counts
+    base_qs = Location.objects.filter(is_active=True).annotate(
+        asset_count_active=Count(
+            "assets",
+            filter=Q(assets__status="active"),
+        ),
+        asset_count_checked_out=Count(
+            "assets",
+            filter=Q(assets__checked_out_to__isnull=False),
+        ),
+        asset_count_draft=Count(
+            "assets",
+            filter=Q(assets__status="draft"),
+        ),
     )
+
+    if q:
+        base_qs = base_qs.filter(
+            Q(name__icontains=q)
+            | Q(address__icontains=q)
+            | Q(description__icontains=q)
+        )
+
+    if department_filter:
+        base_qs = base_qs.filter(
+            assets__category__department_id=department_filter
+        ).distinct()
+
+    if view_mode == "tree":
+        locations = base_qs.filter(parent__isnull=True).prefetch_related(
+            Prefetch(
+                "children",
+                queryset=Location.objects.filter(
+                    is_active=True
+                ).prefetch_related("children"),
+            )
+        )
+        context = {
+            "locations": locations,
+            "view_mode": view_mode,
+            "q": q,
+            "departments": Department.objects.filter(is_active=True),
+            "current_department": department_filter,
+        }
+        template = "assets/location_list.html"
+        if getattr(request, "htmx", False):
+            template = "assets/partials/location_list_results.html"
+        response = render(request, template, context)
+    else:
+        # Flat mode: all locations, paginated
+        locations = base_qs.order_by("name")
+        paginator = Paginator(locations, 25)
+        page_number = request.GET.get("page", 1)
+        page_obj = paginator.get_page(page_number)
+        context = {
+            "locations": page_obj,
+            "page_obj": page_obj,
+            "view_mode": view_mode,
+            "q": q,
+            "departments": Department.objects.filter(is_active=True),
+            "current_department": department_filter,
+        }
+        template = "assets/location_list.html"
+        if getattr(request, "htmx", False):
+            template = "assets/partials/location_list_results.html"
+        response = render(request, template, context)
+
+    if view_mode in ("tree", "flat"):
+        response.set_cookie(
+            "location_view_mode", view_mode, max_age=365 * 24 * 3600
+        )
+    return response
 
 
 @login_required
 def location_detail(request, pk):
-    """Display location detail with assets (including descendants)."""
+    """Display location detail with tabbed asset sections."""
     location = get_object_or_404(Location, pk=pk)
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
-    assets = Asset.objects.filter(
-        current_location_id__in=all_location_ids
-    ).select_related("category", "checked_out_to")
 
-    paginator = Paginator(assets, 25)
+    # Base querysets for three tabs
+    present_qs = Asset.objects.filter(
+        current_location_id__in=all_location_ids,
+        status="active",
+        checked_out_to__isnull=True,
+    ).select_related("category", "category__department", "checked_out_to")
+
+    # Subquery: due_date from most recent checkout transaction
+    latest_checkout_due = (
+        Transaction.objects.filter(asset=OuterRef("pk"), action="checkout")
+        .order_by("-timestamp")
+        .values("due_date")[:1]
+    )
+    checked_out_qs = (
+        Asset.objects.filter(
+            home_location_id__in=all_location_ids,
+            checked_out_to__isnull=False,
+        )
+        .select_related("category", "category__department", "checked_out_to")
+        .annotate(checkout_due_date=Subquery(latest_checkout_due))
+    )
+
+    draft_qs = Asset.objects.filter(
+        current_location_id__in=all_location_ids,
+        status="draft",
+    ).select_related("category", "category__department", "checked_out_to")
+
+    # Tab counts
+    present_count = present_qs.count()
+    checked_out_count = checked_out_qs.count()
+    draft_count = draft_qs.count()
+
+    # Active tab
+    active_tab = request.GET.get("tab", "present")
+    if active_tab not in ("present", "checked_out", "draft"):
+        active_tab = "present"
+
+    tab_qs_map = {
+        "present": present_qs,
+        "checked_out": checked_out_qs,
+        "draft": draft_qs,
+    }
+    active_qs = tab_qs_map[active_tab]
+
+    # Filters (applied to active tab only)
+    category_filter = request.GET.get("category")
+    if category_filter:
+        active_qs = active_qs.filter(category_id=category_filter)
+
+    department_filter = request.GET.get("department")
+    if department_filter:
+        active_qs = active_qs.filter(category__department_id=department_filter)
+
+    condition_filter = request.GET.get("condition")
+    if condition_filter:
+        active_qs = active_qs.filter(condition=condition_filter)
+
+    status_filter = request.GET.get("status")
+    if status_filter:
+        active_qs = active_qs.filter(status=status_filter)
+
+    # Sorting
+    SORT_FIELDS = {
+        "name": "name",
+        "-name": "-name",
+        "category": "category__name",
+        "-category": "-category__name",
+        "condition": "condition",
+        "-condition": "-condition",
+        "department": "category__department__name",
+        "-department": "-category__department__name",
+    }
+    sort = request.GET.get("sort", "name")
+    order_by = SORT_FIELDS.get(sort, "name")
+    active_qs = active_qs.order_by(order_by)
+
+    # Pagination
+    paginator = Paginator(active_qs, 25)
     page_number = request.GET.get("page", 1)
     page_obj = paginator.get_page(page_number)
+
+    # Summary stats (across all active assets at this location)
+    all_assets_qs = Asset.objects.filter(
+        current_location_id__in=all_location_ids,
+    ).exclude(status__in=["disposed", "retired"])
+
+    agg = all_assets_qs.aggregate(
+        total_count=Count("pk"),
+        total_value=Sum("estimated_value"),
+    )
+    category_breakdown = list(
+        all_assets_qs.filter(category__isnull=False)
+        .values("category__name")
+        .annotate(count=Count("pk"))
+        .order_by("-count")
+    )
+    department_breakdown = list(
+        all_assets_qs.filter(category__department__isnull=False)
+        .values("category__department__name")
+        .annotate(count=Count("pk"))
+        .order_by("-count")
+    )
+
+    stats = {
+        "total_count": agg["total_count"] or 0,
+        "total_value": agg["total_value"] or 0,
+        "category_breakdown": category_breakdown,
+        "department_breakdown": department_breakdown,
+    }
+
+    # Filter choices
+    categories = (
+        Category.objects.filter(
+            assets__current_location_id__in=all_location_ids
+        )
+        .distinct()
+        .order_by("name")
+    )
+    departments = (
+        Department.objects.filter(
+            categories__assets__current_location_id__in=all_location_ids
+        )
+        .distinct()
+        .order_by("name")
+    )
 
     return render(
         request,
         "assets/location_detail.html",
-        {"location": location, "page_obj": page_obj},
+        {
+            "location": location,
+            "page_obj": page_obj,
+            "active_tab": active_tab,
+            "present_count": present_count,
+            "checked_out_count": checked_out_count,
+            "draft_count": draft_count,
+            "stats": stats,
+            "categories": categories,
+            "departments": departments,
+            "current_category": category_filter or "",
+            "current_department": department_filter or "",
+            "current_condition": condition_filter or "",
+            "current_status": status_filter or "",
+            "current_sort": sort,
+            "condition_choices": Asset.CONDITION_CHOICES,
+            "status_choices": Asset.STATUS_CHOICES,
+            "v2_printers": _get_v2_printers(),
+        },
     )
+
+
+def _get_v2_printers():
+    """Return list of v2+ connected printers for location labels."""
+    v2_clients = PrintClient.objects.filter(
+        status="approved",
+        is_active=True,
+        is_connected=True,
+        protocol_version__gte="2",
+    )
+    printers = []
+    for pc in v2_clients:
+        for printer in pc.printers or []:
+            printers.append(
+                {
+                    "client_pk": pc.pk,
+                    "client_name": pc.name,
+                    "printer_id": printer.get("id", ""),
+                    "printer_name": printer.get("name", ""),
+                }
+            )
+    return printers
+
+
+@login_required
+def location_print_label(request, pk):
+    """Submit a location label print request (S2.12.5)."""
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    is_htmx = request.headers.get("HX-Request") == "true"
+
+    def _respond(message, success=True):
+        if is_htmx:
+            level = "success" if success else "error"
+            return HttpResponse(_toast_html(message, level))
+        return JsonResponse({"success": success, "error": message})
+
+    # Permission check: Members+, deny Viewers/Borrowers
+    role = get_user_role(request.user)
+    if role in ("viewer", "borrower"):
+        raise PermissionDenied
+
+    location = get_object_or_404(Location, pk=pk)
+    client_pk = request.POST.get("client_pk")
+    printer_id = request.POST.get("printer_id", "")
+    quantity = int(request.POST.get("quantity", 1))
+
+    try:
+        pc = PrintClient.objects.get(pk=client_pk)
+    except (PrintClient.DoesNotExist, ValueError, TypeError):
+        return _respond("Print client not found.", success=False)
+
+    if pc.status != "approved" or not pc.is_active:
+        return _respond(
+            "Print client is not approved or active.",
+            success=False,
+        )
+
+    if not pc.is_connected:
+        return _respond("Client is no longer connected.", success=False)
+
+    if pc.protocol_version < "2":
+        return _respond(
+            "Location labels require a v2+ client.",
+            success=False,
+        )
+
+    pr = PrintRequest.objects.create(
+        print_client=pc,
+        printer_id=printer_id,
+        quantity=quantity,
+        label_type="location",
+        location=location,
+        requested_by=request.user,
+    )
+
+    from .services.print_dispatch import dispatch_print_job
+
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    dispatch_print_job(pr, site_url=base_url)
+
+    return _respond(f"Location label sent to {pc.name}.")
 
 
 @login_required
