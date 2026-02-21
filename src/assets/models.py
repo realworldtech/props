@@ -169,9 +169,12 @@ class AssetManager(models.Manager):
     def with_related(self):
         """Apply the standard select_related and prefetch_related calls.
 
-        Includes an ``_has_checked_out_serial`` annotation so that
-        ``is_checked_out`` can avoid per-row serial queries.
+        Includes annotations so that ``is_checked_out`` can avoid
+        per-row queries for both serialised and non-serialised assets.
         """
+        from django.db.models import Q, Sum
+        from django.db.models.functions import Coalesce
+
         return (
             self.select_related(
                 "category",
@@ -194,7 +197,31 @@ class AssetManager(models.Manager):
                         checked_out_to__isnull=False,
                         is_archived=False,
                     )
-                )
+                ),
+                _outstanding_checkout_qty=models.Subquery(
+                    Transaction.objects.filter(
+                        asset=models.OuterRef("pk"),
+                    )
+                    .values("asset")
+                    .annotate(
+                        outstanding=Coalesce(
+                            Sum(
+                                "quantity",
+                                filter=Q(action="checkout"),
+                            ),
+                            0,
+                        )
+                        - Coalesce(
+                            Sum(
+                                "quantity",
+                                filter=Q(action="checkin"),
+                            ),
+                            0,
+                        ),
+                    )
+                    .values("outstanding")[:1],
+                    output_field=models.IntegerField(),
+                ),
             )
         )
 
@@ -232,7 +259,7 @@ class Asset(models.Model):
     }
 
     is_serialised = models.BooleanField(
-        default=True,
+        default=False,
         help_text="Track individual serial units for this asset",
     )
     is_kit = models.BooleanField(
@@ -515,6 +542,12 @@ class Asset(models.Model):
                 checked_out_to__isnull=False,
                 is_archived=False,
             ).exists()
+        # Use annotation from with_related() if available
+        if hasattr(self, "_outstanding_checkout_qty"):
+            outstanding = self._outstanding_checkout_qty or 0
+            if outstanding > 0:
+                return True
+            return self.checked_out_to is not None
         if self.checked_out_to is not None:
             return True
         return self.available_count < self.quantity

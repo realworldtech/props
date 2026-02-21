@@ -3454,9 +3454,8 @@ class TestQueryCounts:
         asset,
     ):
         """Asset list should use a fixed number of queries."""
-        # V500: +2 queries per non-serialised asset for available_count
         # +1 for PrintClient query (bulk remote print)
-        with django_assert_num_queries(18):
+        with django_assert_num_queries(16):
             response = client_logged_in.get(reverse("assets:asset_list"))
         assert response.status_code == 200
 
@@ -3747,8 +3746,8 @@ class TestAssetImageAdmin:
 class TestAssetNewFields:
     """Test is_serialised and is_kit defaults on Asset."""
 
-    def test_is_serialised_default_true(self, category, location, user):
-        """V3: new assets default to is_serialised=True."""
+    def test_is_serialised_default_false(self, category, location, user):
+        """S3a: new assets default to is_serialised=False."""
         a = Asset(
             name="Default Check",
             category=category,
@@ -3757,7 +3756,7 @@ class TestAssetNewFields:
             created_by=user,
         )
         a.save()
-        assert a.is_serialised is True
+        assert a.is_serialised is False
 
     def test_is_kit_default_false(self, asset):
         assert asset.is_kit is False
@@ -5569,7 +5568,10 @@ class TestHoldlistPickSheet:
     ):
         from assets.models import HoldList, HoldListStatus
 
-        status = HoldListStatus.objects.create(name="Draft")
+        status, _ = HoldListStatus.objects.get_or_create(
+            name="Draft",
+            defaults={"is_default": True, "sort_order": 10},
+        )
         hold_list = HoldList.objects.create(
             name="Test List",
             status=status,
@@ -5595,7 +5597,10 @@ class TestHoldlistPickSheet:
             email="pickcreator@example.com",
             password="testpass123!",
         )
-        status = HoldListStatus.objects.create(name="Draft")
+        status, _ = HoldListStatus.objects.get_or_create(
+            name="Draft",
+            defaults={"is_default": True, "sort_order": 10},
+        )
         hold_list = HoldList.objects.create(
             name="Test List",
             status=status,
@@ -7129,9 +7134,11 @@ class TestSetupGroupsCommand:
 
 @pytest.fixture
 def hold_list_status(db):
-    return HoldListStatus.objects.create(
-        name="Draft", is_default=True, sort_order=0
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Draft",
+        defaults={"is_default": True, "sort_order": 10},
     )
+    return status
 
 
 @pytest.fixture
@@ -8285,23 +8292,21 @@ class TestBulkTransferEfficiency:
 @pytest.fixture
 def active_hold_status(db):
     """Non-terminal hold list status."""
-    return HoldListStatus.objects.create(
+    status, _ = HoldListStatus.objects.get_or_create(
         name="Confirmed",
-        is_default=True,
-        is_terminal=False,
-        sort_order=1,
+        defaults={"is_default": False, "is_terminal": False, "sort_order": 20},
     )
+    return status
 
 
 @pytest.fixture
 def terminal_hold_status(db):
     """Terminal hold list status."""
-    return HoldListStatus.objects.create(
-        name="Completed",
-        is_default=False,
-        is_terminal=True,
-        sort_order=10,
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Fulfilled",
+        defaults={"is_default": False, "is_terminal": True, "sort_order": 40},
     )
+    return status
 
 
 @pytest.fixture
@@ -10548,23 +10553,21 @@ def _seed_holdlist_statuses(db):
 @pytest.fixture
 def hl_active_status(db):
     """Non-terminal hold list status for VV tests."""
-    return HoldListStatus.objects.create(
-        name="VV Active",
-        is_default=True,
-        is_terminal=False,
-        sort_order=1,
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Draft",
+        defaults={"is_default": True, "is_terminal": False, "sort_order": 10},
     )
+    return status
 
 
 @pytest.fixture
 def hl_terminal_status(db):
     """Terminal hold list status for VV tests."""
-    return HoldListStatus.objects.create(
-        name="VV Fulfilled",
-        is_default=False,
-        is_terminal=True,
-        sort_order=99,
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Fulfilled",
+        defaults={"is_default": False, "is_terminal": True, "sort_order": 40},
     )
+    return status
 
 
 class TestHoldListStatusAdmin:
@@ -16168,17 +16171,22 @@ class TestHoldListWorkflow:
     """Hold list workflow: create, add items, fulfil, close."""
 
     def _make_default_status(self):
-        return HoldListStatus.objects.create(
-            name="Draft", is_default=True, sort_order=0
+        status, _ = HoldListStatus.objects.get_or_create(
+            name="Draft",
+            defaults={"is_default": True, "sort_order": 10},
         )
+        return status
 
     def _make_terminal_status(self):
-        return HoldListStatus.objects.create(
-            name="Closed",
-            is_default=False,
-            is_terminal=True,
-            sort_order=99,
+        status, _ = HoldListStatus.objects.get_or_create(
+            name="Cancelled",
+            defaults={
+                "is_default": False,
+                "is_terminal": True,
+                "sort_order": 50,
+            },
         )
+        return status
 
     def test_create_hold_list(self, user, department, asset):
         from datetime import date
@@ -16290,6 +16298,9 @@ class TestHoldListWorkflow:
         from datetime import date
 
         from assets.services.holdlists import create_hold_list
+
+        # Clear seeded statuses so no default exists
+        HoldListStatus.objects.all().delete()
 
         with pytest.raises(
             ValidationError, match="No default hold list status"

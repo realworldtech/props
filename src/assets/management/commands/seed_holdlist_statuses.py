@@ -13,29 +13,29 @@ class Command(BaseCommand):
             {
                 "name": "Draft",
                 "is_default": True,
-                "sort_order": 0,
+                "sort_order": 10,
                 "color": "gray",
             },
             {
                 "name": "Confirmed",
-                "sort_order": 10,
+                "sort_order": 20,
                 "color": "blue",
             },
             {
                 "name": "In Progress",
-                "sort_order": 20,
+                "sort_order": 30,
                 "color": "yellow",
             },
             {
                 "name": "Fulfilled",
                 "is_terminal": True,
-                "sort_order": 30,
+                "sort_order": 40,
                 "color": "green",
             },
             {
                 "name": "Cancelled",
                 "is_terminal": True,
-                "sort_order": 40,
+                "sort_order": 50,
                 "color": "red",
             },
         ]

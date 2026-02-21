@@ -196,6 +196,7 @@ class HoldListStatusFactory(DjangoModelFactory):
 
     class Meta:
         model = "assets.HoldListStatus"
+        django_get_or_create = ("name",)
 
     name = factory.Sequence(lambda n: f"Status {n}")
     is_default = False
