@@ -915,10 +915,46 @@ def drafts_queue(request):
     page_number = request.GET.get("page", 1)
     page_obj = paginator.get_page(page_number)
 
+    # Connected remote printers for bulk remote print
+    connected_clients = PrintClient.objects.filter(
+        status="approved",
+        is_active=True,
+        is_connected=True,
+    )
+    connected_printers = []
+    for pc in connected_clients:
+        for printer in pc.printers or []:
+            pid = printer.get("id", "")
+            connected_printers.append(
+                {
+                    "client_pk": pc.pk,
+                    "client_name": pc.name,
+                    "printer_id": pid,
+                    "printer_name": printer.get("name", ""),
+                    "printer_type": printer.get("type", ""),
+                    "key": f"{pc.pk}:{pid}",
+                }
+            )
+    remote_print_available = len(connected_printers) > 0
+    last_printer = request.session.get("last_printer", "")
+    default_printer = None
+    if last_printer and connected_printers:
+        for p in connected_printers:
+            if p["key"] == last_printer:
+                default_printer = p
+                break
+    if default_printer is None and connected_printers:
+        default_printer = connected_printers[0]
+
     return render(
         request,
         "assets/drafts_queue.html",
-        {"page_obj": page_obj},
+        {
+            "page_obj": page_obj,
+            "remote_print_available": remote_print_available,
+            "connected_printers": connected_printers,
+            "default_printer": default_printer,
+        },
     )
 
 
@@ -963,6 +999,100 @@ def drafts_bulk_action(request):
             count = drafts.count()
             drafts.update(status="disposed")
             messages.success(request, f"{count} draft(s) disposed.")
+        elif action == "remote_print":
+            remote_printer = request.POST.get("remote_printer", "")
+            if ":" not in remote_printer:
+                messages.error(request, "Please select a printer.")
+                return redirect("assets:drafts_queue")
+
+            client_pk, printer_id = remote_printer.split(":", 1)
+            try:
+                pc = PrintClient.objects.get(pk=client_pk)
+            except (PrintClient.DoesNotExist, ValueError, TypeError):
+                messages.error(request, "Print client not found.")
+                return redirect("assets:drafts_queue")
+
+            if pc.status != "approved" or not pc.is_active:
+                messages.error(
+                    request,
+                    "Print client is not approved or active.",
+                )
+                return redirect("assets:drafts_queue")
+
+            if not pc.is_connected:
+                messages.error(
+                    request,
+                    "Print client is no longer connected.",
+                )
+                return redirect("assets:drafts_queue")
+
+            printer_ids = {
+                p.get("id") for p in (pc.printers or []) if isinstance(p, dict)
+            }
+            if printer_id not in printer_ids:
+                messages.error(
+                    request,
+                    "Selected printer not found on client.",
+                )
+                return redirect("assets:drafts_queue")
+
+            assets = drafts.select_related("category__department")
+            base_url = request.build_absolute_uri("/").rstrip("/")
+            channel_layer = get_channel_layer()
+            group_name = f"print_client_active_{pc.pk}"
+
+            sent = 0
+            failed = 0
+            for asset in assets:
+                pr = PrintRequest.objects.create(
+                    asset=asset,
+                    print_client=pc,
+                    printer_id=printer_id,
+                    quantity=1,
+                    requested_by=request.user,
+                )
+                asset_name = (asset.name or "")[:30]
+                barcode_val = asset.barcode or ""
+                category_name = ""
+                department_name = ""
+                if asset.category:
+                    category_name = asset.category.name or ""
+                    if asset.category.department:
+                        department_name = asset.category.department.name or ""
+                qr_content = f"{base_url}/a/{barcode_val}/" if base_url else ""
+
+                message = {
+                    "type": "print.job",
+                    "job_id": str(pr.job_id),
+                    "printer_id": printer_id,
+                    "barcode": barcode_val,
+                    "asset_name": asset_name,
+                    "category_name": category_name,
+                    "department_name": department_name,
+                    "qr_content": qr_content,
+                    "quantity": 1,
+                }
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        group_name, message
+                    )
+                    sent += 1
+                except Exception:
+                    pr.transition_to("failed", error_message="Send failed")
+                    failed += 1
+
+            request.session["last_printer"] = remote_printer
+
+            if sent:
+                messages.success(
+                    request,
+                    f"{sent} label(s) sent to {pc.name}.",
+                )
+            if failed:
+                messages.warning(
+                    request,
+                    f"{failed} label(s) failed to send.",
+                )
 
     return redirect("assets:drafts_queue")
 

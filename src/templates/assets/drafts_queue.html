@@ -31,11 +31,21 @@
                 <input type="checkbox" id="select-all" class="rounded border-stage-300 dark:border-white/20 text-brand-500 focus:ring-brand-500">
                 <span>Select All</span>
             </label>
-            <select name="action" class="form-input rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm bg-stage-100 dark:bg-stage-700 border-stage-200 dark:border-white/10">
+            <select name="action" id="draft-action-select" class="form-input rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm bg-stage-100 dark:bg-stage-700 border-stage-200 dark:border-white/10">
                 <option value="">Bulk Actions...</option>
                 <option value="activate">Activate Selected</option>
                 <option value="delete">Dispose Selected</option>
+                {% if remote_print_available %}
+                <option value="remote_print">Remote Print Labels</option>
+                {% endif %}
             </select>
+            {% if remote_print_available %}
+            <select name="remote_printer" class="form-input rounded-lg px-3 py-1.5 text-stage-900 dark:text-cream text-sm bg-stage-100 dark:bg-stage-700 border-stage-200 dark:border-white/10 hidden" id="draft-remote-printer">
+                {% for p in connected_printers %}
+                <option value="{{ p.client_pk }}:{{ p.printer_id }}" {% if default_printer and default_printer.key == p.key %}selected{% endif %}>{{ p.client_name }} &mdash; {{ p.printer_name }}{% if p.printer_type %} ({{ p.printer_type }}){% endif %}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
             <button type="submit" class="px-4 py-1.5 bg-brand-500 hover:bg-brand-400 text-stage-900 rounded-lg text-sm font-medium btn-press transition-all">
                 Apply
             </button>
@@ -111,6 +121,17 @@
         if (selectAll) {
             selectAll.addEventListener('change', function() {
                 checkboxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+            });
+        }
+        var actionSelect = document.getElementById('draft-action-select');
+        var remotePrinter = document.getElementById('draft-remote-printer');
+        if (actionSelect && remotePrinter) {
+            actionSelect.addEventListener('change', function() {
+                if (this.value === 'remote_print') {
+                    remotePrinter.classList.remove('hidden');
+                } else {
+                    remotePrinter.classList.add('hidden');
+                }
             });
         }
     })();
