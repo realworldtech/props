@@ -66,12 +66,16 @@ Business logic is extracted into service modules rather than living in views:
 
 - **HTMX + Django templates** for frontend interactivity (no SPA framework)
 - **Tailwind CSS** for styling, **Alpine.js** via django-unfold
-- **django-unfold** for admin UI theming
+- **django-unfold** for admin UI theming (see Unfold Sidebar rule below)
 - **Celery + Redis** for async tasks (image analysis in `assets/tasks.py`)
 - **Garage** as S3-compatible object storage; media served via Django proxy view (`props/views.py:media_proxy`)
 - **WhiteNoise** for static file serving
 - Custom auth backend: `accounts.backends.EmailOrUsernameBackend`
 - Unified asset lookup at `/a/<identifier>/` resolves both barcodes and NFC tags
+
+### Unfold Sidebar Navigation
+
+The Unfold sidebar has `show_all_applications: False`, which means **only models explicitly listed in the `UNFOLD["SIDEBAR"]["navigation"]` config in `settings.py` are visible in the admin**. When registering a new model with `@admin.register()`, you **must** also add a corresponding entry to the sidebar navigation — otherwise the model will be invisible to admins. Always audit the navigation list against registered models when adding or removing admin registrations.
 
 ### Permission Groups
 

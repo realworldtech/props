@@ -364,6 +364,20 @@ UNFOLD = {
                             "admin:assets_stocktakesession_changelist"
                         ),
                     },
+                    {
+                        "title": "Asset Serials",
+                        "icon": "pin",
+                        "link": reverse_lazy(
+                            "admin:assets_assetserial_changelist"
+                        ),
+                    },
+                    {
+                        "title": "Asset Kits",
+                        "icon": "backpack",
+                        "link": reverse_lazy(
+                            "admin:assets_assetkit_changelist"
+                        ),
+                    },
                 ],
             },
             {
@@ -396,6 +410,34 @@ UNFOLD = {
                         "title": "Tags",
                         "icon": "label",
                         "link": reverse_lazy("admin:assets_tag_changelist"),
+                    },
+                    {
+                        "title": "Hold List Statuses",
+                        "icon": "playlist_add_check",
+                        "link": reverse_lazy(
+                            "admin:assets_holdliststatus_changelist"
+                        ),
+                    },
+                ],
+            },
+            {
+                "title": "Printing",
+                "icon": "print",
+                "collapsible": True,
+                "items": [
+                    {
+                        "title": "Print Clients",
+                        "icon": "devices",
+                        "link": reverse_lazy(
+                            "admin:assets_printclient_changelist"
+                        ),
+                    },
+                    {
+                        "title": "Print Requests",
+                        "icon": "receipt_long",
+                        "link": reverse_lazy(
+                            "admin:assets_printrequest_changelist"
+                        ),
                     },
                 ],
             },
