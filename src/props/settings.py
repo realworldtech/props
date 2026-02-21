@@ -19,6 +19,7 @@ ALLOWED_HOSTS = [
 ]
 
 INSTALLED_APPS = [
+    "daphne",
     "unfold",
     "unfold.contrib.filters",
     "django.contrib.admin",
@@ -30,6 +31,7 @@ INSTALLED_APPS = [
     "django_htmx",
     "django_celery_beat",
     "django_gravatar",
+    "channels",
     "accounts",
     "assets",
 ]
@@ -67,6 +69,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "props.wsgi.application"
+ASGI_APPLICATION = "props.asgi.application"
 
 AUTH_USER_MODEL = "accounts.CustomUser"
 
@@ -257,6 +260,30 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+# Django Channels — Redis channel layer (§4.10.7)
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [
+                f"redis://{os.environ.get('CHANNEL_LAYERS_HOST', 'redis')}:"
+                f"{os.environ.get('CHANNEL_LAYERS_PORT', '6379')}/1"
+            ],
+            "prefix": "asgi:",
+        },
+    },
+}
+
+# Print service configuration (§4.3.3.5)
+PRINT_JOB_TIMEOUT_SECONDS = int(
+    os.environ.get("PRINT_JOB_TIMEOUT_SECONDS", "300")
+)
+
+# V21: Require wss:// in production (default True when not DEBUG)
+SECURE_WEBSOCKET = os.environ.get(
+    "SECURE_WEBSOCKET", str(not DEBUG)
+).lower() in ("true", "1", "yes")
 
 # Zebra printer configuration
 ZEBRA_PRINTER_HOST = os.environ.get("ZEBRA_PRINTER_HOST", "")

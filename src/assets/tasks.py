@@ -241,3 +241,20 @@ def generate_detail_thumbnail(image_id: int):
         )
     except Exception:
         pass
+
+
+@shared_task
+def cleanup_stale_jobs():
+    """V35: Periodic task to clean up stale print jobs."""
+    from django.conf import settings
+
+    from assets.services.print_dispatch import cleanup_stale_print_jobs
+
+    timeout = getattr(settings, "PRINT_JOB_TIMEOUT_SECONDS", 300)
+    count = cleanup_stale_print_jobs(timeout_seconds=timeout)
+    if count:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info("Cleaned up %d stale print jobs", count)
+    return count

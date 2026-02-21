@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, models
 from django.urls import reverse
 from django.utils import timezone
@@ -1671,3 +1671,160 @@ class HoldListItem(models.Model):
             raise ValidationError(
                 "Quantity must be 1 when a specific serial is set."
             )
+
+
+class PrintClient(models.Model):
+    """Remote print station paired via props-label-manager (S3.1.20)."""
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+    ]
+
+    name = models.CharField(max_length=200)
+    token_hash = models.CharField(max_length=64, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+    is_active = models.BooleanField(default=True)
+    is_connected = models.BooleanField(default=False)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    printers = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_print_clients",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["status", "is_connected"],
+                name="idx_printclient_status_conn",
+            ),
+            models.Index(
+                fields=["is_active"],
+                name="idx_printclient_is_active",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_status_display()})"
+
+
+class PrintRequest(models.Model):
+    """Print job sent to a remote print client (S3.1.21)."""
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("sent", "Sent"),
+        ("acked", "Acknowledged"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    VALID_TRANSITIONS = {
+        "pending": ["sent", "failed"],
+        "sent": ["acked", "failed"],
+        "acked": ["completed", "failed"],
+        "completed": [],
+        "failed": [],
+    }
+
+    job_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    print_client = models.ForeignKey(
+        PrintClient,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="print_requests",
+    )
+    asset = models.ForeignKey(
+        Asset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="print_requests",
+    )
+    printer_id = models.CharField(max_length=50)
+    quantity = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(100)],
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="pending",
+    )
+    error_message = models.TextField(blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    acked_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="print_requests",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["print_client", "status"],
+                name="idx_printreq_client_status",
+            ),
+            models.Index(
+                fields=["asset"],
+                name="idx_printreq_asset",
+            ),
+            models.Index(
+                fields=["status", "created_at"],
+                name="idx_printreq_status_created",
+            ),
+        ]
+
+    def __str__(self):
+        return f"PrintRequest {self.job_id} ({self.get_status_display()})"
+
+    def transition_to(self, new_status, error_message=""):
+        """Transition to a new status, enforcing the state machine.
+
+        Valid transitions:
+          pending -> sent, pending -> failed
+          sent -> acked, sent -> failed
+          acked -> completed, acked -> failed
+
+        Raises ValidationError for invalid transitions.
+        """
+        valid_targets = self.VALID_TRANSITIONS.get(self.status, [])
+        if new_status not in valid_targets:
+            raise ValidationError(
+                f"Cannot transition from '{self.status}' "
+                f"to '{new_status}'."
+            )
+
+        now = timezone.now()
+        self.status = new_status
+
+        if new_status == "sent":
+            self.sent_at = now
+        elif new_status == "acked":
+            self.acked_at = now
+        elif new_status == "completed":
+            self.completed_at = now
+        elif new_status == "failed":
+            self.completed_at = now
+            if error_message:
+                self.error_message = error_message
+
+        self.save()

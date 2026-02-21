@@ -1,0 +1,79 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="bg-white dark:bg-base-900 rounded-default shadow-sm p-6 max-w-2xl">
+    <h2 class="text-lg font-semibold text-base-900 dark:text-base-100 mb-1">
+        {{ title }}
+    </h2>
+    <p class="text-sm text-base-600 dark:text-base-400 mb-6">
+        Send {{ assets.count }} label{{ assets.count|pluralize }} to a remote printer.
+    </p>
+
+    {% if printer_choices %}
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-base-900 dark:text-base-100 mb-1">
+                Printer
+            </label>
+            <select name="printer_selection" id="printer_selection" required
+                    class="w-full px-3 py-2 border border-base-200 rounded-default
+                           bg-white text-base-900 text-sm appearance-none
+                           focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600
+                           dark:bg-base-900 dark:border-base-700 dark:text-base-100">
+                <option value="">-- Select printer --</option>
+                {% for choice in printer_choices %}
+                <option value="{{ choice.client_pk }}|{{ choice.printer_id }}">{{ choice.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <input type="hidden" name="client_pk" id="client_pk" value="">
+        <input type="hidden" name="printer_id" id="printer_id" value="">
+
+        {% for asset in assets %}
+        <input type="hidden" name="_selected_action" value="{{ asset.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="{{ action }}">
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="px-4 py-2 bg-primary-600 text-white rounded-default
+                           font-medium hover:bg-primary-700 transition-colors">
+                Print Labels
+            </button>
+            <a href="{% url 'admin:assets_asset_changelist' %}"
+               class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+                      font-medium hover:bg-base-200 transition-colors
+                      dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+                Cancel
+            </a>
+        </div>
+    </form>
+
+    <script>
+    document.getElementById('printer_selection').addEventListener('change', function() {
+        var parts = this.value.split('|');
+        document.getElementById('client_pk').value = parts[0] || '';
+        document.getElementById('printer_id').value = parts[1] || '';
+    });
+    document.querySelector('form').addEventListener('submit', function(e) {
+        if (!document.getElementById('client_pk').value) {
+            e.preventDefault();
+        }
+    });
+    </script>
+    {% else %}
+    <p class="text-sm text-base-600 dark:text-base-400 mb-6">
+        No connected printers are available. Ensure a print client is approved, active, and connected.
+    </p>
+    <a href="{% url 'admin:assets_asset_changelist' %}"
+       class="px-4 py-2 bg-base-100 text-base-700 rounded-default
+              font-medium hover:bg-base-200 transition-colors
+              dark:bg-base-800 dark:text-base-200 dark:hover:bg-base-700">
+        Back
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

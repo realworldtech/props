@@ -3468,7 +3468,8 @@ class TestQueryCounts:
         """Asset detail should use a fixed number of queries."""
         # V500: +2 per available_count call (multiple in template),
         # V492: +2 for serial queries
-        with django_assert_num_queries(40):
+        # S2.4.5: +1 for remote print client query
+        with django_assert_num_queries(41):
             response = client_logged_in.get(
                 reverse("assets:asset_detail", args=[asset.pk])
             )
@@ -3638,7 +3639,7 @@ class TestQueryCountBudgets:
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
-        budget = 23
+        budget = 24  # +1 for S2.4.5 remote print client query
         with CaptureQueriesContext(connection) as ctx:
             response = admin_client.get(
                 reverse("assets:asset_detail", args=[asset.pk])

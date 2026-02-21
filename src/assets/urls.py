@@ -120,6 +120,21 @@ urlpatterns = [
         name="asset_label_zpl",
     ),
     path(
+        "assets/<int:pk>/remote-print/",
+        views.remote_print_submit,
+        name="remote_print_submit",
+    ),
+    path(
+        "assets/<int:pk>/print-status/<uuid:job_id>/",
+        views.print_job_status,
+        name="print_job_status",
+    ),
+    path(
+        "assets/<int:pk>/print-history/",
+        views.print_history,
+        name="print_history",
+    ),
+    path(
         "assets/<int:pk>/clear-barcode/",
         views.clear_barcode,
         name="clear_barcode",

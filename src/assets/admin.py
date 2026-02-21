@@ -1,5 +1,7 @@
 """Admin configuration for assets app using django-unfold."""
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.contrib.filters.admin import (
     ChoicesDropdownFilter,
@@ -15,7 +17,10 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.utils.html import format_html
+
+from assets.services.print_dispatch import dispatch_print_job
 
 from .models import (
     Asset,
@@ -29,6 +34,8 @@ from .models import (
     HoldListStatus,
     Location,
     NFCTag,
+    PrintClient,
+    PrintRequest,
     SiteBranding,
     StocktakeSession,
     Tag,
@@ -325,6 +332,7 @@ class AssetAdmin(ModelAdmin):
     )
 
     actions_detail = ["print_label_action"]
+    actions = ["bulk_remote_print"]
 
     # --- Display methods ---
 
@@ -690,7 +698,79 @@ class AssetAdmin(ModelAdmin):
         "bulk_serialise",
         "add_to_hold_list",
         "generate_kit_labels",
+        "bulk_remote_print",
     ]
+
+    @action(description="Print to Remote Printer")
+    def bulk_remote_print(self, request, queryset):
+        """S2.4.5-11: Bulk print labels to a remote print client."""
+        client_pk = request.POST.get("client_pk")
+        printer_id = request.POST.get("printer_id", "")
+
+        if not client_pk:
+            # First POST: show printer selection form
+            clients = PrintClient.objects.filter(
+                status="approved",
+                is_active=True,
+                is_connected=True,
+            )
+            printer_choices = []
+            for pc in clients:
+                for printer in pc.printers or []:
+                    printer_choices.append(
+                        {
+                            "client_pk": pc.pk,
+                            "printer_id": printer.get("id", ""),
+                            "label": (
+                                f"{pc.name} \u2014 "
+                                f"{printer.get('name', 'Unknown')} "
+                                f"({printer.get('type', 'unknown')})"
+                            ),
+                        }
+                    )
+            return TemplateResponse(
+                request,
+                "admin/assets/bulk_remote_print.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "assets": queryset,
+                    "printer_choices": printer_choices,
+                    "action": "bulk_remote_print",
+                    "opts": self.model._meta,
+                    "title": "Print labels to remote printer",
+                },
+            )
+
+        try:
+            pc = PrintClient.objects.get(
+                pk=client_pk,
+                status="approved",
+                is_active=True,
+                is_connected=True,
+            )
+        except (PrintClient.DoesNotExist, ValueError, TypeError):
+            messages.error(
+                request,
+                "Print client not found or not connected.",
+            )
+            return
+
+        count = 0
+        for asset in queryset:
+            pr = PrintRequest.objects.create(
+                asset=asset,
+                print_client=pc,
+                printer_id=printer_id,
+                quantity=1,
+                requested_by=request.user,
+            )
+            dispatch_print_job(pr)
+            count += 1
+
+        messages.success(
+            request,
+            f"{count} label(s) sent to {pc.name}.",
+        )
 
     @action(
         description="Print Label",
@@ -1011,3 +1091,131 @@ class SiteBrandingAdmin(ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(PrintClient)
+class PrintClientAdmin(ModelAdmin):
+    """Admin for print client pairing and management (§4.3.5)."""
+
+    list_display = [
+        "name",
+        "status",
+        "is_connected",
+        "is_active",
+        "last_seen_at",
+        "created_at",
+    ]
+    list_filter = [
+        ("status", ChoicesDropdownFilter),
+        "is_connected",
+        "is_active",
+    ]
+    search_fields = ["name"]
+    readonly_fields = [
+        "token_hash",
+        "is_connected",
+        "last_seen_at",
+        "created_at",
+        "approved_by",
+        "approved_at",
+        "printers",
+    ]
+    actions_detail = []
+
+    @action(description="Approve selected clients")
+    def approve_clients(self, request, queryset):
+        channel_layer = get_channel_layer()
+        count = 0
+        for pc in queryset.filter(status="pending"):
+            pc.status = "approved"
+            pc.approved_by = request.user
+            pc.approved_at = timezone.now()
+            pc.save(
+                update_fields=[
+                    "status",
+                    "approved_by",
+                    "approved_at",
+                ]
+            )
+            group = f"print_client_{pc.pk}"
+            async_to_sync(channel_layer.group_send)(
+                group,
+                {
+                    "type": "pairing.approved",
+                    "print_client_id": pc.pk,
+                },
+            )
+            count += 1
+        messages.success(request, f"{count} client(s) approved.")
+
+    @action(description="Deny selected clients")
+    def deny_clients(self, request, queryset):
+        channel_layer = get_channel_layer()
+        count = 0
+        for pc in queryset.filter(status="pending"):
+            group = f"print_client_{pc.pk}"
+            async_to_sync(channel_layer.group_send)(
+                group,
+                {"type": "pairing.denied"},
+            )
+            pc.delete()
+            count += 1
+        messages.success(request, f"{count} client(s) denied and removed.")
+
+    @action(description="Deactivate selected clients")
+    def deactivate_clients(self, request, queryset):
+        channel_layer = get_channel_layer()
+        count = 0
+        for pc in queryset.filter(is_active=True):
+            pc.is_active = False
+            pc.save(update_fields=["is_active"])
+            conn_group = f"print_client_conn_{pc.pk}"
+            async_to_sync(channel_layer.group_send)(
+                conn_group,
+                {"type": "force.disconnect"},
+            )
+            count += 1
+        messages.success(
+            request,
+            f"{count} client(s) deactivated.",
+        )
+
+    actions = [
+        "approve_clients",
+        "deny_clients",
+        "deactivate_clients",
+    ]
+
+
+@admin.register(PrintRequest)
+class PrintRequestAdmin(ModelAdmin):
+    """Admin for print job history and monitoring (§4.3.5)."""
+
+    list_display = [
+        "job_id",
+        "asset",
+        "print_client",
+        "printer_id",
+        "status",
+        "sent_at",
+        "acked_at",
+        "completed_at",
+        "error_message",
+        "created_at",
+    ]
+    list_filter = [
+        ("status", ChoicesDropdownFilter),
+        ("print_client", RelatedDropdownFilter),
+        "printer_id",
+        "created_at",
+    ]
+    search_fields = ["job_id", "printer_id"]
+    readonly_fields = [
+        "job_id",
+        "status",
+        "error_message",
+        "sent_at",
+        "acked_at",
+        "completed_at",
+        "created_at",
+    ]

@@ -24,6 +24,16 @@ settings.CACHES = {
     }
 }
 
+# Use in-memory channel layer for tests (avoids Redis for WS tests)
+settings.CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
+
+# Shorten print service auth timeout for fast tests (default 30s)
+settings.PRINT_SERVICE_AUTH_TIMEOUT = 0.5
+
 from assets.factories import (  # noqa: E402
     AssetFactory,
     AssetSerialFactory,
