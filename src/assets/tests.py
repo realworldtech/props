@@ -16822,12 +16822,13 @@ class TestBulkRemotePrint:
             or [{"id": "zebra1", "name": "Zebra", "type": "label"}],
         )
 
-    @patch("assets.services.print_dispatch.dispatch_print_job")
+    @patch("assets.views.get_channel_layer")
     def test_bulk_remote_print_success(
-        self, mock_dispatch, admin_client, asset
+        self, mock_get_layer, admin_client, asset
     ):
-        """Bulk remote print dispatches jobs for each asset."""
-        mock_dispatch.return_value = True
+        """Bulk remote print sends jobs via channel layer."""
+        mock_layer = MagicMock()
+        mock_get_layer.return_value = mock_layer
         pc = self._make_print_client()
         url = reverse("assets:bulk_actions")
         resp = admin_client.post(
@@ -16839,7 +16840,7 @@ class TestBulkRemotePrint:
             },
         )
         assert resp.status_code == 302
-        mock_dispatch.assert_called_once()
+        mock_layer.group_send.assert_called_once()
 
     def test_bulk_remote_print_no_printer(self, admin_client, asset):
         """Returns error when no printer selected."""
@@ -16867,10 +16868,7 @@ class TestBulkRemotePrint:
         )
         assert resp.status_code == 302
 
-    @patch("assets.services.print_dispatch.dispatch_print_job")
-    def test_bulk_remote_print_disconnected(
-        self, mock_dispatch, admin_client, asset
-    ):
+    def test_bulk_remote_print_disconnected(self, admin_client, asset):
         """Returns error when print client is disconnected."""
         pc = self._make_print_client()
         pc.is_connected = False
@@ -16885,14 +16883,14 @@ class TestBulkRemotePrint:
             },
         )
         assert resp.status_code == 302
-        mock_dispatch.assert_not_called()
 
-    @patch("assets.services.print_dispatch.dispatch_print_job")
+    @patch("assets.views.get_channel_layer")
     def test_bulk_remote_print_saves_session(
-        self, mock_dispatch, admin_client, asset
+        self, mock_get_layer, admin_client, asset
     ):
         """Saves last-used printer to session."""
-        mock_dispatch.return_value = True
+        mock_layer = MagicMock()
+        mock_get_layer.return_value = mock_layer
         pc = self._make_print_client()
         url = reverse("assets:bulk_actions")
         admin_client.post(

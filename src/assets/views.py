@@ -4,6 +4,8 @@ import json
 import logging
 import re
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django_ratelimit.decorators import ratelimit
 
 from django.conf import settings
@@ -3694,10 +3696,21 @@ def bulk_actions(request):
             messages.error(request, "Print client is no longer connected.")
             return redirect("assets:asset_list")
 
-        from .services.print_dispatch import dispatch_print_job
+        # Validate printer_id exists on client
+        printer_ids = {
+            p.get("id") for p in (pc.printers or []) if isinstance(p, dict)
+        }
+        if printer_id not in printer_ids:
+            messages.error(request, "Selected printer not found on client.")
+            return redirect("assets:asset_list")
 
-        assets = Asset.objects.filter(pk__in=asset_ids)
+        assets = Asset.objects.filter(pk__in=asset_ids).select_related(
+            "category__department"
+        )
         base_url = request.build_absolute_uri("/").rstrip("/")
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_active_{pc.pk}"
+
         sent = 0
         failed = 0
         for asset in assets:
@@ -3708,9 +3721,32 @@ def bulk_actions(request):
                 quantity=1,
                 requested_by=request.user,
             )
-            if dispatch_print_job(pr, site_url=base_url):
+            asset_name = (asset.name or "")[:30]
+            barcode_val = asset.barcode or ""
+            category_name = ""
+            department_name = ""
+            if asset.category:
+                category_name = asset.category.name or ""
+                if asset.category.department:
+                    department_name = asset.category.department.name or ""
+            qr_content = f"{base_url}/a/{barcode_val}/" if base_url else ""
+
+            message = {
+                "type": "print.job",
+                "job_id": str(pr.job_id),
+                "printer_id": printer_id,
+                "barcode": barcode_val,
+                "asset_name": asset_name,
+                "category_name": category_name,
+                "department_name": department_name,
+                "qr_content": qr_content,
+                "quantity": 1,
+            }
+            try:
+                async_to_sync(channel_layer.group_send)(group_name, message)
                 sent += 1
-            else:
+            except Exception:
+                pr.transition_to("failed", error_message="Send failed")
                 failed += 1
 
         # Remember last-used printer in session
