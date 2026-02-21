@@ -233,7 +233,8 @@
                     {% endfor %}
                 </div>
 
-                <!-- Lightbox Modal -->
+                <!-- Lightbox Modal — teleported to body to escape backdrop-blur stacking context -->
+                <template x-teleport="body">
                 <div x-show="lightboxOpen"
                      x-transition:enter="transition ease-out duration-200"
                      x-transition:enter-start="opacity-0"
@@ -291,6 +292,7 @@
                         </button>
                     </div>
                 </div>
+                </template>
                 {% endif %}
 
                 <!-- Upload form -->
@@ -359,8 +361,10 @@
                 <form method="post" action="{% url 'assets:ai_apply_suggestions' asset.pk img.pk %}" class="flex flex-wrap gap-2">
                     {% csrf_token %}
                     {% if img.ai_name_suggestion %}
+                    {% load assets_tags %}
+                    {% is_placeholder_name asset.name as is_placeholder %}
                     <label class="inline-flex items-center gap-1.5 text-xs text-stage-600 dark:text-cream/70">
-                        <input type="checkbox" name="apply_name" value="1"> Use as name
+                        <input type="checkbox" name="apply_name" value="1" {% if is_placeholder %}checked{% endif %}> Use as name
                     </label>
                     {% endif %}
                     {% if img.ai_description %}
