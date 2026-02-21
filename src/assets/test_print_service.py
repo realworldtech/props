@@ -1469,6 +1469,89 @@ class TestPairingApprovedPush:
 
         await communicator2.disconnect()
 
+    @pytest.mark.asyncio(loop_scope="function")
+    async def test_pairing_approved_sets_is_connected_and_authenticated(
+        self, admin_user
+    ):
+        """After pairing approval, PrintClient.is_connected must be True
+        and the consumer must be fully authenticated (joined active group,
+        able to receive print jobs) without requiring a reconnect.
+        """
+        communicator = _make_communicator()
+        connected, _ = await communicator.connect()
+        assert connected
+
+        await communicator.send_json_to(
+            {
+                "type": "pairing_request",
+                "client_name": "Connected Station",
+                "protocol_version": "1",
+            }
+        )
+        await communicator.receive_json_from(timeout=5)
+
+        print_client = await database_sync_to_async(PrintClient.objects.get)(
+            name="Connected Station"
+        )
+        assert print_client.status == "pending"
+        assert print_client.is_connected is False
+
+        @database_sync_to_async
+        def approve_client(pc, admin):
+            pc.status = "approved"
+            pc.approved_by = admin
+            pc.approved_at = timezone.now()
+            pc.save()
+
+        await approve_client(print_client, admin_user)
+
+        channel_layer = get_channel_layer()
+        group_name = f"print_client_{print_client.pk}"
+        await channel_layer.group_send(
+            group_name,
+            {
+                "type": "pairing.approved",
+                "print_client_id": print_client.pk,
+            },
+        )
+
+        approval = await communicator.receive_json_from(timeout=5)
+        assert approval["type"] == "pairing_approved"
+        assert "token" in approval
+
+        # After approval, is_connected must be True in the database
+        @database_sync_to_async
+        def get_updated_client(pk):
+            return PrintClient.objects.get(pk=pk)
+
+        updated = await get_updated_client(print_client.pk)
+        assert updated.is_connected is True
+        assert updated.last_seen_at is not None
+
+        # Consumer must be on the active group so it can receive
+        # print jobs immediately (no reconnect required)
+        job_id = str(uuid.uuid4())
+        active_group = f"print_client_active_{print_client.pk}"
+        await channel_layer.group_send(
+            active_group,
+            {
+                "type": "print.job",
+                "job_id": job_id,
+                "zpl": "^XA^FO50,50^ADN,36,20^FDTest^FS^XZ",
+                "printer_id": "printer-1",
+            },
+        )
+
+        job_msg = await communicator.receive_json_from(timeout=5)
+        assert job_msg["type"] == "print"
+        assert job_msg["job_id"] == job_id
+
+        # Disconnect should clean up is_connected
+        await communicator.disconnect()
+
+        disconnected = await get_updated_client(print_client.pk)
+        assert disconnected.is_connected is False
+
 
 # ---------------------------------------------------------------------------
 # §8.2.17-02 — Authentication flow tests
@@ -3157,6 +3240,97 @@ class TestPrintClientAdminApproveAction:
             mock_async_to_sync.return_value
             admin_obj.approve_clients(request, qs)
             assert mock_async_to_sync.called
+
+
+@pytest.mark.django_db
+class TestPrintClientAdminDetailActions:
+    """Detail (object-level) approve/deny actions on PrintClient.
+
+    When viewing a single PrintClient record, admins should be able to
+    approve or deny directly from the detail page rather than only via
+    the list-level bulk actions.
+    """
+
+    def test_approve_detail_action_sets_status_and_notifies(self, admin_user):
+        """Approve detail action sets status to approved and sends
+        pairing.approved via the channel layer."""
+        from django.contrib.admin.sites import AdminSite
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("detail-approve-test")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", SessionStore())
+        msg_storage = FallbackStorage(request)
+        setattr(request, "_messages", msg_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_ats:
+            admin_obj.approve_client_detail(request, pc.pk)
+            assert mock_ats.called
+
+        pc.refresh_from_db()
+        assert pc.status == "approved"
+        assert pc.approved_by == admin_user
+        assert pc.approved_at is not None
+
+    def test_approve_detail_action_noop_if_already_approved(self, admin_user):
+        """Approve detail action is a no-op on already approved clients."""
+        from django.contrib.admin.sites import AdminSite
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("detail-approve-noop")
+        pc.status = "approved"
+        pc.approved_by = admin_user
+        pc.approved_at = timezone.now()
+        pc.save()
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", SessionStore())
+        msg_storage = FallbackStorage(request)
+        setattr(request, "_messages", msg_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_ats:
+            admin_obj.approve_client_detail(request, pc.pk)
+            assert not mock_ats.called
+
+    def test_deny_detail_action_deletes_and_notifies(self, admin_user):
+        """Deny detail action sends pairing.denied and deletes the
+        PrintClient."""
+        from django.contrib.admin.sites import AdminSite
+
+        from assets.admin import PrintClientAdmin
+
+        pc = _make_print_client("detail-deny-test")
+        pc.status = "pending"
+        pc.save(update_fields=["status"])
+        pc_pk = pc.pk
+
+        admin_obj = PrintClientAdmin(PrintClient, AdminSite())
+
+        factory = RequestFactory()
+        request = factory.post("/admin/assets/printclient/")
+        request.user = admin_user
+        setattr(request, "session", SessionStore())
+        msg_storage = FallbackStorage(request)
+        setattr(request, "_messages", msg_storage)
+
+        with patch("assets.admin.async_to_sync") as mock_ats:
+            admin_obj.deny_client_detail(request, pc_pk)
+            assert mock_ats.called
+
+        assert not PrintClient.objects.filter(pk=pc_pk).exists()
 
 
 @pytest.mark.django_db

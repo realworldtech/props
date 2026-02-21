@@ -1,5 +1,7 @@
 """Admin configuration for assets app using django-unfold."""
 
+import logging
+
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from unfold.admin import ModelAdmin, TabularInline
@@ -1112,6 +1114,7 @@ class PrintClientAdmin(ModelAdmin):
     ]
     search_fields = ["name"]
     readonly_fields = [
+        "status",
         "token_hash",
         "is_connected",
         "last_seen_at",
@@ -1120,24 +1123,34 @@ class PrintClientAdmin(ModelAdmin):
         "approved_at",
         "printers",
     ]
-    actions_detail = []
 
-    @action(description="Approve selected clients")
-    def approve_clients(self, request, queryset):
+    # --- Shared helpers for approve / deny ---
+
+    def _approve_client(self, request, pc):
+        """Approve a single pending PrintClient and notify via channel
+        layer."""
+        logger = logging.getLogger("assets.admin")
+        if pc.status != "pending":
+            return False
+        pc.status = "approved"
+        pc.approved_by = request.user
+        pc.approved_at = timezone.now()
+        pc.save(
+            update_fields=[
+                "status",
+                "approved_by",
+                "approved_at",
+            ]
+        )
         channel_layer = get_channel_layer()
-        count = 0
-        for pc in queryset.filter(status="pending"):
-            pc.status = "approved"
-            pc.approved_by = request.user
-            pc.approved_at = timezone.now()
-            pc.save(
-                update_fields=[
-                    "status",
-                    "approved_by",
-                    "approved_at",
-                ]
-            )
-            group = f"print_client_{pc.pk}"
+        group = f"print_client_{pc.pk}"
+        logger.info(
+            "approve_client: sending pairing.approved "
+            "to group=%s for pk=%s",
+            group,
+            pc.pk,
+        )
+        try:
             async_to_sync(channel_layer.group_send)(
                 group,
                 {
@@ -1145,21 +1158,100 @@ class PrintClientAdmin(ModelAdmin):
                     "print_client_id": pc.pk,
                 },
             )
-            count += 1
+        except Exception:
+            logger.exception(
+                "approve_client: group_send FAILED for pk=%s",
+                pc.pk,
+            )
+        return True
+
+    def _deny_client(self, pc):
+        """Deny a single pending PrintClient — notify and delete."""
+        if pc.status != "pending":
+            return False
+        channel_layer = get_channel_layer()
+        group = f"print_client_{pc.pk}"
+        async_to_sync(channel_layer.group_send)(
+            group,
+            {"type": "pairing.denied"},
+        )
+        pc.delete()
+        return True
+
+    # --- Detail (object-level) actions ---
+
+    @action(
+        description="Approve",
+        icon="check_circle",
+        variant=ActionVariant.PRIMARY,
+    )
+    def approve_client_detail(self, request, object_id):
+        pc = PrintClient.objects.get(pk=object_id)
+        if self._approve_client(request, pc):
+            messages.success(request, f"'{pc.name}' approved.")
+        else:
+            messages.warning(
+                request,
+                f"'{pc.name}' is already {pc.get_status_display()}.",
+            )
+        return redirect(
+            reverse_lazy(
+                "admin:assets_printclient_change",
+                args=[object_id],
+            )
+        )
+
+    @action(
+        description="Deny",
+        icon="block",
+        variant=ActionVariant.DANGER,
+    )
+    def deny_client_detail(self, request, object_id):
+        try:
+            pc = PrintClient.objects.get(pk=object_id)
+        except PrintClient.DoesNotExist:
+            messages.error(request, "Print client not found.")
+            return redirect(
+                reverse_lazy("admin:assets_printclient_changelist")
+            )
+        name = pc.name
+        if self._deny_client(pc):
+            messages.success(request, f"'{name}' denied and removed.")
+            return redirect(
+                reverse_lazy("admin:assets_printclient_changelist")
+            )
+        messages.warning(
+            request,
+            f"'{name}' is not pending — cannot deny.",
+        )
+        return redirect(
+            reverse_lazy(
+                "admin:assets_printclient_change",
+                args=[object_id],
+            )
+        )
+
+    actions_detail = [
+        "approve_client_detail",
+        "deny_client_detail",
+    ]
+
+    # --- List (bulk) actions ---
+
+    @action(description="Approve selected clients")
+    def approve_clients(self, request, queryset):
+        count = 0
+        for pc in queryset.filter(status="pending"):
+            if self._approve_client(request, pc):
+                count += 1
         messages.success(request, f"{count} client(s) approved.")
 
     @action(description="Deny selected clients")
     def deny_clients(self, request, queryset):
-        channel_layer = get_channel_layer()
         count = 0
         for pc in queryset.filter(status="pending"):
-            group = f"print_client_{pc.pk}"
-            async_to_sync(channel_layer.group_send)(
-                group,
-                {"type": "pairing.denied"},
-            )
-            pc.delete()
-            count += 1
+            if self._deny_client(pc):
+                count += 1
         messages.success(request, f"{count} client(s) denied and removed.")
 
     @action(description="Deactivate selected clients")

@@ -225,6 +225,13 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         # Join the channel layer group for push notifications
         group_name = f"print_client_{print_client.pk}"
         self.pairing_group = group_name
+        logger = logging.getLogger("assets.consumers")
+        logger.info(
+            "pairing_request: joining group=%s channel=%s pk=%s",
+            group_name,
+            self.channel_name,
+            print_client.pk,
+        )
         await self.channel_layer.group_add(group_name, self.channel_name)
 
         # Cancel timeout — client is in pairing flow
@@ -247,25 +254,52 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
     async def pairing_approved(self, event):
         """Handle approval notification from channel layer.
 
-        Generate a token, store its hash, and send it to the client.
+        Generate a token, store its hash, mark the client as connected,
+        and transition the consumer to fully authenticated state so it
+        can receive print jobs immediately without reconnecting.
         """
+        logger = logging.getLogger("assets.consumers")
+        logger.info(
+            "pairing_approved: received event=%r on channel=%s",
+            event,
+            self.channel_name,
+        )
         print_client_id = event.get("print_client_id", self.print_client_pk)
         if not print_client_id:
+            logger.warning("pairing_approved: no print_client_id, ignoring")
             return
 
         raw_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
         @database_sync_to_async
-        def update_token(pk, new_hash):
+        def update_client_after_approval(pk, new_hash):
             try:
                 pc = PrintClient.objects.get(pk=pk)
                 pc.token_hash = new_hash
-                pc.save(update_fields=["token_hash"])
+                pc.is_connected = True
+                pc.last_seen_at = timezone.now()
+                pc.save(
+                    update_fields=[
+                        "token_hash",
+                        "is_connected",
+                        "last_seen_at",
+                    ]
+                )
             except PrintClient.DoesNotExist:
                 pass
 
-        await update_token(print_client_id, token_hash)
+        await update_client_after_approval(print_client_id, token_hash)
+
+        # Mark consumer as authenticated so disconnect cleans up
+        self.authenticated = True
+
+        # Join active and connection groups for job dispatch
+        # and single-connection enforcement
+        conn_group = f"print_client_conn_{print_client_id}"
+        await self.channel_layer.group_add(conn_group, self.channel_name)
+        active_group = f"print_client_active_{print_client_id}"
+        await self.channel_layer.group_add(active_group, self.channel_name)
 
         server_name = getattr(settings, "SITE_NAME", "PROPS")
 
