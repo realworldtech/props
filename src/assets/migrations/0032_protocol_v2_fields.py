@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("assets", "0029_alter_printrequest_quantity"),
+        ("assets", "0031_is_serialised_default_false"),
     ]
 
     operations = [
