@@ -17,7 +17,7 @@ from assets.models import PrintClient, PrintRequest
 logger = logging.getLogger(__name__)
 
 # Supported protocol versions
-SUPPORTED_PROTOCOL_VERSIONS = {"1"}
+SUPPORTED_PROTOCOL_VERSIONS = {"1", "2"}
 
 # Unauthenticated connection timeout in seconds.
 # Configurable via settings.PRINT_SERVICE_AUTH_TIMEOUT (default 30).
@@ -205,9 +205,13 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
             return
 
         @database_sync_to_async
-        def get_or_create_client(name):
+        def get_or_create_client(name, pv):
             try:
-                return PrintClient.objects.get(name=name, status="pending")
+                pc = PrintClient.objects.get(name=name, status="pending")
+                if pv:
+                    pc.protocol_version = pv
+                    pc.save(update_fields=["protocol_version"])
+                return pc
             except PrintClient.DoesNotExist:
                 placeholder_hash = hashlib.sha256(
                     secrets.token_bytes(32)
@@ -216,9 +220,12 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
                     name=name,
                     token_hash=placeholder_hash,
                     status="pending",
+                    protocol_version=pv or "1",
                 )
 
-        print_client = await get_or_create_client(client_name)
+        print_client = await get_or_create_client(
+            client_name, protocol_version
+        )
 
         self.print_client_pk = print_client.pk
 
@@ -513,13 +520,15 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
         new_hash = hashlib.sha256(new_token.encode()).hexdigest()
 
         @database_sync_to_async
-        def update_client(pc, n_hash, p, c_name):
+        def update_client(pc, n_hash, p, c_name, pv):
             pc.token_hash = n_hash
             pc.is_connected = True
             pc.printers = p
             pc.last_seen_at = timezone.now()
             if c_name:
                 pc.name = c_name
+            if pv:
+                pc.protocol_version = pv
             pc.save(
                 update_fields=[
                     "token_hash",
@@ -527,10 +536,17 @@ class PrintServiceConsumer(AsyncJsonWebsocketConsumer):
                     "printers",
                     "last_seen_at",
                     "name",
+                    "protocol_version",
                 ]
             )
 
-        await update_client(print_client, new_hash, printers, client_name)
+        await update_client(
+            print_client,
+            new_hash,
+            printers,
+            client_name,
+            protocol_version,
+        )
 
         self.print_client_pk = print_client.pk
         self.authenticated = True

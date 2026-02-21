@@ -185,6 +185,11 @@ urlpatterns = [
         views.location_deactivate,
         name="location_deactivate",
     ),
+    path(
+        "locations/<int:pk>/print-label/",
+        views.location_print_label,
+        name="location_print_label",
+    ),
     # Tags
     path("tags/", views.tag_list, name="tag_list"),
     path("tags/create/", views.tag_create, name="tag_create"),
