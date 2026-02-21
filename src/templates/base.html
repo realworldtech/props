@@ -302,7 +302,9 @@
             spinner.appendChild(document.createTextNode(' Processing...'));
             btn.textContent = '';
             btn.appendChild(spinner);
-            btn.disabled = true;
+            // Defer disable so it doesn't cancel the in-flight submission
+            // (some Android Chrome versions re-check submitter state)
+            setTimeout(function() { btn.disabled = true; }, 0);
         }
     });
     </script>
