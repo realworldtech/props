@@ -18,7 +18,7 @@ from assets.models import PrintClient, PrintRequest
 logger = logging.getLogger(__name__)
 
 
-def dispatch_print_job(print_request):
+def dispatch_print_job(print_request, site_url=None):
     """Dispatch a PrintRequest to its target print client.
 
     Checks if the client is connected before sending. If
@@ -26,6 +26,8 @@ def dispatch_print_job(print_request):
 
     Args:
         print_request: A PrintRequest instance in 'pending' status.
+        site_url: Optional base URL (e.g. "https://example.com").
+            Overrides the SITE_URL setting for qr_content generation.
 
     Returns:
         True if the job was dispatched, False if it failed.
@@ -83,9 +85,9 @@ def dispatch_print_job(print_request):
             if asset.category.department:
                 department_name = asset.category.department.name or ""
         # V30/V31: qr_content must be full URL
-        site_url = getattr(settings, "SITE_URL", "")
-        if site_url:
-            qr_content = f"{site_url.rstrip('/')}/a/{barcode_val}/"
+        base_url = site_url or getattr(settings, "SITE_URL", "")
+        if base_url:
+            qr_content = f"{base_url.rstrip('/')}/a/{barcode_val}/"
         else:
             qr_content = f"/a/{barcode_val}/"
 

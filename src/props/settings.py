@@ -240,7 +240,8 @@ if DEBUG and not EMAIL_HOST:
 # Site configuration
 SITE_NAME = os.environ.get("SITE_NAME", "PROPS")
 SITE_SHORT_NAME = os.environ.get("SITE_SHORT_NAME", "PROPS")
-SITE_URL = os.environ.get("SITE_URL", "")
+DOMAIN = os.environ.get("DOMAIN", "")
+SITE_URL = f"https://{DOMAIN}" if DOMAIN else ""
 BARCODE_PREFIX = os.environ.get("BARCODE_PREFIX", "ASSET")
 BRAND_PRIMARY_COLOR = os.environ.get("BRAND_PRIMARY_COLOR", "#4F46E5")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")

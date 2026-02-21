@@ -2131,11 +2131,39 @@ def asset_label_zpl(request, pk):
     return redirect("assets:asset_detail", pk=pk)
 
 
+def _toast_html(message, level="success"):
+    """Return an auto-dismissing toast HTML fragment for HTMX responses."""
+    colours = {
+        "success": (
+            "bg-emerald-500/10 border-emerald-500/20 "
+            "text-emerald-600 dark:text-emerald-300"
+        ),
+        "error": (
+            "bg-red-500/10 border-red-500/20 " "text-red-600 dark:text-red-300"
+        ),
+    }
+    css = colours.get(level, colours["success"])
+    return (
+        f'<div x-data x-init="setTimeout(() => $el.remove(), 4000)"'
+        f' class="pointer-events-auto px-4 py-3 rounded-xl border'
+        f" backdrop-blur-sm text-sm animate-slide-down {css}"
+        f">{message}</div>"
+    )
+
+
 @login_required
 def remote_print_submit(request, pk):
     """Submit a remote print request (S2.4.5-09)."""
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
+
+    is_htmx = request.headers.get("HX-Request") == "true"
+
+    def _respond(message, success=True):
+        if is_htmx:
+            level = "success" if success else "error"
+            return HttpResponse(_toast_html(message, level))
+        return JsonResponse({"success": success, "error": message})
 
     # V89: Permission check — Members+, deny Viewers/Borrowers
     role = get_user_role(request.user)
@@ -2151,26 +2179,17 @@ def remote_print_submit(request, pk):
     try:
         pc = PrintClient.objects.get(pk=client_pk)
     except (PrintClient.DoesNotExist, ValueError, TypeError):
-        return JsonResponse(
-            {"success": False, "error": "Print client not found."}
-        )
+        return _respond("Print client not found.", success=False)
 
     if pc.status != "approved" or not pc.is_active:
-        return JsonResponse(
-            {
-                "success": False,
-                "error": "Print client is not approved or active.",
-            }
+        return _respond(
+            "Print client is not approved or active.",
+            success=False,
         )
 
     # S2.4.5c-01: TOCTOU check — re-validate connectivity
     if not pc.is_connected:
-        return JsonResponse(
-            {
-                "success": False,
-                "error": "Client is no longer connected.",
-            }
-        )
+        return _respond("Client is no longer connected.", success=False)
 
     pr = PrintRequest.objects.create(
         asset=asset,
@@ -2182,9 +2201,10 @@ def remote_print_submit(request, pk):
 
     from .services.print_dispatch import dispatch_print_job
 
-    dispatch_print_job(pr)
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    dispatch_print_job(pr, site_url=base_url)
 
-    return JsonResponse({"success": True, "job_id": str(pr.job_id)})
+    return _respond(f"Label sent to {pc.name}.")
 
 
 @login_required

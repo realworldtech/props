@@ -4421,6 +4421,46 @@ class TestQrContentFullUrl:
         assert qr.startswith("https://")
         assert f"/a/{asset.barcode}/" in qr
 
+    def test_qr_content_uses_site_url_param_over_setting(self, asset):
+        """site_url parameter overrides SITE_URL setting."""
+        from assets.services.print_dispatch import dispatch_print_job
+
+        pc = _make_approved_connected_client()
+        pr = PrintRequest.objects.create(
+            asset=asset,
+            print_client=pc,
+            printer_id=pc.printers[0]["id"],
+            quantity=1,
+        )
+
+        sent_messages = []
+
+        with patch(
+            "assets.services.print_dispatch.get_channel_layer"
+        ) as mock_cl:
+            mock_layer = mock_cl.return_value
+
+            from unittest.mock import AsyncMock
+
+            async def capture_send(group, msg):
+                sent_messages.append(msg)
+
+            mock_layer.group_send = AsyncMock(side_effect=capture_send)
+
+            with patch(
+                "assets.services.print_dispatch.settings"
+            ) as mock_settings:
+                mock_settings.SITE_URL = "https://wrong.example.com"
+                dispatch_print_job(
+                    pr,
+                    site_url="https://correct.example.com",
+                )
+
+        assert len(sent_messages) == 1
+        qr = sent_messages[0]["qr_content"]
+        assert qr.startswith("https://correct.example.com")
+        assert f"/a/{asset.barcode}/" in qr
+
 
 # ---------------------------------------------------------------------------
 # V40 — WebSocket send failure → transition to failed

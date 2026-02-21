@@ -83,7 +83,10 @@
                 <div x-show="showPrinterMenu" @click.away="showPrinterMenu = false" x-cloak x-transition
                      class="absolute right-0 mt-2 w-80 bg-white dark:bg-stage-800 rounded-xl border border-stage-200 dark:border-white/10 shadow-lg z-20 p-4">
                     <h4 class="text-sm font-medium text-stage-900 dark:text-cream mb-3">Print to Remote Printer</h4>
-                    <form method="post" action="{% url 'assets:remote_print_submit' asset.pk %}">
+                    <form hx-post="{% url 'assets:remote_print_submit' asset.pk %}"
+                          hx-target="#toast-container"
+                          hx-swap="beforeend"
+                          @htmx:after-request="showPrinterMenu = false">
                         {% csrf_token %}
                         <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Select Printer</label>
                         <select name="printer" required class="w-full rounded-lg border border-stage-200 dark:border-white/10 bg-stage-50 dark:bg-stage-700 text-stage-900 dark:text-cream text-sm px-3 py-2 mb-3 focus:ring-2 focus:ring-brand-500 focus:border-brand-500">
@@ -586,6 +589,22 @@
                 </div>
                 <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-brand-400 text-xs mt-2 hover:text-brand-600 dark:text-brand-300 transition-colors">Print Label</a>
                 {% if remote_print_available %}
+                {% with printer=connected_printers.0 %}
+                {% if printer %}
+                <form hx-post="{% url 'assets:remote_print_submit' asset.pk %}"
+                      hx-target="#toast-container"
+                      hx-swap="beforeend"
+                      class="mt-1">
+                    {% csrf_token %}
+                    <input type="hidden" name="client_pk" value="{{ printer.client_pk }}">
+                    <input type="hidden" name="printer_id" value="{{ printer.printer_id }}">
+                    <input type="hidden" name="quantity" value="1">
+                    <button type="submit" class="w-full text-center text-brand-400 text-xs hover:text-brand-600 dark:text-brand-300 transition-colors">
+                        Remote Print ({{ printer.printer_name }})
+                    </button>
+                </form>
+                {% endif %}
+                {% endwith %}
                 <a href="{% url 'assets:print_history' asset.pk %}" class="block text-center text-brand-400 text-xs mt-1 hover:text-brand-600 dark:text-brand-300 transition-colors">Print History</a>
                 {% endif %}
                 {% if user_role == "system_admin" or user_role == "department_manager" %}
