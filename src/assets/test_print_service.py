@@ -5322,29 +5322,29 @@ class TestQuantityMaxValueValidator:
 
 @pytest.mark.django_db
 class TestTemplateRemotePrintButton:
-    """Template renders 'Print to Remote Printer' text conditionally."""
+    """Template renders 'Remote Print' section conditionally."""
 
     def test_template_contains_remote_print_text_when_connected(
         self, client_logged_in, asset
     ):
         """When a connected client exists, the asset_detail template
-        should contain 'Print to Remote Printer' text.
+        should contain 'Remote Print' text.
         """
         _make_approved_connected_client()
         url = reverse("assets:asset_detail", args=[asset.pk])
         response = client_logged_in.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert "Print to Remote Printer" in content
+        assert "Remote Print" in content
 
     def test_template_does_not_contain_remote_print_text_when_none(
         self, client_logged_in, asset
     ):
         """When no connected clients exist, the asset_detail template
-        should NOT contain 'Print to Remote Printer' text.
+        should NOT contain 'Remote Print' text.
         """
         url = reverse("assets:asset_detail", args=[asset.pk])
         response = client_logged_in.get(url)
         assert response.status_code == 200
         content = response.content.decode()
-        assert "Print to Remote Printer" not in content
+        assert "Remote Print" not in content
