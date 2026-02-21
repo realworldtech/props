@@ -14765,6 +14765,78 @@ class TestNFCViewsExtended:
 
 
 @pytest.mark.django_db
+class TestNFCWriteOnAdd:
+    """S2.5.4-05: NFC add page includes scan+write flow for Web NFC."""
+
+    def test_nfc_add_includes_nfc_js(self, client_logged_in, asset):
+        """NFC add page includes the nfc.js script."""
+        url = reverse("assets:nfc_add", args=[asset.pk])
+        response = client_logged_in.get(url)
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "nfc.js" in content
+
+    def test_nfc_add_has_scan_button(self, client_logged_in, asset):
+        """NFC add page has a scan NFC button (hidden by default)."""
+        url = reverse("assets:nfc_add", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Scan NFC Tag" in content
+
+    def test_nfc_add_has_write_confirmation(self, client_logged_in, asset):
+        """NFC add page has write confirmation prompt text."""
+        url = reverse("assets:nfc_add", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Program this tag" in content
+
+    def test_nfc_add_includes_site_url(self, client_logged_in, asset):
+        """NFC add page includes SITE_URL for NDEF URL generation."""
+        url = reverse("assets:nfc_add", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "data-site-url" in content
+
+
+@pytest.mark.django_db
+class TestNFCReprogramButton:
+    """S2.5.4-06: Asset detail reprogram button for existing NFC tags."""
+
+    def test_reprogram_button_present_for_active_tag(
+        self, client_logged_in, asset, user
+    ):
+        """Active NFC tags show a reprogram button."""
+        NFCTag.objects.create(
+            tag_id="NFC-REPROG", asset=asset, assigned_by=user
+        )
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Reprogram" in content
+
+    def test_reprogram_not_shown_for_removed_tags(
+        self, client_logged_in, asset, user
+    ):
+        """Removed NFC tags do not show a reprogram button."""
+        from django.utils import timezone
+
+        NFCTag.objects.create(
+            tag_id="NFC-REMOVED",
+            asset=asset,
+            assigned_by=user,
+            removed_at=timezone.now(),
+            removed_by=user,
+        )
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        # The removed tag section should not have reprogram
+        assert "NFC-REMOVED" in content
+        # Reprogram should only appear in active tag rows
+        assert content.count("Reprogram") == 0
+
+
+@pytest.mark.django_db
 class TestTemplateInheritance:
     """V590 S4.5.2: Django templates with base.html inheritance."""
 

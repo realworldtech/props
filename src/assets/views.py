@@ -529,6 +529,7 @@ def asset_detail(request, pk):
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,
             "connected_printers": connected_printers,
+            "site_url": settings.SITE_URL,
         },
     )
 
@@ -2431,7 +2432,11 @@ def nfc_add(request, pk):
         messages.success(request, f"NFC tag '{tag_id}' assigned.")
         return redirect("assets:asset_detail", pk=pk)
 
-    return render(request, "assets/nfc_add.html", {"asset": asset})
+    return render(
+        request,
+        "assets/nfc_add.html",
+        {"asset": asset, "site_url": settings.SITE_URL},
+    )
 
 
 @login_required

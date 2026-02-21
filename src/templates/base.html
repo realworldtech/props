@@ -274,10 +274,34 @@
     </script>
     <script>
     document.addEventListener('submit', function(e) {
-        var btn = e.target.querySelector('button[type="submit"]');
+        // Skip HTMX-managed forms — they handle their own lifecycle
+        var form = e.target;
+        if (form.hasAttribute('hx-post') || form.hasAttribute('hx-get') ||
+            form.hasAttribute('hx-put') || form.hasAttribute('hx-delete')) {
+            return;
+        }
+        var btn = form.querySelector('button[type="submit"]');
         if (btn && !btn.dataset.submitted) {
             btn.dataset.submitted = '1';
-            btn.innerHTML = '<svg class="animate-spin h-5 w-5 inline mr-1" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Processing...';
+            var spinner = document.createElement('span');
+            spinner.className = 'inline-flex items-center gap-1';
+            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'animate-spin h-5 w-5 inline');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('class', 'opacity-25');
+            circle.setAttribute('cx', '12'); circle.setAttribute('cy', '12');
+            circle.setAttribute('r', '10'); circle.setAttribute('stroke', 'currentColor');
+            circle.setAttribute('stroke-width', '4'); circle.setAttribute('fill', 'none');
+            var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('class', 'opacity-75');
+            path.setAttribute('fill', 'currentColor');
+            path.setAttribute('d', 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z');
+            svg.appendChild(circle); svg.appendChild(path);
+            spinner.appendChild(svg);
+            spinner.appendChild(document.createTextNode(' Processing...'));
+            btn.textContent = '';
+            btn.appendChild(spinner);
             btn.disabled = true;
         }
     });

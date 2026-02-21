@@ -659,16 +659,77 @@
                 </div>
                 {% if active_nfc %}
                 {% for nfc in active_nfc %}
-                <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-2">
+                <div class="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 mb-2"
+                     x-data="{ showRemoveModal: false, reprogramming: false, reprogramSuccess: false, reprogramError: '' }">
                     <div class="flex items-center gap-2">
                         <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
                         <span class="text-sm text-stage-900 dark:text-cream font-mono">{{ nfc.tag_id }}</span>
                     </div>
-                    <form method="post" action="{% url 'assets:nfc_remove' asset.pk nfc.pk %}" class="flex items-center gap-2" onsubmit="return confirm('Remove this NFC tag?')">
-                        {% csrf_token %}
-                        <input type="text" name="notes" placeholder="Removal reason..." class="form-input rounded px-2 py-1 text-xs text-stage-900 dark:text-cream w-32">
-                        <button type="submit" class="text-red-400/50 hover:text-red-400 text-xs transition-colors">Remove</button>
-                    </form>
+                    <div class="flex items-center gap-2">
+                        {# Reprogram button (Web NFC only) #}
+                        <button type="button"
+                                class="nfc-reprogram-btn text-blue-400/70 hover:text-blue-400 text-xs transition-colors hidden"
+                                x-show="!reprogramming && !reprogramSuccess"
+                                @click="
+                                    reprogramming = true;
+                                    reprogramError = '';
+                                    (async () => {
+                                        try {
+                                            const writer = new NDEFReader();
+                                            const url = '{{ site_url }}/a/{{ nfc.tag_id }}/';
+                                            await writer.write({
+                                                records: [
+                                                    { recordType: 'url', data: url },
+                                                    { recordType: 'text', data: '{{ asset.barcode }}' }
+                                                ]
+                                            });
+                                            reprogramming = false;
+                                            reprogramSuccess = true;
+                                            setTimeout(() => reprogramSuccess = false, 3000);
+                                        } catch (e) {
+                                            reprogramming = false;
+                                            reprogramError = e.message;
+                                            setTimeout(() => reprogramError = '', 5000);
+                                        }
+                                    })()
+                                ">Reprogram</button>
+                        <span x-show="reprogramming" x-cloak class="text-blue-400 text-xs">Tap tag...</span>
+                        <span x-show="reprogramSuccess" x-cloak class="text-emerald-400 text-xs">Done</span>
+                        <span x-show="reprogramError" x-cloak class="text-red-400 text-xs" x-text="reprogramError"></span>
+
+                        {# Remove button — opens modal #}
+                        <button type="button" @click="showRemoveModal = true"
+                                class="text-red-400/50 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    </div>
+
+                    {# Remove confirmation modal #}
+                    <div x-show="showRemoveModal" x-cloak x-transition
+                         class="fixed inset-0 z-50 flex items-center justify-center"
+                         @keydown.escape.window="showRemoveModal = false">
+                        <div class="absolute inset-0 bg-black/50 dark:bg-stage-900/80" @click="showRemoveModal = false"></div>
+                        <div class="relative z-10 w-full max-w-sm mx-4 bg-white dark:bg-stage-800 rounded-xl border border-stage-200 dark:border-white/10 shadow-xl p-6" @click.stop>
+                            <h3 class="text-base font-semibold text-stage-900 dark:text-cream mb-1">Remove NFC Tag</h3>
+                            <p class="text-sm text-stage-500 dark:text-cream/50 mb-4">
+                                Remove <span class="font-mono">{{ nfc.tag_id }}</span> from this asset?
+                            </p>
+                            <form method="post" action="{% url 'assets:nfc_remove' asset.pk nfc.pk %}">
+                                {% csrf_token %}
+                                <label for="remove-notes-{{ nfc.pk }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Reason for removal</label>
+                                <textarea name="notes" id="remove-notes-{{ nfc.pk }}" rows="2"
+                                    class="form-input w-full rounded-lg px-3 py-2 text-sm text-stage-900 dark:text-cream mb-4"
+                                    placeholder="e.g. Tag damaged, replacing with new tag..."></textarea>
+                                <div class="flex gap-2">
+                                    <button type="submit" class="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                                        Remove Tag
+                                    </button>
+                                    <button type="button" @click="showRemoveModal = false"
+                                            class="flex-1 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 py-2 rounded-lg text-sm font-medium transition-colors">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
                 {% endfor %}
                 {% else %}
@@ -724,4 +785,10 @@
         </div>
     </div>
 </div>
+<script>
+// Show NFC reprogram buttons when Web NFC is supported
+if ('NDEFReader' in window) {
+    document.querySelectorAll('.nfc-reprogram-btn').forEach(btn => btn.classList.remove('hidden'));
+}
+</script>
 {% endblock %}
