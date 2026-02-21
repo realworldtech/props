@@ -17,6 +17,10 @@ ALLOWED_HOSTS = [
     h.strip()
     for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 ]
+# Always allow localhost for internal health checks (e.g. Docker healthcheck)
+for _h in ("localhost", "127.0.0.1"):
+    if _h not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_h)
 
 INSTALLED_APPS = [
     "daphne",
