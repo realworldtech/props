@@ -159,7 +159,7 @@
 
     <div class="grid lg:grid-cols-3 gap-6">
         <!-- Main Info -->
-        <div class="lg:col-span-2 space-y-6">
+        <div class="lg:col-span-2 space-y-6 order-2 lg:order-1">
             <!-- Images -->
             <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6"
                  x-data="{
@@ -241,7 +241,7 @@
                      x-transition:leave="transition ease-in duration-150"
                      x-transition:leave-start="opacity-100"
                      x-transition:leave-end="opacity-0"
-                     class="fixed inset-0 z-50 flex items-center justify-center"
+                     class="fixed inset-0 z-[100] flex items-center justify-center"
                      x-cloak>
                     <!-- Backdrop -->
                     <div class="absolute inset-0 bg-black/70 dark:bg-stage-900/90 backdrop-blur-sm" @click="close()"></div>
@@ -612,13 +612,13 @@
         </div>
 
         <!-- Sidebar -->
-        <div class="space-y-6">
+        <div class="space-y-6 order-1 lg:order-2">
             <!-- Barcode -->
             {% if asset.barcode_image %}
             <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6">
                 <h3 class="text-sm font-medium text-stage-500 dark:text-cream/50 mb-3">Barcode</h3>
-                <div class="bg-white rounded-lg p-3">
-                    <img src="{{ asset.barcode_image.url }}" class="w-full" alt="{{ asset.barcode }}">
+                <div class="bg-white rounded-lg p-3 overflow-hidden">
+                    <img src="{{ asset.barcode_image.url }}" class="w-full max-w-full h-auto" alt="{{ asset.barcode }}">
                 </div>
                 <a href="{% url 'assets:asset_label' asset.pk %}" class="block text-center text-brand-400 text-xs mt-2 hover:text-brand-600 dark:text-brand-300 transition-colors">Print Label</a>
                 {% if remote_print_available %}
