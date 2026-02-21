@@ -48,7 +48,7 @@
 
     <div class="relative z-10 min-h-screen flex flex-col">
         {% if user.is_authenticated %}
-        <nav class="bg-white/80 dark:bg-stage-800/80 backdrop-blur-xl border-b border-stage-200 dark:border-white/5 sticky top-0 z-50" hx-boost="true">
+        <nav class="bg-white/80 dark:bg-stage-800/80 backdrop-blur-xl border-b border-stage-200 dark:border-white/5 sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6">
                 <div class="flex justify-between items-center h-16">
                     <a href="{% url 'assets:dashboard' %}" class="flex items-center gap-3 group">
@@ -124,9 +124,9 @@
                             <span>{{ user.get_display_name }}</span>
                         </a>
                         {% if user.is_staff %}
-                        <a href="{% url 'admin:index' %}" hx-boost="false" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Admin</a>
+                        <a href="{% url 'admin:index' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Admin</a>
                         {% endif %}
-                        <a href="{% url 'accounts:logout' %}" hx-boost="false" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Logout</a>
+                        <a href="{% url 'accounts:logout' %}" class="hidden md:block text-stage-500 dark:text-cream/50 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Logout</a>
 
                         <button onclick="toggleMobileMenu()" class="md:hidden p-2 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream">
                             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +136,7 @@
                     </div>
                 </div>
 
-                <div id="mobile-menu" class="mobile-menu md:hidden border-t border-stage-200 dark:border-white/5" hx-boost="true">
+                <div id="mobile-menu" class="mobile-menu md:hidden border-t border-stage-200 dark:border-white/5">
                     <div class="py-3 space-y-1">
                         {% if can_capture %}
                         <a href="{% url 'assets:quick_capture' %}" class="block px-4 py-2.5 text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors font-medium">
@@ -181,9 +181,9 @@
                         <div class="border-t border-stage-200 dark:border-white/5 pt-3 mt-3">
                             <a href="{% url 'accounts:profile' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Profile</a>
                             {% if user.is_staff %}
-                            <a href="{% url 'admin:index' %}" hx-boost="false" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Admin</a>
+                            <a href="{% url 'admin:index' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Admin</a>
                             {% endif %}
-                            <a href="{% url 'accounts:logout' %}" hx-boost="false" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Logout</a>
+                            <a href="{% url 'accounts:logout' %}" class="block px-4 py-2.5 text-stage-600 dark:text-cream/70 hover:text-stage-900 dark:hover:text-cream hover:bg-stage-100 dark:hover:bg-white/5 rounded-lg transition-colors">Logout</a>
                         </div>
                     </div>
                 </div>

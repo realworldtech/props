@@ -289,6 +289,34 @@
     statusSelect.addEventListener('change', updateRequiredStars);
     updateRequiredStars();
 
+    {% if asset and asset.status == 'draft' %}
+    // =====================
+    // Publish button: validate + set status to active
+    // =====================
+    (function() {
+        var publishBtn = document.getElementById('publish-draft-btn');
+        if (!publishBtn) return;
+        var publishWarning = document.createElement('p');
+        publishWarning.id = 'publish-warning';
+        publishWarning.className = 'hidden text-sm text-red-500 dark:text-red-400 mt-2';
+        publishBtn.parentNode.insertBefore(publishWarning, publishBtn.nextSibling);
+
+        publishBtn.addEventListener('click', function(e) {
+            var catVal = document.getElementById('id_category').value;
+            var locVal = document.getElementById('id_current_location').value;
+            if (!catVal || !locVal) {
+                e.preventDefault();
+                publishWarning.textContent = 'To publish this asset, please set a category and location.';
+                publishWarning.classList.remove('hidden');
+                return;
+            }
+            publishWarning.classList.add('hidden');
+            statusSelect.value = 'active';
+            updateRequiredStars();
+        });
+    })();
+    {% endif %}
+
     // =====================
     // Generic single-select autocomplete
     // =====================

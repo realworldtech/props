@@ -18444,23 +18444,72 @@ class TestV27DraftPublishButton:
     def test_publish_draft_sets_status_active(
         self, admin_client, draft_asset, category, location
     ):
-        """POST with publish action sets draft to active."""
+        """POST with publish=1 forces status to active server-side."""
         url = reverse("assets:asset_edit", args=[draft_asset.pk])
         response = admin_client.post(
             url,
             {
                 "name": draft_asset.name,
-                "status": "active",
+                "status": "draft",
                 "category": category.pk,
                 "current_location": location.pk,
                 "quantity": 1,
                 "condition": "good",
                 "publish": "1",
             },
+            follow=True,
         )
-        assert response.status_code == 302
+        assert response.status_code == 200
         draft_asset.refresh_from_db()
         assert draft_asset.status == "active"
+        msg_texts = [
+            str(m) for m in list(response.context.get("messages", []))
+        ]
+        assert any("published" in m.lower() for m in msg_texts)
+
+    def test_publish_without_category_fails(
+        self, admin_client, draft_asset, location
+    ):
+        """POST with publish=1 but no category should fail validation."""
+        url = reverse("assets:asset_edit", args=[draft_asset.pk])
+        response = admin_client.post(
+            url,
+            {
+                "name": draft_asset.name,
+                "status": "draft",
+                "category": "",
+                "current_location": location.pk,
+                "quantity": 1,
+                "condition": "good",
+                "publish": "1",
+            },
+        )
+        assert response.status_code == 200
+        draft_asset.refresh_from_db()
+        assert draft_asset.status == "draft"
+        assert "category" in response.context["form"].errors
+
+    def test_publish_without_location_fails(
+        self, admin_client, draft_asset, category
+    ):
+        """POST with publish=1 but no location should fail validation."""
+        url = reverse("assets:asset_edit", args=[draft_asset.pk])
+        response = admin_client.post(
+            url,
+            {
+                "name": draft_asset.name,
+                "status": "draft",
+                "category": category.pk,
+                "current_location": "",
+                "quantity": 1,
+                "condition": "good",
+                "publish": "1",
+            },
+        )
+        assert response.status_code == 200
+        draft_asset.refresh_from_db()
+        assert draft_asset.status == "draft"
+        assert "current_location" in response.context["form"].errors
 
 
 # ============================================================
@@ -21204,3 +21253,65 @@ class TestQuickCaptureNFCProgram:
         assert response.status_code == 200
         content = response.content.decode()
         assert "data-asset-barcode" in content
+
+
+# ============================================================
+# Session-based default printer selection
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestSessionDefaultPrinter:
+    """Remote print remembers last-used printer in session."""
+
+    def _make_print_client(self, printers):
+        from assets.models import PrintClient
+
+        return PrintClient.objects.create(
+            name="Test Station",
+            token_hash="abc123sessiontest",
+            status="approved",
+            is_active=True,
+            is_connected=True,
+            printers=printers,
+        )
+
+    def test_print_saves_last_printer_to_session(
+        self, client_logged_in, asset
+    ):
+        """Successful remote print stores printer choice in session."""
+        pc = self._make_print_client(
+            [{"id": "zebra1", "name": "Zebra", "type": "label"}]
+        )
+        url = reverse("assets:remote_print_submit", args=[asset.pk])
+        response = client_logged_in.post(
+            url,
+            {
+                "client_pk": pc.pk,
+                "printer_id": "zebra1",
+                "quantity": 1,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        assert response.status_code == 200
+        session = client_logged_in.session
+        assert session.get("last_printer") == f"{pc.pk}:zebra1"
+
+    def test_asset_detail_passes_last_printer(self, client_logged_in, asset):
+        """Asset detail view passes last_printer from session."""
+        pc = self._make_print_client(
+            [
+                {"id": "lp1", "name": "Label", "type": "label"},
+                {"id": "lp2", "name": "Doc", "type": "document"},
+            ]
+        )
+        # Set session to prefer second printer
+        session = client_logged_in.session
+        session["last_printer"] = f"{pc.pk}:lp2"
+        session.save()
+
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        # The second printer's option should be selected
+        assert f'value="{pc.pk}:lp2" selected' in content

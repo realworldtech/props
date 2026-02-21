@@ -500,16 +500,30 @@ def asset_detail(request, pk):
     connected_printers = []
     for pc in connected_clients:
         for printer in pc.printers or []:
+            printer_id = printer.get("id", "")
             connected_printers.append(
                 {
                     "client_pk": pc.pk,
                     "client_name": pc.name,
-                    "printer_id": printer.get("id", ""),
+                    "printer_id": printer_id,
                     "printer_name": printer.get("name", ""),
                     "printer_type": printer.get("type", ""),
+                    "key": f"{pc.pk}:{printer_id}",
                 }
             )
     remote_print_available = len(connected_printers) > 0
+
+    # Determine default printer from session (last used) or first available
+    last_printer = request.session.get("last_printer", "")
+    default_printer = None
+    if last_printer and connected_printers:
+        for p in connected_printers:
+            key = f"{p['client_pk']}:{p['printer_id']}"
+            if key == last_printer:
+                default_printer = p
+                break
+    if default_printer is None and connected_printers:
+        default_printer = connected_printers[0]
 
     return render(
         request,
@@ -532,6 +546,8 @@ def asset_detail(request, pk):
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,
             "connected_printers": connected_printers,
+            "last_printer": last_printer,
+            "default_printer": default_printer,
             "site_url": settings.SITE_URL,
         },
     )
@@ -603,8 +619,12 @@ def asset_edit(request, pk):
     asset = get_object_or_404(Asset, pk=pk)
     if not can_edit_asset(request.user, asset):
         raise PermissionDenied
+    is_publish = request.method == "POST" and request.POST.get("publish")
     if request.method == "POST":
-        form = AssetForm(request.POST, request.FILES, instance=asset)
+        post_data = request.POST.copy()
+        if is_publish:
+            post_data["status"] = "active"
+        form = AssetForm(post_data, request.FILES, instance=asset)
         if form.is_valid():
             form.save()
             # Handle uploaded images
@@ -621,7 +641,10 @@ def asset_edit(request, pk):
                     caption=caption,
                     is_primary=is_primary,
                 )
-            messages.success(request, f"Asset '{asset.name}' updated.")
+            if is_publish:
+                messages.success(request, f"Asset '{asset.name}' published.")
+            else:
+                messages.success(request, f"Asset '{asset.name}' updated.")
             return redirect("assets:asset_detail", pk=asset.pk)
     else:
         form = AssetForm(instance=asset)
@@ -2239,6 +2262,9 @@ def remote_print_submit(request, pk):
 
     base_url = request.build_absolute_uri("/").rstrip("/")
     dispatch_print_job(pr, site_url=base_url)
+
+    # Remember last-used printer in session
+    request.session["last_printer"] = f"{client_pk}:{printer_id}"
 
     return _respond(f"Label sent to {pc.name}.")
 

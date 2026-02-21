@@ -42,13 +42,19 @@
                 </svg>
                 Program NFC Tag
             </button>
-            <p class="text-emerald-600/70 dark:text-emerald-300/50 text-xs mt-1 text-center">Write the asset URL to the NFC tag</p>
-            <div id="nfc-program-scanning" class="hidden text-center py-3 space-y-2">
-                <div class="inline-block w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                <p class="text-blue-400 text-xs">Hold your device near the NFC tag to program it...</p>
+            <p class="text-emerald-600/70 dark:text-emerald-300/50 text-xs mt-1 text-center">You'll need to tap the tag again to write data to it</p>
+            <div id="nfc-program-scanning" class="hidden text-center py-4 space-y-2">
+                <div class="inline-block w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                <p class="text-blue-400 text-sm font-medium">Ready to write — hold your device near the NFC tag now</p>
+                <p class="text-blue-400/60 text-xs">Keep your device close until the write completes</p>
             </div>
-            <div id="nfc-program-success" class="hidden text-center py-2">
-                <p class="text-emerald-400 text-sm">NFC tag programmed successfully!</p>
+            <div id="nfc-program-success" class="hidden text-center py-3">
+                <div class="flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    <p class="text-emerald-400 text-sm font-medium">NFC tag programmed successfully!</p>
+                </div>
             </div>
             <div id="nfc-program-error" class="hidden text-center py-2">
                 <p class="text-red-400 text-sm" id="nfc-program-error-msg"></p>
@@ -260,7 +266,11 @@ if ('NDEFReader' in window) {
             var barcode = container.dataset.assetBarcode;
             var url = siteUrl + '/a/' + container.dataset.nfcTagId + '/';
             programBtn.classList.add('hidden');
-            document.getElementById('nfc-program-scanning').classList.remove('hidden');
+            var scanningEl = document.getElementById('nfc-program-scanning');
+            scanningEl.classList.remove('hidden');
+            // Force browser repaint before starting NFC write
+            await new Promise(function(resolve) { requestAnimationFrame(resolve); });
+            var showTime = Date.now();
             try {
                 var writer = new NDEFReader();
                 await writer.write({
@@ -269,10 +279,15 @@ if ('NDEFReader' in window) {
                         { recordType: 'text', data: barcode }
                     ]
                 });
-                document.getElementById('nfc-program-scanning').classList.add('hidden');
-                document.getElementById('nfc-program-success').classList.remove('hidden');
+                // Ensure scanning state is visible for at least 1.5s
+                var elapsed = Date.now() - showTime;
+                var delay = Math.max(0, 1500 - elapsed);
+                setTimeout(function() {
+                    scanningEl.classList.add('hidden');
+                    document.getElementById('nfc-program-success').classList.remove('hidden');
+                }, delay);
             } catch (e) {
-                document.getElementById('nfc-program-scanning').classList.add('hidden');
+                scanningEl.classList.add('hidden');
                 document.getElementById('nfc-program-error').classList.remove('hidden');
                 document.getElementById('nfc-program-error-msg').textContent = 'Failed to program tag: ' + e.message;
                 programBtn.classList.remove('hidden');
