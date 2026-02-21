@@ -19158,6 +19158,47 @@ class TestV15BothNavigationOptions:
 
 
 # ============================================================
+# Quick capture form validation error display
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestQuickCaptureFormErrors:
+    """Quick capture should display form errors to the user."""
+
+    def test_quick_capture_invalid_form_shows_errors(self, client_logged_in):
+        """When form validation fails, errors should be visible."""
+        url = reverse("assets:quick_capture")
+        # Submit with a scanned_code that exceeds max_length (200)
+        response = client_logged_in.post(
+            url,
+            {
+                "scanned_code": "x" * 201,
+            },
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        # No asset should be created
+        assert Asset.objects.filter(status="draft").count() == 0
+        # Error should be displayed to the user
+        assert "error" in content.lower() or "fix" in content.lower()
+
+    def test_quick_capture_invalid_form_no_asset_created(
+        self, client_logged_in
+    ):
+        """Invalid form should not create any asset."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.post(
+            url,
+            {
+                "name": "x" * 201,  # exceeds max_length=200
+            },
+        )
+        assert response.status_code == 200
+        assert Asset.objects.filter(status="draft").count() == 0
+
+
+# ============================================================
 # V18 (S2.1.4-03): Drafts Queue links to edit form
 # ============================================================
 
@@ -21090,3 +21131,76 @@ class TestSiteBrandingColorPickerWidget:
         assert branding.primary_color == "#BC2026"
         assert branding.secondary_color == "#4A708B"
         assert branding.accent_color == "#2D7A6D"
+
+
+# ============================================================
+# Quick Capture NFC Scan + Program Flow
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestQuickCaptureNFCScan:
+    """S2.5.4-05: Quick capture has NFC scan button for Web NFC."""
+
+    def test_quick_capture_has_nfc_scan_button(self, client_logged_in):
+        """Quick capture page should have an NFC scan button."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "Scan NFC Tag" in content
+
+    def test_quick_capture_includes_nfc_js(self, client_logged_in):
+        """Quick capture page should include nfc.js for Web NFC."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert "nfc.js" in content
+
+
+@pytest.mark.django_db
+class TestQuickCaptureNFCProgram:
+    """S2.5.4-05: Quick capture success shows NFC program prompt."""
+
+    def test_success_with_nfc_shows_program_prompt(self, client_logged_in):
+        """After capturing with NFC tag, success shows program prompt."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.post(
+            url,
+            {"name": "NFC Capture Item", "scanned_code": "NFC-QC-001"},
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Program NFC Tag" in content
+
+    def test_success_with_nfc_includes_site_url(self, client_logged_in):
+        """NFC program prompt includes site URL for NDEF generation."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.post(
+            url,
+            {"name": "NFC URL Item", "scanned_code": "NFC-QC-002"},
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "data-site-url" in content
+
+    def test_success_without_nfc_no_program_prompt(self, client_logged_in):
+        """After capturing without NFC tag, no program prompt shown."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.post(
+            url,
+            {"name": "No NFC Item"},
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "Program NFC Tag" not in content
+
+    def test_success_includes_asset_barcode_data(self, client_logged_in):
+        """NFC program prompt includes the asset barcode for NDEF."""
+        url = reverse("assets:quick_capture")
+        response = client_logged_in.post(
+            url,
+            {"name": "NFC Barcode Item", "scanned_code": "NFC-QC-003"},
+        )
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "data-asset-barcode" in content

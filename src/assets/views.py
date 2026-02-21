@@ -1,6 +1,7 @@
 """Views for the assets app."""
 
 import json
+import logging
 import re
 
 from django_ratelimit.decorators import ratelimit
@@ -57,6 +58,8 @@ from .services.permissions import (
 )
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
 
 
 # --- Dashboard ---
@@ -747,6 +750,17 @@ def quick_capture(request):
                 asset.barcode = barcode_value
             asset.save()
 
+            logger.info(
+                "Quick capture: user %s created draft asset pk=%d "
+                "'%s' (barcode=%s, nfc=%s, images=%d)",
+                request.user,
+                asset.pk,
+                asset.name,
+                barcode_value or "none",
+                nfc_tag_id or "none",
+                len(images),
+            )
+
             # Create NFC tag if applicable
             if nfc_tag_id:
                 NFCTag.objects.create(
@@ -778,24 +792,45 @@ def quick_capture(request):
                         analyse_image.delay(img_obj.pk)
 
             # Return success with capture-another option
+            success_context = {
+                "asset": asset,
+            }
+            if nfc_tag_id:
+                success_context["nfc_tag_id"] = nfc_tag_id
+                success_context["site_url"] = settings.SITE_URL
+
             if request.htmx:
                 return render(
                     request,
                     "assets/partials/capture_success.html",
-                    {"asset": asset},
+                    success_context,
                 )
 
             messages.success(
                 request,
                 f"Draft asset '{asset.name}' created ({asset.barcode}).",
             )
+            page_context = {
+                "form": QuickCaptureForm(),
+                "just_created": asset,
+            }
+            if nfc_tag_id:
+                page_context["nfc_tag_id"] = nfc_tag_id
+                page_context["site_url"] = settings.SITE_URL
             return render(
                 request,
                 "assets/quick_capture.html",
-                {
-                    "form": QuickCaptureForm(),
-                    "just_created": asset,
-                },
+                page_context,
+            )
+        else:
+            logger.warning(
+                "Quick capture form validation failed for user %s: %s",
+                request.user,
+                form.errors.as_json(),
+            )
+            messages.error(
+                request,
+                "Please fix the errors below and try again.",
             )
     else:
         form = QuickCaptureForm()

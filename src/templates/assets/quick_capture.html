@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Quick Capture - {{ SITE_NAME }}{% endblock %}
 
@@ -16,7 +17,8 @@
 
     {% if just_created %}
     <!-- Success toast -->
-    <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 animate-slide-down">
+    <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 animate-slide-down"
+         {% if nfc_tag_id %}data-site-url="{{ site_url }}" data-asset-barcode="{{ just_created.barcode }}" data-nfc-tag-id="{{ nfc_tag_id }}"{% endif %}>
         <div class="flex items-center gap-3">
             <svg class="w-5 h-5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
@@ -30,6 +32,42 @@
             <a href="{{ just_created.get_absolute_url }}" class="text-emerald-400 text-sm hover:text-emerald-600 dark:text-emerald-300 transition-colors">View Asset</a>
             <a href="{% url 'assets:quick_capture' %}" class="text-brand-400 text-sm hover:text-brand-600 dark:text-brand-300 transition-colors">Capture Another</a>
         </div>
+        {% if nfc_tag_id %}
+        <!-- NFC Program Prompt -->
+        <div id="nfc-program-section" class="mt-4 border-t border-emerald-500/20 pt-3" style="display:none">
+            <button type="button" id="nfc-program-btn"
+                class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                </svg>
+                Program NFC Tag
+            </button>
+            <p class="text-emerald-600/70 dark:text-emerald-300/50 text-xs mt-1 text-center">Write the asset URL to the NFC tag</p>
+            <div id="nfc-program-scanning" class="hidden text-center py-3 space-y-2">
+                <div class="inline-block w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                <p class="text-blue-400 text-xs">Hold your device near the NFC tag to program it...</p>
+            </div>
+            <div id="nfc-program-success" class="hidden text-center py-2">
+                <p class="text-emerald-400 text-sm">NFC tag programmed successfully!</p>
+            </div>
+            <div id="nfc-program-error" class="hidden text-center py-2">
+                <p class="text-red-400 text-sm" id="nfc-program-error-msg"></p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if form.errors %}
+    <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+        <p class="text-red-600 dark:text-red-300 text-sm font-medium mb-2">Please fix the following errors:</p>
+        <ul class="text-red-600 dark:text-red-300/70 text-sm space-y-1">
+            {% for field, errors in form.errors.items %}
+                {% for error in errors %}
+                <li>{{ field|title }}: {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+        </ul>
     </div>
     {% endif %}
 
@@ -71,13 +109,27 @@
 
         <!-- Scan Input -->
         <div id="scan-section">
-            <button type="button" id="scan-btn"
-                class="w-full bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
-                </svg>
-                Scan Barcode / NFC
-            </button>
+            <div class="flex gap-2">
+                <button type="button" id="scan-btn"
+                    class="flex-1 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream py-3 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                    </svg>
+                    Scan Barcode / NFC
+                </button>
+                <button type="button" id="nfc-scan-btn" style="display:none"
+                    class="bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-lg text-sm font-medium btn-press transition-all flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                    Scan NFC Tag
+                </button>
+            </div>
+            <div id="nfc-scanning" class="hidden mt-3 text-center py-4 space-y-3">
+                <div class="inline-block w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                <p class="text-blue-400 text-sm">Hold your device near the NFC tag...</p>
+                <button type="button" id="nfc-cancel-btn" class="text-stage-500 dark:text-cream/50 text-xs hover:text-stage-700 dark:hover:text-cream/70 transition-colors">Cancel</button>
+            </div>
             <div id="scan-input-area" class="hidden mt-3 bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4">
                 <label class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Enter barcode or NFC tag ID</label>
                 <div class="flex gap-2">
@@ -106,6 +158,7 @@
     </div>
 </div>
 
+<script src="{% static 'js/nfc.js' %}"></script>
 <script>
 // Photo preview
 document.querySelector('input[type="file"]')?.addEventListener('change', function(e) {
@@ -122,13 +175,17 @@ document.querySelector('input[type="file"]')?.addEventListener('change', functio
 });
 
 document.getElementById('scan-btn').addEventListener('click', function() {
-    document.getElementById('scan-btn').classList.add('hidden');
+    document.getElementById('scan-btn').parentElement.querySelector('#scan-btn').classList.add('hidden');
+    document.getElementById('nfc-scan-btn')?.classList.add('hidden');
     document.getElementById('scan-input-area').classList.remove('hidden');
     document.getElementById('scan-text-input').focus();
 });
 
 document.getElementById('scan-cancel-btn').addEventListener('click', function() {
     document.getElementById('scan-btn').classList.remove('hidden');
+    if ('NDEFReader' in window) {
+        document.getElementById('nfc-scan-btn').style.display = '';
+    }
     document.getElementById('scan-input-area').classList.add('hidden');
     document.getElementById('scan-text-input').value = '';
 });
@@ -140,6 +197,9 @@ function applyScanCode() {
         document.getElementById('scan-result').classList.remove('hidden');
         document.getElementById('scan-code').textContent = code;
         document.getElementById('scan-btn').classList.remove('hidden');
+        if ('NDEFReader' in window) {
+            document.getElementById('nfc-scan-btn').style.display = '';
+        }
         document.getElementById('scan-input-area').classList.add('hidden');
     }
 }
@@ -148,5 +208,77 @@ document.getElementById('scan-apply-btn').addEventListener('click', applyScanCod
 document.getElementById('scan-text-input').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); applyScanCode(); }
 });
+
+// NFC Scan via Web NFC API
+if ('NDEFReader' in window) {
+    var nfcBtn = document.getElementById('nfc-scan-btn');
+    nfcBtn.style.display = '';
+    var nfcAbortController = null;
+
+    nfcBtn.addEventListener('click', async function() {
+        nfcBtn.classList.add('hidden');
+        document.getElementById('scan-btn').classList.add('hidden');
+        document.getElementById('nfc-scanning').classList.remove('hidden');
+        try {
+            var reader = new NDEFReader();
+            nfcAbortController = new AbortController();
+            await reader.scan({ signal: nfcAbortController.signal });
+            reader.addEventListener('reading', function(event) {
+                var tagId = event.serialNumber || '';
+                if (tagId) {
+                    document.querySelector('input[name="scanned_code"]').value = tagId;
+                    document.getElementById('scan-result').classList.remove('hidden');
+                    document.getElementById('scan-code').textContent = tagId;
+                    document.getElementById('nfc-scanning').classList.add('hidden');
+                    document.getElementById('scan-btn').classList.remove('hidden');
+                    nfcBtn.style.display = '';
+                    if (nfcAbortController) nfcAbortController.abort();
+                }
+            });
+        } catch (e) {
+            document.getElementById('nfc-scanning').classList.add('hidden');
+            document.getElementById('scan-btn').classList.remove('hidden');
+            nfcBtn.style.display = '';
+        }
+    });
+
+    document.getElementById('nfc-cancel-btn').addEventListener('click', function() {
+        if (nfcAbortController) nfcAbortController.abort();
+        document.getElementById('nfc-scanning').classList.add('hidden');
+        document.getElementById('scan-btn').classList.remove('hidden');
+        nfcBtn.style.display = '';
+    });
+
+    // NFC Program button on success toast
+    var programBtn = document.getElementById('nfc-program-btn');
+    var programSection = document.getElementById('nfc-program-section');
+    if (programBtn && programSection) {
+        programSection.style.display = '';
+        programBtn.addEventListener('click', async function() {
+            var container = programSection.closest('[data-site-url]');
+            var siteUrl = container.dataset.siteUrl;
+            var barcode = container.dataset.assetBarcode;
+            var url = siteUrl + '/a/' + container.dataset.nfcTagId + '/';
+            programBtn.classList.add('hidden');
+            document.getElementById('nfc-program-scanning').classList.remove('hidden');
+            try {
+                var writer = new NDEFReader();
+                await writer.write({
+                    records: [
+                        { recordType: 'url', data: url },
+                        { recordType: 'text', data: barcode }
+                    ]
+                });
+                document.getElementById('nfc-program-scanning').classList.add('hidden');
+                document.getElementById('nfc-program-success').classList.remove('hidden');
+            } catch (e) {
+                document.getElementById('nfc-program-scanning').classList.add('hidden');
+                document.getElementById('nfc-program-error').classList.remove('hidden');
+                document.getElementById('nfc-program-error-msg').textContent = 'Failed to program tag: ' + e.message;
+                programBtn.classList.remove('hidden');
+            }
+        });
+    }
+}
 </script>
 {% endblock %}
