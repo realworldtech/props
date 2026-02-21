@@ -200,6 +200,12 @@ services:
     build: .
     restart: unless-stopped
     profiles: ["prod"]
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: >

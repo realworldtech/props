@@ -4,8 +4,14 @@ from django import forms
 
 from .models import Asset, AssetImage, Category, Location, Tag
 
-_CSS = "form-input w-full rounded-lg" " px-4 py-2.5 text-cream"
-_CSS_LG = "form-input w-full rounded-lg" " px-4 py-3 text-cream text-lg"
+_CSS = (
+    "form-input w-full rounded-lg"
+    " px-4 py-2.5 text-stage-900 dark:text-cream"
+)
+_CSS_LG = (
+    "form-input w-full rounded-lg"
+    " px-4 py-3 text-stage-900 dark:text-cream text-lg"
+)
 
 # Only these statuses are user-selectable on the form.
 # Other transitions (missing, disposed) happen via specific workflows.
