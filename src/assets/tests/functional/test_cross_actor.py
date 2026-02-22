@@ -304,6 +304,54 @@ class TestUS_XA_007_PreventConcurrentCheckout:
         active_asset.refresh_from_db()
         assert active_asset.checked_out_to == first_borrower
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #34: Concurrent checkout error message doesn't name the"
+            " current borrower (S11.15 Steps 4-5). The rejection message"
+            " is generic and does not identify who has the asset."
+        ),
+    )
+    def test_concurrent_checkout_error_names_current_borrower(
+        self, admin_client, active_asset, borrower_user, second_user, location
+    ):
+        """S11.15 Steps 4-5: Rejection message must name who currently
+        has the asset checked out."""
+        url = reverse("assets:asset_checkout", args=[active_asset.pk])
+
+        # First checkout to borrower_user
+        admin_client.post(
+            url,
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        active_asset.refresh_from_db()
+        assert active_asset.checked_out_to == borrower_user
+
+        # Second checkout attempt — error must name borrower_user
+        resp = admin_client.post(
+            url,
+            {
+                "borrower": second_user.pk,
+                "destination_location": location.pk,
+            },
+            follow=True,
+        )
+        content = resp.content.decode()
+        borrower_name = borrower_user.get_full_name().lower()
+        borrower_username = borrower_user.username.lower()
+        borrower_display = (borrower_user.display_name or "").lower()
+        assert (
+            (borrower_name and borrower_name in content.lower())
+            or borrower_username in content.lower()
+            or (borrower_display and borrower_display in content.lower())
+        ), (
+            "Concurrent checkout error does not name the current borrower"
+            f" ({borrower_user.username} / {borrower_user.display_name})"
+        )
+
 
 @pytest.mark.django_db
 class TestUS_XA_008_PreventConcurrentNFCReassignment:

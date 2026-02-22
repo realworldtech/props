@@ -130,6 +130,23 @@ class TestScenario_11_3_OnboardingLargeDonation:
         draft.refresh_from_db()
         assert draft.status == "active"
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #32b: Drafts queue has no department filter dropdown"
+            " (S11.3 / S11.5). The drafts_queue view does not expose"
+            " a department filter in its template."
+        ),
+    )
+    def test_drafts_queue_has_department_filter(self, admin_client):
+        """S11.3: Drafts queue must have a department filter dropdown."""
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "department" in content.lower()
+        ), "Drafts queue page has no department filter"
+
     def test_full_scenario_walkthrough(
         self, client_logged_in, dept_manager_client, category, location
     ):
@@ -374,6 +391,51 @@ class TestScenario_11_5_CheckingOutEquipmentForProduction:
             )
         assert kit.checked_out_to is None
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #25: Checkout form max_quantity uses asset.quantity"
+            " instead of available_count (S2.17.2-02). An asset with"
+            " some units already checked out incorrectly shows the full"
+            " quantity as the maximum."
+        ),
+    )
+    def test_checkout_form_max_quantity_reflects_available_not_total(
+        self, admin_client, department, location, admin_user, borrower_user
+    ):
+        """S2.17.2-02: Checkout form max_quantity must reflect
+        available_count, not total quantity."""
+        from assets.models import Transaction
+
+        cat = CategoryFactory(department=department)
+        asset = AssetFactory(
+            name="Cables Max Test",
+            status="active",
+            is_serialised=False,
+            quantity=5,
+            category=cat,
+            current_location=location,
+            created_by=admin_user,
+        )
+        # Check out 3 units, leaving available_count=2
+        Transaction.objects.create(
+            asset=asset,
+            user=admin_user,
+            action="checkout",
+            borrower=borrower_user,
+            quantity=3,
+        )
+
+        resp = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        # Context max_quantity should be 2 (available), not 5 (total)
+        assert resp.context["max_quantity"] == 2, (
+            f"max_quantity should be available_count=2,"
+            f" got {resp.context.get('max_quantity')}"
+        )
+
     def test_full_scenario_walkthrough(
         self,
         admin_client,
@@ -477,6 +539,77 @@ class TestScenario_11_6_StocktakeAtStorageLocation:
         assert resp.status_code in (200, 302)
         session.refresh_from_db()
         assert session.ended_at is not None
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #22: Stocktake does not include child location assets"
+            " (S2.7.1-05). get_expected_assets() only queries"
+            " current_location=session.location, not descendants."
+        ),
+    )
+    def test_stocktake_includes_child_location_assets(
+        self, admin_client, department, admin_user
+    ):
+        """S2.7.1-05: Stocktake at parent location must include assets at
+        child locations."""
+        from assets.models import StocktakeSession
+
+        cat = CategoryFactory(department=department)
+        parent_loc = LocationFactory(name="Warehouse SS")
+        child_loc = LocationFactory(name="Bay 1 SS", parent=parent_loc)
+
+        # Asset is at CHILD location
+        child_asset = AssetFactory(
+            name="Child Asset SS",
+            status="active",
+            category=cat,
+            current_location=child_loc,
+            created_by=admin_user,
+        )
+
+        # Start stocktake at PARENT location
+        session = StocktakeSession.objects.create(
+            location=parent_loc, started_by=admin_user
+        )
+
+        # Asset at child location should appear in expected list
+        expected_pks = set(
+            session.get_expected_assets().values_list("pk", flat=True)
+        )
+        assert (
+            child_asset.pk in expected_pks
+        ), "Asset at child location not in parent stocktake expected list"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #32a: No 'Mark Unconfirmed as Missing' endpoint"
+            " (S2.7, S11.6 Step 7). The action is not exposed via any"
+            " URL on the stocktake detail view."
+        ),
+    )
+    def test_mark_unconfirmed_as_missing_endpoint_exists(
+        self, admin_client, location, admin_user
+    ):
+        """S11.6 Step 7: 'Mark Unconfirmed as Missing' must be accessible
+        from the stocktake detail view."""
+        from django.urls import NoReverseMatch
+
+        from assets.models import StocktakeSession
+
+        session = StocktakeSession.objects.create(
+            location=location, started_by=admin_user
+        )
+        try:
+            url = reverse("assets:stocktake_mark_missing", args=[session.pk])
+        except NoReverseMatch:
+            url = f"/stocktake/{session.pk}/mark-missing/"
+        resp = admin_client.post(url)
+        assert resp.status_code in (200, 302), (
+            f"Mark unconfirmed as missing endpoint returned"
+            f" {resp.status_code}"
+        )
 
     def test_full_scenario_walkthrough(
         self, dept_manager_client, warehouse, category, admin_user
@@ -1330,6 +1463,60 @@ class TestScenario_11_12_InsuranceExportAndReporting:
             str(cell.value or "") for row in ws.iter_rows() for cell in row
         }
         assert "Technical Fixture Export" not in all_values
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #29: Export summary sheet missing department breakdown"
+            " (S2.9, S11.12 Step 4). The Summary sheet has total/active/"
+            "draft/checked-out counts but no per-department breakdown"
+            " section or 'By Department' label."
+        ),
+    )
+    def test_export_summary_sheet_has_department_breakdown(
+        self, admin_client, active_asset, department
+    ):
+        """S11.12 Step 4: Summary sheet must include a per-department
+        count breakdown, not just global totals."""
+        from io import BytesIO
+
+        import openpyxl
+
+        resp = admin_client.get(reverse("assets:export_assets"))
+        assert resp.status_code == 200
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        assert (
+            "Summary" in wb.sheetnames
+        ), "No 'Summary' sheet found in export workbook"
+        summary = wb["Summary"]
+
+        # Collect only the label column (column A) values from the
+        # Summary sheet — these are the row headings like "Total Assets",
+        # "Active", etc. A department breakdown requires a label that
+        # identifies a per-department section.
+        col_a_values = [
+            str(cell.value or "").lower()
+            for row in summary.iter_rows()
+            for cell in row
+            if cell.column == 1 and cell.value
+        ]
+
+        # A proper department breakdown must have either:
+        #  (a) a "by department" section label, OR
+        #  (b) the specific department name as a row label (not just in
+        #      the site title which includes "PROPS")
+        has_dept_section = any(
+            "by department" in v or "department breakdown" in v
+            for v in col_a_values
+        )
+        # Department name as a standalone label (not embedded in site name)
+        dept_name_lower = department.name.lower()
+        has_dept_label = any(v == dept_name_lower for v in col_a_values)
+
+        assert has_dept_section or has_dept_label, (
+            f"Summary sheet has no department breakdown section."
+            f" Column A labels found: {col_a_values}"
+        )
 
     def test_full_scenario_walkthrough(self, admin_client, category, location):
         import io

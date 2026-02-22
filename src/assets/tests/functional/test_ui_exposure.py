@@ -302,6 +302,27 @@ class TestS12_5_BarcodeSystem:
         )
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #23: QR code not displayed on asset detail sidebar"
+            " (S2.4.5-08). Only Code128 barcode is shown; no QR code"
+            " is rendered."
+        ),
+    )
+    def test_asset_detail_shows_qr_code(self, admin_client, active_asset):
+        """S2.4.5-08: Asset detail sidebar must show QR code encoding the
+        asset URL."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # A QR code image or element should appear somewhere on the page
+        assert (
+            "qr" in content.lower() or "qrcode" in content.lower()
+        ), "No QR code found in asset detail page"
+
 
 @pytest.mark.django_db
 class TestS12_6_NFCTagManagement:
@@ -552,6 +573,27 @@ class TestS12_11_Dashboard:
         resp = admin_client.get(reverse("assets:dashboard"))
         assert resp.status_code == 200
         assert b"/drafts/" in resp.content
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #21: hold_list_count computed in view (views.py:250-256)"
+            " but never passed to template context. Dashboard does not"
+            " show the count."
+        ),
+    )
+    def test_dashboard_shows_active_hold_list_count(
+        self, admin_client, active_hold_list
+    ):
+        """S12.11 / S2.16: Dashboard must show count of active hold lists."""
+        resp = admin_client.get(reverse("assets:dashboard"))
+        assert resp.status_code == 200
+        # hold_list_count must be present in the template context
+        assert (
+            "hold_list_count" in resp.context
+        ), "hold_list_count not in dashboard template context"
+        # And the count must be > 0 since active_hold_list exists
+        assert resp.context["hold_list_count"] > 0
 
 
 @pytest.mark.django_db
