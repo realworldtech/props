@@ -4,7 +4,8 @@ version:
 	@echo "Last released: $$(git tag -l 'v*' --sort=-v:refname | head -1 || echo 'no releases yet')"
 
 release-pr:
-	@LAST_TAG=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
+	@git fetch --tags origin main develop; \
+	LAST_TAG=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
 	if [ -z "$$LAST_TAG" ]; then \
 		DIFF_RANGE="main..develop"; \
 	else \
