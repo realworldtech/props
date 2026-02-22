@@ -133,11 +133,11 @@ services:
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
 
-  # Celery worker
+  # Celery worker (dev - builds from source with volume mount)
   celery-worker:
     build: .
     restart: unless-stopped
-    profiles: ["dev", "prod"]
+    profiles: ["dev"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: >
@@ -170,11 +170,47 @@ services:
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
 
-  # Celery beat scheduler
+  # Celery worker (prod - uses pre-built GHCR image)
+  celery-worker-prod:
+    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    restart: unless-stopped
+    profiles: ["prod"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      celery -A props worker --loglevel=info --concurrency=1 --prefetch-multiplier=1
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "cd /app/src && celery -A props inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
+      USE_S3: "True"
+      AWS_S3_ENDPOINT_URL: http://garage:3900
+
+  # Celery beat scheduler (dev - builds from source with volume mount)
   celery-beat:
     build: .
     restart: unless-stopped
-    profiles: ["dev", "prod"]
+    profiles: ["dev"]
     command: >
       sh -c "
       if [ -f /var/lib/garage/credentials.env ]; then
@@ -195,9 +231,33 @@ services:
     environment:
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD:-props_dev_password}@db:5432/props
 
+  # Celery beat scheduler (prod - uses pre-built GHCR image)
+  celery-beat-prod:
+    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    restart: unless-stopped
+    profiles: ["prod"]
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      celery -A props beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+      "
+    volumes:
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
+
   # Prod init - runs migrations and collectstatic once before web starts
   web-init:
-    build: .
+    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
     profiles: ["prod"]
     command: >
       sh -c "
@@ -227,7 +287,7 @@ services:
 
   # Prod profile - behind Traefik (single-process Daphne for ASGI/WS)
   web-prod:
-    build: .
+    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     deploy:
