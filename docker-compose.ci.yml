@@ -20,7 +20,7 @@ services:
       retries: 5
 
   web:
-    build: .
+    image: ${CI_IMAGE:-props:ci-test}
     command: >
       sh -c "
       cd /app/src &&

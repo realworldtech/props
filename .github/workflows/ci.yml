@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [develop, main]
   push:
-    branches: [main]
+    branches: [develop]
 
 jobs:
   lint:
@@ -30,20 +30,6 @@ jobs:
       - name: Run flake8
         run: flake8 src/
 
-  test:
-    name: Test (Docker)
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build and run tests
-        run: docker compose -f docker-compose.ci.yml up --build --exit-code-from web
-
-      - name: Clean up
-        if: always()
-        run: docker compose -f docker-compose.ci.yml down -v
-
   requirements-check:
     name: Requirements in sync
     runs-on: ubuntu-latest
@@ -54,15 +40,12 @@ jobs:
         run: |
           missing=0
           while IFS= read -r line; do
-            # Skip comments, blank lines, and options
             line=$(echo "$line" | sed 's/#.*//' | xargs)
             [ -z "$line" ] && continue
             [[ "$line" == -* ]] && continue
-            # Extract package name (before any version specifier)
             pkg=$(echo "$line" | sed 's/\[.*\]//' | sed 's/[><=!].*//' | xargs | tr '[:upper:]' '[:lower:]')
             [ -z "$pkg" ] && continue
             if ! grep -qi "^${pkg}[>=<! \[]" requirements.txt && ! grep -qi "# via.*-r requirements.in" requirements.txt; then
-              # Check if it appears as a dependency at all
               if ! grep -qi "^${pkg}" requirements.txt; then
                 echo "MISSING: $pkg is in requirements.in but not in requirements.txt"
                 missing=1
@@ -74,3 +57,59 @@ jobs:
             exit 1
           fi
           echo "All packages from requirements.in found in requirements.txt"
+
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, requirements-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: props:ci-test
+          build-args: |
+            APP_VERSION=ci-${{ github.sha }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save image as artifact
+        run: docker save props:ci-test | gzip > /tmp/props-ci.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/props-ci.tar.gz
+          retention-days: 1
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load image
+        run: gunzip -c /tmp/props-ci.tar.gz | docker load
+
+      - name: Run tests
+        run: CI_IMAGE=props:ci-test docker compose -f docker-compose.ci.yml up --exit-code-from web
+
+      - name: Clean up
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
