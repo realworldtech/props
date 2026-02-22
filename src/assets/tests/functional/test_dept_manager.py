@@ -6,11 +6,63 @@ criteria from the dept manager's perspective. Failures identify spec gaps.
 Read: specs/props/sections/s10b-dept-manager-stories.md
 """
 
+import json
+from html.parser import HTMLParser
+from io import BytesIO
+
 import pytest
 
 from django.urls import reverse
 
-from assets.models import Asset, Transaction
+from assets.models import Asset, AssetImage, Tag, Transaction
+
+
+class _FormFieldCollector(HTMLParser):
+    """Collect form field names and values from HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.fields = {}
+        self._current_select = None
+        self._current_options = []
+        self._in_textarea = None
+        self._textarea_content = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "input":
+            name = attrs_dict.get("name")
+            if name:
+                self.fields[name] = attrs_dict.get("value", "")
+        elif tag == "select":
+            self._current_select = attrs_dict.get("name")
+            self._current_options = []
+        elif tag == "option" and self._current_select:
+            val = attrs_dict.get("value", "")
+            if val:
+                self._current_options.append(val)
+            if "selected" in attrs_dict:
+                self.fields[self._current_select] = val
+        elif tag == "textarea":
+            self._in_textarea = attrs_dict.get("name")
+            self._textarea_content = []
+
+    def handle_data(self, data):
+        if self._in_textarea is not None:
+            self._textarea_content.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "select" and self._current_select:
+            if (
+                self._current_select not in self.fields
+                and self._current_options
+            ):
+                self.fields[self._current_select] = self._current_options[0]
+            self._current_select = None
+        elif tag == "textarea" and self._in_textarea:
+            self.fields[self._in_textarea] = "".join(self._textarea_content)
+            self._in_textarea = None
+
 
 # ---------------------------------------------------------------------------
 # §10B.1 Quick Capture & Drafts
@@ -67,6 +119,40 @@ class TestUS_DM_001_CaptureAssetViaQuickCapture:
             reverse("assets:quick_capture"), {"image": image}
         )
         assert resp.status_code in (200, 302)
+
+    def test_quick_capture_auto_name_format(
+        self, dept_manager_client, dept_manager_user
+    ):
+        """S2.1.1: Auto-generated draft name must follow 'Quick Capture
+        {MMM DD HH:MM}' format."""
+        import re
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        image = SimpleUploadedFile(
+            "item.jpg",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+        dept_manager_client.post(
+            reverse("assets:quick_capture"),
+            {"image": image},
+        )
+        from assets.models import Asset
+
+        draft = (
+            Asset.objects.filter(status="draft", created_by=dept_manager_user)
+            .order_by("-pk")
+            .first()
+        )
+        assert draft is not None
+        # Name should match pattern like "Quick Capture Feb 23 14:37"
+        pattern = r"Quick Capture \w+ \d{1,2} \d{2}:\d{2}"
+        assert re.match(pattern, draft.name), (
+            f"Auto-generated name '{draft.name}' must match"
+            " 'Quick Capture MMM DD HH:MM'"
+        )
 
 
 @pytest.mark.django_db
@@ -233,6 +319,26 @@ class TestUS_DM_004_ReviewDraftsQueueForMyDept:
         resp = dept_manager_client.get(reverse("assets:drafts_queue"))
         assert resp.status_code == 200
         assert draft.name.encode() in resp.content
+
+    def test_drafts_with_ai_show_indicator(
+        self, dept_manager_client, dept_manager_user
+    ):
+        """S2.1.4: Drafts with completed AI analysis must show an AI
+        indicator."""
+        from assets.factories import AssetFactory, AssetImageFactory
+
+        draft = AssetFactory(status="draft", created_by=dept_manager_user)
+        img = AssetImageFactory(asset=draft)
+        img.ai_processing_status = "completed"
+        img.ai_name_suggestion = "AI Suggested"
+        img.save()
+        resp = dept_manager_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert "ai" in content or "suggestion" in content, (
+            "Drafts queue must show AI indicator for drafts with completed"
+            " AI analysis"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2598,3 +2704,262 @@ class TestUS_DM_057_BrowseHelpFilteredByRole:
     def test_help_index_accessible(self, dept_manager_client):
         resp = dept_manager_client.get("/help/")
         assert resp.status_code in (200, 404)
+
+
+# ---------------------------------------------------------------------------
+# T10–T12, T20–T21: Additional coverage tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_DM_009_ManageTags:
+    """US-DM-009 (extra): Department manager can create tags.
+
+    Spec refs: S2.2.4-01
+    UI Surface: /tags/create/ and inline AJAX endpoint
+    """
+
+    def test_inline_tag_creation(self, dept_manager_client):
+        """POST to tag_create_inline with a JSON name creates a Tag."""
+        tag_name = "FunctionalTestTag"
+        assert not Tag.objects.filter(name=tag_name).exists()
+
+        resp = dept_manager_client.post(
+            reverse("assets:tag_create_inline"),
+            data=json.dumps({"name": tag_name}),
+            content_type="application/json",
+        )
+        # Inline endpoint returns JSON with 200 or 201
+        assert resp.status_code in (200, 201), (
+            f"tag_create_inline returned {resp.status_code}: "
+            f"{resp.content.decode()}"
+        )
+        assert Tag.objects.filter(
+            name=tag_name
+        ).exists(), "Tag record should be created after inline POST"
+
+    def test_tag_create_form_roundtrip(self, dept_manager_client):
+        """GET tag_create form, parse fields, POST to create a tag."""
+        tag_name = "FormRoundTripTag"
+
+        # GET the form
+        get_resp = dept_manager_client.get(reverse("assets:tag_create"))
+        assert get_resp.status_code == 200
+
+        # Parse form fields from HTML
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+
+        # Set the tag name in the parsed fields
+        # Find the name field — should be 'name' from TagForm
+        name_field = None
+        for field_name in fields:
+            if "name" in field_name.lower() and field_name not in (
+                "csrfmiddlewaretoken",
+            ):
+                name_field = field_name
+                break
+
+        assert name_field is not None, (
+            f"Could not find a 'name' field in tag form. "
+            f"Found fields: {list(fields.keys())}"
+        )
+
+        fields[name_field] = tag_name
+
+        resp = dept_manager_client.post(
+            reverse("assets:tag_create"),
+            data=fields,
+        )
+        # Should redirect on success
+        assert resp.status_code in (
+            200,
+            302,
+        ), f"tag_create POST returned {resp.status_code}"
+        assert Tag.objects.filter(
+            name=tag_name
+        ).exists(), "Tag record should be created via form POST"
+
+
+@pytest.mark.django_db
+class TestUS_DM_008_ManageImages:
+    """US-DM-008 (extra): Image upload format support.
+
+    Spec refs: S2.2.5-05, S2.2.5-05a
+    UI Surface: /<pk>/edit/ (asset edit form with image upload)
+    """
+
+    @staticmethod
+    def _make_png_bytes():
+        """Create a minimal valid 1x1 red PNG using PIL."""
+        from PIL import Image as PILImage
+
+        buf = BytesIO()
+        img = PILImage.new("RGB", (1, 1), color=(255, 0, 0))
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.read()
+
+    @staticmethod
+    def _make_webp_bytes():
+        """Create a minimal valid 1x1 red WebP using PIL."""
+        from PIL import Image as PILImage
+
+        buf = BytesIO()
+        img = PILImage.new("RGB", (1, 1), color=(0, 255, 0))
+        img.save(buf, format="WEBP")
+        buf.seek(0)
+        return buf.read()
+
+    def test_png_image_uploadable(self, dept_manager_client, active_asset):
+        """Upload a PNG via asset edit form; AssetImage record created."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        initial_count = AssetImage.objects.filter(asset=active_asset).count()
+
+        # GET the edit form to extract fields
+        edit_url = reverse("assets:asset_edit", args=[active_asset.pk])
+        get_resp = dept_manager_client.get(edit_url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+
+        # Remove any file-type fields that can't be sent as strings
+        fields.pop("images", None)
+        fields.pop("image_captions", None)
+
+        png_data = self._make_png_bytes()
+        image_file = SimpleUploadedFile(
+            "test_image.png",
+            png_data,
+            content_type="image/png",
+        )
+
+        # POST with the image file
+        resp = dept_manager_client.post(
+            edit_url,
+            data={**fields, "images": image_file},
+        )
+        assert resp.status_code in (
+            200,
+            302,
+        ), f"Asset edit POST returned {resp.status_code}"
+
+        new_count = AssetImage.objects.filter(asset=active_asset).count()
+        assert (
+            new_count > initial_count
+        ), "AssetImage record should be created after PNG upload"
+
+    def test_webp_image_uploadable(self, dept_manager_client, active_asset):
+        """Upload a WebP via asset edit form; AssetImage record created."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        initial_count = AssetImage.objects.filter(asset=active_asset).count()
+
+        # GET the edit form to extract fields
+        edit_url = reverse("assets:asset_edit", args=[active_asset.pk])
+        get_resp = dept_manager_client.get(edit_url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+
+        # Remove any file-type fields that can't be sent as strings
+        fields.pop("images", None)
+        fields.pop("image_captions", None)
+
+        webp_data = self._make_webp_bytes()
+        image_file = SimpleUploadedFile(
+            "test_image.webp",
+            webp_data,
+            content_type="image/webp",
+        )
+
+        # POST with the image file
+        resp = dept_manager_client.post(
+            edit_url,
+            data={**fields, "images": image_file},
+        )
+        assert resp.status_code in (
+            200,
+            302,
+        ), f"Asset edit POST returned {resp.status_code}"
+
+        new_count = AssetImage.objects.filter(asset=active_asset).count()
+        assert (
+            new_count > initial_count
+        ), "AssetImage record should be created after WebP upload"
+
+
+@pytest.mark.django_db
+class TestUS_DM_025_ExportAssets_PurchasePrice:
+    """US-DM-025 (extra): Export XLSX contains purchase price column.
+
+    Spec refs: S2.9.1-01, S2.9.1-02
+    """
+
+    def test_export_has_purchase_price_column(
+        self,
+        dept_manager_client,
+        active_asset,
+    ):
+        """Export assets XLSX; header row contains purchase price."""
+        import openpyxl
+
+        resp = dept_manager_client.get(reverse("assets:export_assets"))
+        assert resp.status_code == 200, f"Export returned {resp.status_code}"
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        sheet = wb.active
+        if "Assets" in wb.sheetnames:
+            sheet = wb["Assets"]
+
+        headers = [
+            str(cell.value).strip().lower() if cell.value else ""
+            for cell in next(sheet.iter_rows(min_row=1, max_row=1))
+        ]
+
+        has_purchase = any("purchase" in h for h in headers)
+        assert has_purchase, (
+            f"Export XLSX should have a 'purchase price' column. "
+            f"Found headers: {headers}"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_DM_025_ExportAssets_EstimatedValue:
+    """US-DM-025 (extra): Export XLSX contains estimated value column.
+
+    Spec refs: S2.9.1-01, S2.9.1-02
+    """
+
+    def test_export_has_estimated_value_column(
+        self,
+        dept_manager_client,
+        active_asset,
+    ):
+        """Export assets XLSX; header row contains estimated value."""
+        import openpyxl
+
+        resp = dept_manager_client.get(reverse("assets:export_assets"))
+        assert resp.status_code == 200, f"Export returned {resp.status_code}"
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        sheet = wb.active
+        if "Assets" in wb.sheetnames:
+            sheet = wb["Assets"]
+
+        headers = [
+            str(cell.value).strip().lower() if cell.value else ""
+            for cell in next(sheet.iter_rows(min_row=1, max_row=1))
+        ]
+
+        has_value = any("value" in h for h in headers)
+        assert has_value, (
+            f"Export XLSX should have an 'estimated value' column. "
+            f"Found headers: {headers}"
+        )

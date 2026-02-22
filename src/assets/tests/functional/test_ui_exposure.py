@@ -116,6 +116,42 @@ class TestS12_3_CoreAssetManagement:
         resp = admin_client.get(reverse("assets:asset_merge_select"))
         assert resp.status_code == 200
 
+    # -- Affordance exposure tests (T31, T33) --
+
+    def test_asset_detail_shows_checkout_link(
+        self, admin_client, active_asset
+    ):
+        """T31: Asset detail page for an available asset must contain a
+        link to the checkout URL."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        checkout_url = reverse("assets:asset_checkout", args=[active_asset.pk])
+        assert (
+            checkout_url.encode() in resp.content
+        ), f"Checkout URL {checkout_url} not found in asset detail page"
+
+    def test_asset_detail_shows_transfer_link(
+        self, admin_client, active_asset
+    ):
+        """T33: Asset detail page must contain a link to transfer or
+        relocate the asset."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        transfer_url = reverse("assets:asset_transfer", args=[active_asset.pk])
+        relocate_url = reverse("assets:asset_relocate", args=[active_asset.pk])
+        content = resp.content
+        assert (
+            transfer_url.encode() in content
+            or relocate_url.encode() in content
+        ), (
+            f"Neither transfer URL {transfer_url} nor relocate URL"
+            f" {relocate_url} found in asset detail page"
+        )
+
 
 @pytest.mark.django_db
 class TestS12_4_CheckoutCheckin:
@@ -344,6 +380,22 @@ class TestS12_6_NFCTagManagement:
         # Expect NFC tag section to be present
         assert b"nfc" in resp.content.lower() or b"NFC" in resp.content
 
+    # -- Affordance exposure tests (T34) --
+
+    def test_asset_detail_shows_nfc_add_affordance(
+        self, admin_client, active_asset
+    ):
+        """T34: Asset detail page must contain a link or button to add
+        an NFC tag (the nfc_add URL)."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        nfc_add_url = reverse("assets:nfc_add", args=[active_asset.pk])
+        assert (
+            nfc_add_url.encode() in resp.content
+        ), f"NFC add URL {nfc_add_url} not found in asset detail page"
+
 
 @pytest.mark.django_db
 class TestS12_7_SearchBrowseExport:
@@ -394,6 +446,28 @@ class TestS12_7_SearchBrowseExport:
         """S2.2.6 -- tag management page."""
         resp = admin_client.get(reverse("assets:tag_list"))
         assert resp.status_code == 200
+
+    # -- Affordance exposure tests (T38) --
+
+    def test_asset_list_shows_bulk_actions_bar(self, admin_client):
+        """T38: Asset list page must expose a bulk actions bar with
+        action options (transfer, status change, checkout, etc.).
+        Note: merge is handled via asset_merge_select, not the bulk
+        bar -- see test_asset_merge_select_renders for that flow."""
+        resp = admin_client.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "bulk_action" in content or "bulk-action" in content
+        ), "Asset list page must contain a bulk actions bar"
+        # The bar must have at least transfer and checkout options
+        content_lower = content.lower()
+        assert (
+            "transfer" in content_lower
+        ), "Bulk actions bar must include a transfer option"
+        assert (
+            "checkout" in content_lower or "check out" in content_lower
+        ), "Bulk actions bar must include a checkout option"
 
 
 @pytest.mark.django_db
@@ -446,6 +520,24 @@ class TestS12_8_Stocktake:
         assert (
             b"stocktake" in resp.content.lower()
             or b"Stocktake" in resp.content
+        )
+
+    # -- Affordance exposure tests (T37) --
+
+    def test_location_detail_shows_stocktake_link(
+        self, admin_client, location
+    ):
+        """T37: Location detail page must contain a link to the stocktake
+        start URL or a stocktake-related affordance."""
+        resp = admin_client.get(
+            reverse("assets:location_detail", args=[location.pk])
+        )
+        assert resp.status_code == 200
+        stocktake_url = reverse("assets:stocktake_start")
+        content = resp.content.decode()
+        assert stocktake_url in content or "stocktake" in content.lower(), (
+            f"Neither stocktake URL {stocktake_url} nor 'stocktake' text"
+            " found on location detail page"
         )
 
 
@@ -791,6 +883,30 @@ class TestS12_16_SerialisedInventory:
         # Tab or section for serials should be present
         assert b"serial" in resp.content.lower() or b"Serial" in resp.content
 
+    # -- Affordance exposure tests (T36) --
+
+    def test_serialised_asset_detail_shows_serial_numbers(
+        self, admin_client, serialised_asset_with_units
+    ):
+        """T36: Serialised asset detail page must show a serials tab/section
+        and list the individual serial numbers from the fixture."""
+        asset = serialised_asset_with_units["asset"]
+        serials = serialised_asset_with_units["serials"]
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "serial" in content.lower()
+        ), "Serialised asset detail must show a Serials tab or section"
+        # At least one serial number from the fixture must appear
+        serial_found = any(s.serial_number in content for s in serials)
+        assert serial_found, (
+            "Serialised asset detail must list at least one serial number"
+            f" (expected one of: {[s.serial_number for s in serials]})"
+        )
+
     def test_serialised_checkout_form_renders(
         self, admin_client, serialised_asset_with_units
     ):
@@ -1030,6 +1146,21 @@ class TestS12_17_AssetKits:
             reverse("assets:asset_checkout", args=[kit.pk])
         )
         assert resp.status_code == 200
+
+    # -- Affordance exposure tests (T35) --
+
+    def test_kit_asset_detail_shows_checkout_affordance(
+        self, admin_client, kit_with_components
+    ):
+        """T35: Kit asset detail page must contain a link to the checkout
+        URL so users can check out the entire kit."""
+        kit = kit_with_components["kit"]
+        resp = admin_client.get(reverse("assets:asset_detail", args=[kit.pk]))
+        assert resp.status_code == 200
+        checkout_url = reverse("assets:asset_checkout", args=[kit.pk])
+        assert (
+            checkout_url.encode() in resp.content
+        ), f"Checkout URL {checkout_url} not found on kit detail page"
 
     def test_component_detail_shows_kit_membership(
         self, admin_client, kit_with_components
@@ -1406,6 +1537,31 @@ class TestS12_4_CheckoutCheckinExtended:
         assert (
             "selected" in content
         ), "Check-in form must pre-select the home location"
+
+    # -- Affordance exposure tests (T32) --
+
+    def test_asset_detail_shows_checkin_link_when_checked_out(
+        self, admin_client, active_asset, borrower_user
+    ):
+        """T32: Asset detail page for a checked-out asset must contain a
+        link to the check-in URL."""
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=active_asset.created_by,
+            borrower=borrower_user,
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        checkin_url = reverse("assets:asset_checkin", args=[active_asset.pk])
+        assert checkin_url.encode() in resp.content, (
+            f"Check-in URL {checkin_url} not found on asset detail page"
+            " for a checked-out asset"
+        )
 
     def test_backdated_checkout_field_present(
         self, admin_client, active_asset

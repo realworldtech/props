@@ -66,6 +66,47 @@ class TestUS_MB_001_QuickCaptureOnMobile:
         resp = viewer_client.get(reverse("assets:quick_capture"))
         assert resp.status_code in (302, 403)
 
+    def test_quick_capture_rejected_if_nothing_provided(
+        self, client_logged_in
+    ):
+        """S2.1.1: Quick Capture must reject submission with no photo, name,
+        or code."""
+        before_count = Asset.objects.count()
+        resp = client_logged_in.post(  # noqa: F841
+            reverse("assets:quick_capture"), {}
+        )
+        assert (
+            Asset.objects.count() == before_count
+        ), "Quick Capture must not create an asset when nothing is provided"
+
+    def test_auto_generated_name_format(self, client_logged_in, user):
+        """S2.1.1: Auto-generated name must follow 'Quick Capture
+        {MMM DD HH:MM}'."""
+        import re
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        image = SimpleUploadedFile(
+            "item.jpg",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+        client_logged_in.post(
+            reverse("assets:quick_capture"), {"image": image}
+        )
+        draft = (
+            Asset.objects.filter(status="draft", created_by=user)
+            .order_by("-pk")
+            .first()
+        )
+        assert draft is not None
+        pattern = r"Quick Capture \w+ \d{1,2} \d{2}:\d{2}"
+        assert re.match(pattern, draft.name), (
+            f"Auto-generated name '{draft.name}' must match"
+            " 'Quick Capture MMM DD HH:MM'"
+        )
+
 
 @pytest.mark.django_db
 class TestUS_MB_002_ViewOwnDraftsQueue:
@@ -1223,4 +1264,401 @@ class TestUS_VW_002_FilterAndSortAssets_ByCategory:
         assert asset_b.name not in content, (
             f"Asset '{asset_b.name}' at a different location should NOT "
             "appear when filtering by location A"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T22–T24: Filter & Sort tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_VW_002_FilterAndSortAssets:
+    """US-VW-002 (extra): Viewer filter by tag and condition."""
+
+    def test_viewer_can_filter_by_tag(
+        self, viewer_client, tag, location, category
+    ):
+        """Create 2 assets, tag one, filter by tag — only tagged shows."""
+        asset_tagged = AssetFactory(
+            name="Tagged Lantern",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        asset_tagged.tags.add(tag)
+        asset_untagged = AssetFactory(
+            name="Untagged Goblet",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+
+        resp = viewer_client.get(
+            reverse("assets:asset_list"),
+            {"tag": tag.pk},
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert asset_tagged.name in content, (
+            f"Tagged asset '{asset_tagged.name}' should appear when "
+            "filtering by its tag"
+        )
+        assert asset_untagged.name not in content, (
+            f"Untagged asset '{asset_untagged.name}' should NOT appear "
+            "when filtering by a tag it does not have"
+        )
+
+    def test_viewer_can_filter_by_condition(
+        self, viewer_client, location, category
+    ):
+        """Create assets with different conditions; filter by 'good'."""
+        asset_good = AssetFactory(
+            name="Good Condition Sword",
+            status="active",
+            condition="good",
+            category=category,
+            current_location=location,
+        )
+        asset_poor = AssetFactory(
+            name="Poor Condition Shield",
+            status="active",
+            condition="poor",
+            category=category,
+            current_location=location,
+        )
+
+        resp = viewer_client.get(
+            reverse("assets:asset_list"),
+            {"condition": "good"},
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            asset_good.name in content
+        ), f"Asset '{asset_good.name}' with condition=good should appear"
+        assert asset_poor.name not in content, (
+            f"Asset '{asset_poor.name}' with condition=poor should NOT "
+            "appear when filtering by condition=good"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_006_SearchAndBrowse:
+    """US-MB-006 (extra): Sort does not reset active filter."""
+
+    def test_sort_does_not_reset_active_filter(
+        self, client_logged_in, location, category
+    ):
+        """Filter status=active + sort=name — retired asset must not
+        appear, and active assets must be alphabetically ordered."""
+        asset_b = AssetFactory(
+            name="Bravo Widget",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        asset_a = AssetFactory(
+            name="Alpha Widget",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        asset_retired = AssetFactory(
+            name="Charlie Retired Widget",
+            status="retired",
+            category=category,
+            current_location=location,
+        )
+
+        resp = client_logged_in.get(
+            reverse("assets:asset_list"),
+            {"status": "active", "sort": "name"},
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # Retired asset must not appear
+        assert asset_retired.name not in content, (
+            f"Retired asset '{asset_retired.name}' should NOT appear "
+            "when filtering by status=active"
+        )
+
+        # Both active assets must appear
+        assert (
+            asset_a.name in content
+        ), f"Active asset '{asset_a.name}' should appear"
+        assert (
+            asset_b.name in content
+        ), f"Active asset '{asset_b.name}' should appear"
+
+        # Check alphabetical ordering: Alpha before Bravo
+        pos_a = content.find(asset_a.name)
+        pos_b = content.find(asset_b.name)
+        assert pos_a < pos_b, (
+            f"'{asset_a.name}' (pos {pos_a}) should appear before "
+            f"'{asset_b.name}' (pos {pos_b}) when sorted by name"
+        )
+
+
+# ---------------------------------------------------------------------------
+# T25: Partial kit return with serial transactions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_MB_013_ReturnKitSerial:
+    """US-MB-013 (extra): Partial kit return creates per-serial
+    transactions."""
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Serialised checkout form only checks out 1 serial"
+            " at a time (S2.4.2). The form does not support"
+            " multi-serial selection in a single POST — each serial"
+            " must be checked out individually."
+        ),
+    )
+    def test_partial_kit_return_creates_transactions(
+        self,
+        client_logged_in,
+        serialised_asset_with_units,
+        user,
+        location,
+    ):
+        """Check out 3 serials, return 2 — assert 2 checkin Transactions
+        created and 1 serial still has checked_out_to set."""
+        from html.parser import HTMLParser
+
+        from assets.models import AssetSerial, Transaction
+
+        asset = serialised_asset_with_units["asset"]
+        serials = serialised_asset_with_units["serials"]
+
+        # --- Step 1: Checkout 3 serials via the form round-trip ---
+        checkout_url = reverse("assets:asset_checkout", args=[asset.pk])
+
+        # GET checkout form and parse available fields
+        get_resp = client_logged_in.get(checkout_url)
+        assert get_resp.status_code == 200
+        checkout_content = get_resp.content.decode()
+
+        class CheckoutFormParser(HTMLParser):
+            """Extract field names and serial checkbox values."""
+
+            def __init__(self):
+                super().__init__()
+                self.fields = {}  # name -> first value found
+                self.serial_values = []
+
+            def handle_starttag(self, tag, attrs):
+                d = dict(attrs)
+                name = d.get("name")
+                if not name:
+                    return
+                if tag == "input":
+                    if d.get("type") == "checkbox" and name == "serial_ids":
+                        self.serial_values.append(d.get("value", ""))
+                    elif d.get("type") not in ("submit", "checkbox"):
+                        self.fields.setdefault(name, d.get("value", ""))
+                elif tag == "select":
+                    self.fields.setdefault(name, None)
+
+        co_parser = CheckoutFormParser()
+        co_parser.feed(checkout_content)
+
+        # Pick 3 serial values from what the form offers
+        serial_vals_to_checkout = co_parser.serial_values[:3]
+        assert len(serial_vals_to_checkout) == 3, (
+            f"Expected at least 3 serial checkboxes, got "
+            f"{len(co_parser.serial_values)}"
+        )
+
+        # Build POST data using parsed fields
+        post_data = {}
+        # Add hidden/text fields (e.g. csrf, etc.)
+        for fname, fval in co_parser.fields.items():
+            if fname == "csrfmiddlewaretoken":
+                continue  # Django test client handles CSRF
+            if fval is not None:
+                post_data[fname] = fval
+
+        # borrower and destination_location come from the form
+        # — set them to valid values
+        post_data["borrower"] = str(user.pk)
+        post_data["destination_location"] = str(location.pk)
+        # The serial_ids are sent as a list
+        post_data_list = list(post_data.items())
+        for sv in serial_vals_to_checkout:
+            post_data_list.append(("serial_ids", sv))
+
+        from django.test import RequestFactory
+
+        resp = client_logged_in.post(checkout_url, dict(post_data_list))
+        # Follow redirect if any
+        assert resp.status_code in (200, 302)
+
+        # Verify 3 serials are now checked out
+        checked_out_serials = AssetSerial.objects.filter(
+            asset=asset, checked_out_to__isnull=False
+        )
+        assert checked_out_serials.count() == 3, (
+            f"Expected 3 checked-out serials, got "
+            f"{checked_out_serials.count()}"
+        )
+
+        # --- Step 2: Check in 2 of the 3 via round-trip ---
+        checkin_url = reverse("assets:asset_checkin", args=[asset.pk])
+
+        ci_resp = client_logged_in.get(checkin_url)
+        assert ci_resp.status_code == 200
+        checkin_content = ci_resp.content.decode()
+
+        class CheckinFormParser(HTMLParser):
+            """Extract serial_ids checkboxes and location select from
+            checkin form."""
+
+            def __init__(self):
+                super().__init__()
+                self.serial_values = []
+                self.location_values = []
+                self.in_location_select = False
+
+            def handle_starttag(self, tag, attrs):
+                d = dict(attrs)
+                name = d.get("name")
+                if not name:
+                    return
+                if (
+                    tag == "input"
+                    and d.get("type") == "checkbox"
+                    and name == "serial_ids"
+                ):
+                    self.serial_values.append(d.get("value", ""))
+                elif tag == "select" and name == "location":
+                    self.in_location_select = True
+                elif tag == "option" and self.in_location_select:
+                    val = d.get("value", "")
+                    if val:
+                        self.location_values.append(val)
+
+            def handle_endtag(self, tag):
+                if tag == "select" and self.in_location_select:
+                    self.in_location_select = False
+
+        ci_parser = CheckinFormParser()
+        ci_parser.feed(checkin_content)
+
+        # Pick 2 serials to return
+        serials_to_return = ci_parser.serial_values[:2]
+        assert len(serials_to_return) >= 2, (
+            f"Expected at least 2 serial checkboxes on checkin form, "
+            f"got {len(ci_parser.serial_values)}"
+        )
+
+        # Pick the first valid location
+        assert (
+            ci_parser.location_values
+        ), "Checkin form must have at least one location option"
+        loc_value = ci_parser.location_values[0]
+
+        # Record transaction count before checkin
+        tx_before = Transaction.objects.filter(
+            asset=asset, action="checkin"
+        ).count()
+
+        # POST checkin with 2 serials
+        ci_post_data = [("location", loc_value)]
+        for sv in serials_to_return:
+            ci_post_data.append(("serial_ids", sv))
+
+        resp = client_logged_in.post(checkin_url, dict(ci_post_data))
+        assert resp.status_code in (200, 302)
+
+        # Assert 2 new checkin transactions
+        tx_after = Transaction.objects.filter(
+            asset=asset, action="checkin"
+        ).count()
+        assert tx_after - tx_before == 2, (
+            f"Expected 2 new checkin transactions, got "
+            f"{tx_after - tx_before}"
+        )
+
+        # Assert 1 serial still checked out
+        still_out = AssetSerial.objects.filter(
+            asset=asset, checked_out_to__isnull=False
+        ).count()
+        assert (
+            still_out == 1
+        ), f"Expected 1 serial still checked out, got {still_out}"
+
+
+# ---------------------------------------------------------------------------
+# T26–T27: AI Analysis suggestions panel
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_MB_029_AIAnalysis:
+    """US-MB-029: AI suggestions panel shows when processing is completed."""
+
+    def test_ai_suggestions_panel_shows_when_completed(
+        self, client_logged_in, active_asset
+    ):
+        """Create an AssetImage with completed AI analysis; assert the
+        ai_name_suggestion text appears on the asset detail page."""
+        from assets.models import AssetImage
+
+        AssetImage.objects.create(
+            asset=active_asset,
+            image="test_ai.jpg",
+            ai_processing_status="completed",
+            ai_name_suggestion="Test AI Name Suggestion",
+        )
+
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert "Test AI Name Suggestion" in content, (
+            "AI name suggestion should appear on the asset detail page "
+            "when ai_processing_status is 'completed'"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_030_AIAnalysis:
+    """US-MB-030: AI suggestion apply button is present when suggestions
+    exist."""
+
+    def test_ai_suggestion_apply_button_present(
+        self, client_logged_in, active_asset
+    ):
+        """Create an AssetImage with completed AI analysis; assert an
+        apply-suggestions URL is present on the detail page."""
+        from assets.models import AssetImage
+
+        img = AssetImage.objects.create(
+            asset=active_asset,
+            image="test_ai_apply.jpg",
+            ai_processing_status="completed",
+            ai_name_suggestion="Suggested Prop Name",
+        )
+
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # The apply-suggestions form action URL must be present
+        apply_url = reverse(
+            "assets:ai_apply_suggestions",
+            args=[active_asset.pk, img.pk],
+        )
+        assert apply_url in content, (
+            f"Expected ai_apply_suggestions URL ({apply_url}) in the "
+            "asset detail page when AI suggestions are completed"
         )

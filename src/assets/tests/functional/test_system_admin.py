@@ -7,13 +7,22 @@ Read: specs/props/sections/s10a-system-admin-stories.md
 """
 
 import datetime
+from html.parser import HTMLParser
 
 import pytest
 
 from django.urls import reverse
 from django.utils import timezone
 
-from assets.models import Asset, NFCTag, Transaction
+from assets.models import (
+    Asset,
+    Location,
+    NFCTag,
+    StocktakeItem,
+    StocktakeSession,
+    Tag,
+    Transaction,
+)
 
 # ---------------------------------------------------------------------------
 # §10A.1 Quick Capture & Drafts
@@ -117,6 +126,24 @@ class TestUS_SA_002_DraftsQueue:
         newer_pos = content.find(newer.name)
         # Newer should appear before older
         assert newer_pos < older_pos or newer_pos != -1
+
+    def test_drafts_queue_shows_ai_indicator(self, admin_client, admin_user):
+        """S2.1.4: Drafts with completed AI analysis must show an indicator."""
+        from assets.factories import AssetFactory, AssetImageFactory
+
+        draft = AssetFactory(status="draft", created_by=admin_user)
+        # Create an image with completed AI status
+        img = AssetImageFactory(asset=draft)
+        img.ai_processing_status = "completed"
+        img.ai_name_suggestion = "Suggested Name"
+        img.save()
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert "ai" in content or "suggestion" in content, (
+            "Drafts queue must show an AI indicator for drafts"
+            " with completed AI analysis"
+        )
 
 
 @pytest.mark.django_db
@@ -258,6 +285,17 @@ class TestUS_SA_005_BulkEditDraftsFromQueue:
         assert d1.category == category
         assert d2.category == category
 
+    def test_bulk_edit_checkboxes_rendered(self, admin_client, admin_user):
+        """S2.1.4: Drafts Queue must render checkboxes for bulk selection."""
+        from assets.factories import AssetFactory
+
+        AssetFactory(status="draft", created_by=admin_user)
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        assert (
+            b'type="checkbox"' in resp.content
+        ), "Drafts Queue must render checkboxes for bulk selection"
+
 
 @pytest.mark.django_db
 class TestUS_SA_093_ScanCodeDuringQuickCapture:
@@ -348,6 +386,67 @@ class TestUS_SA_094_CaptureAnotherFlow:
             reverse("assets:quick_capture"), {"image": image}
         )
         assert resp.status_code in (200, 302)
+
+    def test_post_capture_response_contains_asset_info(
+        self, admin_client, admin_user
+    ):
+        """S2.1.3: After Quick Capture, response must contain asset name
+        and barcode."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        image = SimpleUploadedFile(
+            "item.jpg",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+        resp = admin_client.post(
+            reverse("assets:quick_capture"),
+            {"image": image, "name": "Test Capture Asset"},
+            follow=True,
+        )
+        assert resp.status_code == 200
+        from assets.models import Asset
+
+        draft = (
+            Asset.objects.filter(status="draft", created_by=admin_user)
+            .order_by("-pk")
+            .first()
+        )
+        assert draft is not None
+        content = resp.content.decode()
+        assert (
+            draft.name in content or draft.barcode in content
+        ), "Post-capture response must contain asset name or barcode"
+
+    def test_capture_another_returns_form_fields(
+        self, admin_client, admin_user
+    ):
+        """S2.1.3: After Quick Capture, 'Capture Another' must lead to
+        blank form."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        image = SimpleUploadedFile(
+            "item.jpg",
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;",
+            content_type="image/gif",
+        )
+        admin_client.post(
+            reverse("assets:quick_capture"),
+            {"image": image, "name": "First Capture"},
+        )
+        # Getting quick capture again should show empty form
+        resp = admin_client.get(reverse("assets:quick_capture"))
+        assert resp.status_code == 200
+        assert (
+            b"quick" in resp.content.lower()
+            or b"capture" in resp.content.lower()
+        )
+        # Form should not pre-fill name from previous submission
+        assert (
+            b"First Capture" not in resp.content
+        ), "Quick capture form must not pre-fill name from previous capture"
 
 
 # ---------------------------------------------------------------------------
@@ -2454,6 +2553,25 @@ class TestUS_SA_002_DraftsQueue:
             or "paginator" in content
         ), "Pagination controls not found in drafts queue with 32+ items"
 
+    def test_drafts_queue_shows_ai_indicator(self, admin_client, admin_user):
+        """S2.1.4: Drafts with completed AI analysis must show an
+        indicator."""
+        from assets.factories import AssetFactory, AssetImageFactory
+
+        draft = AssetFactory(status="draft", created_by=admin_user)
+        # Create an image with completed AI status
+        img = AssetImageFactory(asset=draft)
+        img.ai_processing_status = "completed"
+        img.ai_name_suggestion = "Suggested Name"
+        img.save()
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert "ai" in content or "suggestion" in content, (
+            "Drafts queue must show an AI indicator for drafts"
+            " with completed AI analysis"
+        )
+
 
 @pytest.mark.django_db
 class TestUS_SA_005_BulkEditDraftsFromQueue:
@@ -2490,6 +2608,18 @@ class TestUS_SA_005_BulkEditDraftsFromQueue:
         assert (
             draft.name == "My Named Draft"
         ), "Bulk edit with blank name overwrote the existing name"
+
+    def test_bulk_edit_checkboxes_rendered(self, admin_client, admin_user):
+        """S2.1.4: Drafts Queue must render checkboxes for bulk
+        selection."""
+        from assets.factories import AssetFactory
+
+        AssetFactory(status="draft", created_by=admin_user)
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        assert (
+            b'type="checkbox"' in resp.content
+        ), "Drafts Queue must render checkboxes for bulk selection"
 
 
 @pytest.mark.django_db
@@ -3106,4 +3236,419 @@ class TestUS_SA_030_AssignNFCTag:
         assert active_count == 1, (
             f"Expected 1 active NFC assignment for '{tag_id}', "
             f"got {active_count} — duplicate assignment was not rejected"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Form field extraction helper (Issue #5 round-trip pattern)
+# ---------------------------------------------------------------------------
+
+
+class _FormFieldCollector(HTMLParser):
+    """Collect form field names and values from HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.fields = {}
+        self._current_select = None
+        self._current_options = []
+        self._in_textarea = None
+        self._textarea_content = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "input":
+            name = attrs_dict.get("name")
+            if name:
+                self.fields[name] = attrs_dict.get("value", "")
+        elif tag == "select":
+            self._current_select = attrs_dict.get("name")
+            self._current_options = []
+        elif tag == "option" and self._current_select:
+            val = attrs_dict.get("value", "")
+            if val:
+                self._current_options.append(val)
+            if "selected" in attrs_dict:
+                self.fields[self._current_select] = val
+        elif tag == "textarea":
+            self._in_textarea = attrs_dict.get("name")
+            self._textarea_content = []
+
+    def handle_data(self, data):
+        if self._in_textarea is not None:
+            self._textarea_content.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "select" and self._current_select:
+            if (
+                self._current_select not in self.fields
+                and self._current_options
+            ):
+                self.fields[self._current_select] = self._current_options[0]
+            self._current_select = None
+        elif tag == "textarea" and self._in_textarea:
+            self.fields[self._in_textarea] = "".join(self._textarea_content)
+            self._in_textarea = None
+
+
+# ---------------------------------------------------------------------------
+# §10A.5 Tags
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_009_ManageTagsOnAnyAsset:
+    """US-SA-009: Manage tags — tags have a colour attribute.
+
+    MoSCoW: MUST
+    Spec refs: S2.4.1-01
+    UI Surface: /tags/create/
+    """
+
+    def test_tags_have_colour_attribute(self, admin_client):
+        """The tag creation form must expose a 'color' field, and
+        creating a tag with color='red' must persist that value."""
+        url = reverse("assets:tag_create")
+
+        # GET the form and parse HTML for fields
+        get_resp = admin_client.get(url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+
+        assert (
+            "color" in parser.fields
+        ), "Tag creation form must include a 'color' field"
+
+        # Build POST payload from extracted fields
+        payload = dict(parser.fields)
+        payload["name"] = "Urgent"
+        payload["color"] = "red"
+
+        resp = admin_client.post(url, payload)
+        # Successful creation redirects
+        assert resp.status_code in (200, 302)
+
+        tag = Tag.objects.get(name="Urgent")
+        assert (
+            tag.color == "red"
+        ), f"Expected tag color 'red', got '{tag.color}'"
+
+
+# ---------------------------------------------------------------------------
+# §10A.9 Stocktake
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_039_CreateStocktakeSession:
+    """US-SA-039: Create a stocktake session — location is required.
+
+    MoSCoW: MUST
+    Spec refs: S3.1.9-01
+    UI Surface: /stocktake/start/
+    """
+
+    def test_stocktake_location_required(self, admin_client):
+        """POSTing the stocktake start form without a location must
+        not create a StocktakeSession."""
+        url = reverse("assets:stocktake_start")
+
+        # GET the form and extract fields
+        get_resp = admin_client.get(url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+
+        # POST without a location value
+        payload = dict(parser.fields)
+        payload.pop("location", None)
+
+        before_count = StocktakeSession.objects.count()
+        admin_client.post(url, payload)
+
+        assert (
+            StocktakeSession.objects.count() == before_count
+        ), "A StocktakeSession must not be created without a location"
+
+
+@pytest.mark.django_db
+class TestUS_SA_040_ConfirmAssetsDuringStocktake:
+    """US-SA-040: Confirming an asset during stocktake creates an
+    audit transaction.
+
+    MoSCoW: MUST
+    Spec refs: S3.1.9-02
+    """
+
+    def test_confirm_creates_audit_action_type(
+        self, admin_client, active_asset, location
+    ):
+        """Confirming an asset in a stocktake session must create a
+        Transaction with action='audit'."""
+        # Start a stocktake at the asset's location
+        start_url = reverse("assets:stocktake_start")
+        get_resp = admin_client.get(start_url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+
+        payload = dict(parser.fields)
+        payload["location"] = str(location.pk)
+
+        resp = admin_client.post(start_url, payload)
+        assert resp.status_code == 302
+
+        session = StocktakeSession.objects.get(
+            location=location, status="in_progress"
+        )
+
+        # Confirm the asset
+        confirm_url = reverse("assets:stocktake_confirm", args=[session.pk])
+        admin_client.post(confirm_url, {"asset_id": str(active_asset.pk)})
+
+        assert Transaction.objects.filter(
+            asset=active_asset, action="audit"
+        ).exists(), (
+            "Confirming an asset during stocktake must create an "
+            "'audit' Transaction"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_041_HandleStocktakeDiscrepancies:
+    """US-SA-041: Handle stocktake discrepancies — missing and
+    unexpected assets.
+
+    MoSCoW: MUST
+    Spec refs: S3.1.9-03, S3.1.9-04
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Stocktake summary page does not list individual"
+            " unconfirmed assets by name (S3.1.9-03). The summary"
+            " shows Expected/Confirmed/Missing counts but the"
+            " Missing count is 0 and no asset names are rendered."
+        ),
+    )
+    def test_unconfirmed_assets_shown_as_missing(
+        self, admin_client, admin_user, category, location
+    ):
+        """Assets at the stocktake location that are not confirmed
+        must appear in the summary after completion."""
+        from assets.factories import AssetFactory
+
+        asset_confirmed = AssetFactory(
+            name="Confirmed Prop",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        asset_missing = AssetFactory(
+            name="Missing Prop XYZ",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+
+        # Start stocktake
+        start_url = reverse("assets:stocktake_start")
+        get_resp = admin_client.get(start_url)
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        payload = dict(parser.fields)
+        payload["location"] = str(location.pk)
+        admin_client.post(start_url, payload)
+
+        session = StocktakeSession.objects.get(
+            location=location, status="in_progress"
+        )
+
+        # Confirm only one asset
+        confirm_url = reverse("assets:stocktake_confirm", args=[session.pk])
+        admin_client.post(confirm_url, {"asset_id": str(asset_confirmed.pk)})
+
+        # Complete the session
+        complete_url = reverse("assets:stocktake_complete", args=[session.pk])
+        admin_client.post(complete_url, {"action": "complete"})
+
+        # Check summary
+        summary_url = reverse("assets:stocktake_summary", args=[session.pk])
+        summary_resp = admin_client.get(summary_url)
+        content = summary_resp.content.decode()
+
+        assert (
+            "Missing Prop XYZ" in content
+        ), "Unconfirmed asset must appear in the stocktake summary"
+
+    def test_unexpected_scan_shown_as_unexpected(
+        self, admin_client, admin_user, category, location
+    ):
+        """An asset scanned at a location where it is not expected
+        must be flagged as 'unexpected'."""
+        from assets.factories import AssetFactory, LocationFactory
+
+        location_a = LocationFactory(name="Location A for Unexpected")
+        location_b = LocationFactory(name="Location B for Unexpected")
+        surprise_asset = AssetFactory(
+            name="Surprise Asset",
+            status="active",
+            category=category,
+            current_location=location_a,
+            created_by=admin_user,
+        )
+
+        # Start stocktake at location B (asset not expected here)
+        start_url = reverse("assets:stocktake_start")
+        get_resp = admin_client.get(start_url)
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        payload = dict(parser.fields)
+        payload["location"] = str(location_b.pk)
+        admin_client.post(start_url, payload)
+
+        session = StocktakeSession.objects.get(
+            location=location_b, status="in_progress"
+        )
+
+        # Confirm the unexpected asset
+        confirm_url = reverse("assets:stocktake_confirm", args=[session.pk])
+        admin_client.post(confirm_url, {"asset_id": str(surprise_asset.pk)})
+
+        # Complete the session
+        complete_url = reverse("assets:stocktake_complete", args=[session.pk])
+        admin_client.post(complete_url, {"action": "complete"})
+
+        # Check summary for "unexpected"
+        summary_url = reverse("assets:stocktake_summary", args=[session.pk])
+        summary_resp = admin_client.get(summary_url)
+        content = summary_resp.content.decode().lower()
+
+        assert "unexpected" in content, (
+            "An asset scanned at a location where it is not expected "
+            "must be shown as 'unexpected' in the summary"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_043_CancelStocktakeSession:
+    """US-SA-043: Cancel a stocktake session — sets status to
+    abandoned and does not mark assets missing.
+
+    MoSCoW: MUST
+    Spec refs: S3.1.9-05
+    """
+
+    def test_cancel_sets_status_abandoned(self, admin_client, location):
+        """Abandoning a stocktake must set session status to
+        'abandoned'."""
+        # Start stocktake
+        start_url = reverse("assets:stocktake_start")
+        get_resp = admin_client.get(start_url)
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        payload = dict(parser.fields)
+        payload["location"] = str(location.pk)
+        admin_client.post(start_url, payload)
+
+        session = StocktakeSession.objects.get(
+            location=location, status="in_progress"
+        )
+
+        # Abandon the session
+        complete_url = reverse("assets:stocktake_complete", args=[session.pk])
+        admin_client.post(complete_url, {"action": "abandon"})
+
+        session.refresh_from_db()
+        assert (
+            session.status == "abandoned"
+        ), f"Expected status 'abandoned', got '{session.status}'"
+
+    def test_cancel_does_not_mark_assets_missing(
+        self, admin_client, active_asset, location
+    ):
+        """Abandoning a stocktake must not change any asset's status
+        to 'missing'."""
+        original_status = active_asset.status
+
+        # Start stocktake at asset's location
+        start_url = reverse("assets:stocktake_start")
+        get_resp = admin_client.get(start_url)
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        payload = dict(parser.fields)
+        payload["location"] = str(location.pk)
+        admin_client.post(start_url, payload)
+
+        session = StocktakeSession.objects.get(
+            location=location, status="in_progress"
+        )
+
+        # Do NOT confirm the asset — just abandon
+        complete_url = reverse("assets:stocktake_complete", args=[session.pk])
+        admin_client.post(complete_url, {"action": "abandon"})
+
+        active_asset.refresh_from_db()
+        assert (
+            active_asset.status != "missing"
+        ), "Abandoning a stocktake must not mark assets as missing"
+        assert active_asset.status == original_status, (
+            f"Asset status changed from '{original_status}' to "
+            f"'{active_asset.status}' after stocktake abandonment"
+        )
+
+
+# ---------------------------------------------------------------------------
+# §10A.12 Hierarchical Locations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_060_HierarchicalLocations:
+    """US-SA-060: Hierarchical locations — max 4 levels of nesting.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.1-04
+    UI Surface: /locations/create/
+    """
+
+    def test_five_level_nesting_rejected(self, admin_client):
+        """Creating a 5th level of location nesting must be rejected.
+        Levels: root -> child1 -> child2 -> child3 (4 levels OK).
+        Attempting child4 under child3 (5th level) must fail."""
+        # Build 4 levels via ORM
+        root = Location.objects.create(name="Depth Root")
+        child1 = Location.objects.create(name="Depth Child 1", parent=root)
+        child2 = Location.objects.create(name="Depth Child 2", parent=child1)
+        child3 = Location.objects.create(name="Depth Child 3", parent=child2)
+
+        # Now attempt to create a 5th level via the form
+        url = reverse("assets:location_create")
+        get_resp = admin_client.get(url)
+        assert get_resp.status_code == 200
+
+        parser = _FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+
+        payload = dict(parser.fields)
+        payload["name"] = "Depth Child 4 Should Fail"
+        payload["parent"] = str(child3.pk)
+
+        resp = admin_client.post(url, payload)
+
+        # Form rejection means no redirect (stays on form with errors)
+        # or the location simply was not created
+        fifth_level_exists = Location.objects.filter(
+            name="Depth Child 4 Should Fail"
+        ).exists()
+        assert not fifth_level_exists, (
+            "A 5th level of location nesting must be rejected — "
+            "max depth is 4 levels"
         )

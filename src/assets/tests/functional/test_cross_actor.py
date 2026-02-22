@@ -6,18 +6,24 @@ mobile responsiveness, and privacy across actor roles.
 Read: specs/props/sections/s10d-cross-actor-stories.md
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client
 from django.urls import reverse
 
 from assets.factories import (
     AssetFactory,
+    AssetImageFactory,
     CategoryFactory,
     DepartmentFactory,
     LocationFactory,
     UserFactory,
 )
-from assets.models import Asset, Transaction
+from assets.models import Asset, AssetImage, Transaction
 
 # ---------------------------------------------------------------------------
 # §10D.1 Anonymous & Unapproved Access
@@ -1270,4 +1276,201 @@ class TestUS_XA_025_UnifiedAvailability_HoldReducesCount:
             "Asset detail page should show reduced availability (3 of 5) "
             "or indicate that 2 units are on hold. Got page content that "
             "does not reflect the hold."
+        )
+
+
+# ---------------------------------------------------------------------------
+# §10D.7 Privacy & Security — deep tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_XA_022_ExcludePIIFromAIAnalysis_Deep:
+    """US-XA-022 (deep): AI request payload must not contain user PII.
+
+    MoSCoW: MUST
+    Verifies that analyse_image_data() sends only image data and
+    generic prompts — no email, username, or display_name.
+    """
+
+    def test_ai_request_excludes_user_info(
+        self, admin_client, active_asset, admin_user
+    ):
+        """Mock the Anthropic client, trigger AI analysis, and assert
+        the messages payload contains no user PII."""
+        image = AssetImageFactory(asset=active_asset)
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text='{"description": "A prop"}')]
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+
+        # anthropic is imported lazily inside analyse_image_data;
+        # patch the class on the real anthropic module so the lazy
+        # import picks up the mock.
+        with patch("anthropic.Anthropic") as MockAnthropicClass:
+            mock_instance = MockAnthropicClass.return_value
+            mock_instance.messages.create.return_value = mock_response
+
+            with patch(
+                "assets.services.ai.is_ai_enabled",
+                return_value=True,
+            ):
+                from assets.services.ai import analyse_image_data
+
+                test_image_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+                analyse_image_data(
+                    image_bytes=test_image_bytes,
+                    media_type="image/jpeg",
+                    context="asset_detail",
+                )
+
+        # Verify the mock was called
+        assert (
+            mock_instance.messages.create.called
+        ), "Anthropic API should have been called"
+
+        call_kwargs = mock_instance.messages.create.call_args
+        # Extract the full payload sent to the API
+        messages = call_kwargs.kwargs.get(
+            "messages", call_kwargs[1].get("messages", [])
+        )
+        system = call_kwargs.kwargs.get(
+            "system", call_kwargs[1].get("system", "")
+        )
+
+        # Serialise all message content to a single string
+        payload_str = str(messages) + str(system)
+
+        # Check that no user PII appears in the payload
+        pii_values = [
+            admin_user.email,
+            admin_user.username,
+        ]
+        if admin_user.display_name:
+            pii_values.append(admin_user.display_name)
+
+        for pii in pii_values:
+            assert pii not in payload_str, (
+                f"User PII '{pii}' must not appear in the AI "
+                f"request payload. Found in: "
+                f"{payload_str[:200]}"
+            )
+
+
+@pytest.mark.django_db
+class TestUS_XA_023_RegistrationEnumeration_Deep:
+    """US-XA-023 (deep): Registration must not leak email existence.
+
+    MoSCoW: MUST
+    """
+
+    # Security boundary test: deliberately probing registration
+    # for enumeration. Hardcoded payloads are intentional.
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Registration form leaks email existence via"
+            " Django's ModelForm.validate_unique() producing"
+            " 'User with this Email address already exists'"
+            " error message (S4.2.1). RegistrationForm._email_exists"
+            " handling is bypassed because is_valid() fails first."
+        ),
+    )
+    def test_registration_same_response_for_existing_email(self, db, user):
+        """POST registration with an existing email; the response
+        must not contain 'already exists/registered/in use'."""
+        anon_client = Client()
+
+        # GET the form to extract CSRF token
+        get_resp = anon_client.get(reverse("accounts:register"))
+        assert get_resp.status_code == 200
+
+        # POST with a fresh email first
+        fresh_resp = anon_client.post(
+            reverse("accounts:register"),
+            {
+                "email": "brand-new-unique@example.com",
+                "password1": "securePass123!",
+                "password2": "securePass123!",
+                "display_name": "New User",
+            },
+        )
+
+        # POST with the SAME email that user fixture already has
+        anon_client2 = Client()
+        existing_resp = anon_client2.post(
+            reverse("accounts:register"),
+            {
+                "email": user.email,
+                "password1": "securePass123!",
+                "password2": "securePass123!",
+                "display_name": "Duplicate Probe",
+            },
+        )
+
+        # The response for an existing email must not reveal
+        # that the account already exists
+        if existing_resp.status_code == 200:
+            content = existing_resp.content.decode().lower()
+            assert "already exists" not in content, (
+                "Registration response must not reveal that an "
+                "email already exists (enumeration vector)"
+            )
+            assert "already registered" not in content, (
+                "Registration response must not say 'already "
+                "registered' (enumeration vector)"
+            )
+            assert "already in use" not in content, (
+                "Registration response must not say 'already in "
+                "use' (enumeration vector)"
+            )
+
+
+@pytest.mark.django_db
+class TestUS_XA_024_RegistrationRateLimit_Deep:
+    """US-XA-024 (deep): Registration endpoint is rate-limited.
+
+    MoSCoW: MUST
+    """
+
+    # Security boundary test: probing rate limiting.
+    # Hardcoded payloads are intentional.
+
+    def test_registration_rate_limited(self, db):
+        """POST the registration form 15+ times rapidly; at some
+        point a 429 or rate-limit message must appear."""
+        cache.clear()
+        anon_client = Client()
+        url = reverse("accounts:register")
+
+        got_limited = False
+        for i in range(16):
+            resp = anon_client.post(
+                url,
+                {
+                    "email": f"ratelimit-probe-{i}@example.com",
+                    "password1": "securePass123!",
+                    "password2": "securePass123!",
+                    "display_name": f"Rate Test {i}",
+                },
+            )
+            if resp.status_code == 429:
+                got_limited = True
+                break
+            if resp.status_code == 200:
+                content = resp.content.decode().lower()
+                if (
+                    "rate" in content
+                    or "throttle" in content
+                    or "too many" in content
+                ):
+                    got_limited = True
+                    break
+
+        assert got_limited, (
+            "Registration endpoint must be rate-limited. Sent 16 "
+            "POST requests but never received a 429 status or "
+            "rate-limit message."
         )
