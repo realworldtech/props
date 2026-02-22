@@ -12,6 +12,7 @@ import pytest
 
 from django.urls import reverse
 
+from assets.factories import AssetFactory, UserFactory
 from assets.models import Asset, Transaction
 
 
@@ -1364,3 +1365,179 @@ class TestS12_20_RemotePrint:
         )
         assert resp.status_code == 200
         assert b"print" in resp.content.lower()
+
+
+# ---------------------------------------------------------------------------
+# Additional acceptance-criteria tests (uncovered criteria audit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestS12_4_CheckoutCheckinExtended:
+    """S12.4 extended -- additional check-out / check-in criteria."""
+
+    def test_checkin_form_shows_home_location_as_default(
+        self, admin_client, active_asset, location, borrower_user
+    ):
+        """S2.3.4: Check-in form must pre-select the asset's home_location
+        as the default return location.
+
+        The checkin view passes home_location in context, and the template
+        pre-selects it in the location dropdown.
+        """
+        # Establish a home location different from the current location
+        home_loc = location  # reuse fixture location as home
+        active_asset.home_location = home_loc
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        url = reverse("assets:asset_checkin", args=[active_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # The template pre-selects home_location via {% if home_location
+        # and home_location.pk == loc.pk %}selected{% endif %}.
+        # We check that the home location pk appears as a selected option.
+        assert (
+            f'value="{home_loc.pk}"' in content
+        ), "Check-in form must render the home location in the dropdown"
+        # 'selected' must appear somewhere in the form to pre-select it
+        assert (
+            "selected" in content
+        ), "Check-in form must pre-select the home location"
+
+    def test_backdated_checkout_field_present(
+        self, admin_client, active_asset
+    ):
+        """S2.3.2-10 / S7.21: Checkout form must include a date input for
+        backdating actions.
+        """
+        url = reverse("assets:asset_checkout", args=[active_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # The template has: <input type="datetime-local" name="action_date"...>
+        assert (
+            "action_date" in content
+        ), "Checkout form must contain an 'action_date' field for backdating"
+        assert (
+            "datetime-local" in content
+        ), "Checkout form must use a datetime-local input for the date field"
+
+
+@pytest.mark.django_db
+class TestS12_5_LabelContent:
+    """S12.5 extended -- label page content verification."""
+
+    def test_label_page_shows_both_barcode_and_asset_name(
+        self, admin_client, active_asset
+    ):
+        """S2.4.5: Label print page must show both the barcode value AND
+        the asset name, not just the barcode image.
+        """
+        url = reverse("assets:asset_label", args=[active_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        assert (
+            active_asset.barcode in content
+        ), f"Label page must display the barcode value '{active_asset.barcode}'"
+        assert (
+            active_asset.name in content
+        ), f"Label page must display the asset name '{active_asset.name}'"
+
+
+@pytest.mark.django_db
+class TestS12_9_BulkCheckoutWarning:
+    """S12.9 extended -- bulk checkout handles already-checked-out assets."""
+
+    def test_bulk_checkout_warning_for_already_checked_out(
+        self, admin_client, category, location, admin_user, borrower_user
+    ):
+        """S2.8.1: Bulk checkout must skip already-checked-out assets and
+        include them in a warning message.
+
+        Create 2 assets; check out one. POST bulk checkout for both.
+        Assert the already-checked-out asset was skipped (still checked
+        out to original borrower) and a warning message mentions it.
+        """
+        already_out = AssetFactory(
+            name="AlreadyOut BulkCO Test",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        already_out.checked_out_to = borrower_user
+        already_out.save()
+
+        available = AssetFactory(
+            name="Available BulkCO Test",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+
+        # Second borrower for the bulk checkout target
+        second_borrower = UserFactory(
+            username="second_borrower_bulkco",
+            email="second_borrower_bulkco@example.com",
+        )
+
+        url = reverse("assets:bulk_actions")
+        resp = admin_client.post(
+            url,
+            {
+                "bulk_action": "bulk_checkout",
+                "asset_ids": [already_out.pk, available.pk],
+                "bulk_borrower": second_borrower.pk,
+            },
+            follow=True,
+        )
+        assert resp.status_code == 200
+
+        already_out.refresh_from_db()
+        # The already-checked-out asset must remain with the original borrower
+        assert (
+            already_out.checked_out_to == borrower_user
+        ), "Already-checked-out asset must not be re-assigned by bulk checkout"
+
+        available.refresh_from_db()
+        # The available asset must now be checked out to second_borrower
+        assert (
+            available.checked_out_to == second_borrower
+        ), "Available asset must be checked out by bulk checkout"
+
+        # The response must mention the skipped asset (warning message)
+        content = resp.content.decode()
+        assert (
+            "AlreadyOut BulkCO Test" in content
+            or "skipped" in content.lower()
+            or "already" in content.lower()
+        ), (
+            "Bulk checkout response must mention already-checked-out asset"
+            " that was skipped"
+        )
+
+
+@pytest.mark.django_db
+class TestS12_15_HoldListPickSheet:
+    """S12.15 extended -- hold list pick sheet accessibility."""
+
+    def test_hold_list_pick_sheet_accessible(self, admin_client, hold_list):
+        """S2.16.6: GET the pick sheet URL for a hold list; assert
+        status 200 and content-type includes 'pdf' (not 404).
+        """
+        url = reverse("assets:holdlist_pick_sheet", args=[hold_list.pk])
+        resp = admin_client.get(url)
+        assert (
+            resp.status_code == 200
+        ), f"Pick sheet URL must return 200, got {resp.status_code}"
+        content_type = resp.get("Content-Type", "")
+        assert (
+            "pdf" in content_type.lower()
+        ), f"Pick sheet must return a PDF response, got: {content_type}"

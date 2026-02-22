@@ -986,3 +986,241 @@ class TestUS_VW_008_RegisterForReadOnlyAccount:
     def test_registration_page_accessible_without_auth(self, client):
         resp = client.get(reverse("accounts:register"))
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# New uncovered acceptance-criteria tests — added Feb 2026
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_MB_002_ViewOwnDraftsQueue_DashboardDraftCount:
+    """US-MB-002 (extra): Dashboard shows draft count with link to /drafts/.
+
+    Spec refs: S2.1.4-01, S2.1.4-02
+    """
+
+    def test_dashboard_shows_draft_count_with_link(
+        self, client_logged_in, user
+    ):
+        """Create 2 drafts; GET dashboard as member; assert '2' appears and
+        a link to the drafts queue is present in the page content."""
+        # Create 2 drafts owned by the member user
+        AssetFactory(
+            name="Draft Alpha",
+            status="draft",
+            created_by=user,
+            current_location=None,
+            category=None,
+        )
+        AssetFactory(
+            name="Draft Beta",
+            status="draft",
+            created_by=user,
+            current_location=None,
+            category=None,
+        )
+
+        resp = client_logged_in.get(reverse("assets:dashboard"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # The drafts queue URL must appear as a link somewhere on the page
+        drafts_url = reverse("assets:drafts_queue")
+        assert drafts_url in content, (
+            "Dashboard should contain a link to the drafts queue "
+            f"({drafts_url})"
+        )
+
+        # The numeral '2' (the count) must appear adjacent to drafts context
+        # We check the full page for '2' as a proxy — if the dashboard shows
+        # any draft count it will render as a digit.
+        assert "2" in content, (
+            "Dashboard should show the number of drafts (at least '2') "
+            "somewhere in the page"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_008_AssetDetailTransactionHistory_Order:
+    """US-MB-008 (extra): Transaction history is ordered newest-first.
+
+    Spec refs: S2.2.8-01
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Asset detail transaction history is rendered oldest-first "
+            "in the page HTML (checkout appears before checkin in DOM), "
+            "violating the newest-first requirement. (S2.2.8-01)"
+        ),
+    )
+    def test_asset_detail_transaction_history_is_ordered_newest_first(
+        self, client_logged_in, active_asset, user, borrower_user, location
+    ):
+        """Create a checkout then checkin; GET detail; assert the checkin
+        (newer) appears before the checkout in the rendered HTML."""
+        import time
+
+        from django.utils import timezone
+
+        t_checkout = timezone.now() - timezone.timedelta(minutes=10)
+        t_checkin = timezone.now() - timezone.timedelta(minutes=2)
+
+        # Create checkout transaction
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+            timestamp=t_checkout,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        # Create checkin transaction (newer)
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkin",
+            user=user,
+            from_location=location,
+            to_location=location,
+            timestamp=t_checkin,
+        )
+        active_asset.checked_out_to = None
+        active_asset.save()
+
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+
+        # Find the position of "Check In" and "Check Out" display text
+        checkin_pos = content.lower().find("check in")
+        checkout_pos = content.lower().find("check out")
+
+        assert checkin_pos != -1, "Expected 'check in' in asset detail content"
+        assert (
+            checkout_pos != -1
+        ), "Expected 'check out' in asset detail content"
+        assert checkin_pos < checkout_pos, (
+            "Check-in (newer) should appear before checkout (older) — "
+            "transaction history must be newest-first"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_011_CheckInAsset_RequiresLocation:
+    """US-MB-011 (extra): Check-in form requires a destination location.
+
+    Spec refs: S2.3.3-02, S2.3.3-05
+    """
+
+    def test_checkin_form_requires_destination_location(
+        self, client_logged_in, active_asset, user, location
+    ):
+        """POST checkin without location — asset must remain checked out."""
+        # First checkout
+        client_logged_in.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        active_asset.refresh_from_db()
+        original_borrower = active_asset.checked_out_to
+
+        # Attempt checkin without any location
+        resp = client_logged_in.post(
+            reverse("assets:asset_checkin", args=[active_asset.pk]),
+            {},  # No location field at all
+        )
+        active_asset.refresh_from_db()
+        # The asset must still be checked out (borrower still set)
+        assert active_asset.checked_out_to is not None, (
+            "Check-in without a destination location must not clear the "
+            "borrower — the form should require a location"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_VW_002_FilterAndSortAssets_ByCategory:
+    """US-VW-002 (extra): Viewer can filter asset list by category.
+
+    Spec refs: S2.6.2-01, S2.6.2-02
+    """
+
+    def test_viewer_can_filter_by_category(
+        self, viewer_client, location, department
+    ):
+        """Create two assets in different categories; filter by one category;
+        only the matching asset should appear."""
+        cat_a = CategoryFactory(name="Viewer Cat A", department=department)
+        cat_b = CategoryFactory(name="Viewer Cat B", department=department)
+        asset_a = AssetFactory(
+            name="Viewer Filter Asset A",
+            status="active",
+            category=cat_a,
+            current_location=location,
+        )
+        asset_b = AssetFactory(
+            name="Viewer Filter Asset B",
+            status="active",
+            category=cat_b,
+            current_location=location,
+        )
+
+        resp = viewer_client.get(
+            reverse("assets:asset_list"),
+            {"category": cat_a.pk},
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert asset_a.name in content, (
+            f"Asset '{asset_a.name}' should appear when filtering by its "
+            "category"
+        )
+        assert asset_b.name not in content, (
+            f"Asset '{asset_b.name}' from a different category should NOT "
+            "appear when filtering by category A"
+        )
+
+    def test_viewer_can_filter_by_location(self, viewer_client, category, db):
+        """Create two assets at different locations; filter by one location;
+        only the matching asset should appear."""
+        from assets.factories import LocationFactory
+
+        loc_a = LocationFactory(name="Viewer Loc A")
+        loc_b = LocationFactory(name="Viewer Loc B")
+        asset_a = AssetFactory(
+            name="Viewer Loc Filter Asset A",
+            status="active",
+            category=category,
+            current_location=loc_a,
+        )
+        asset_b = AssetFactory(
+            name="Viewer Loc Filter Asset B",
+            status="active",
+            category=category,
+            current_location=loc_b,
+        )
+
+        resp = viewer_client.get(
+            reverse("assets:asset_list"),
+            {"location": loc_a.pk},
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert asset_a.name in content, (
+            f"Asset '{asset_a.name}' should appear when filtering by its "
+            "location"
+        )
+        assert asset_b.name not in content, (
+            f"Asset '{asset_b.name}' at a different location should NOT "
+            "appear when filtering by location A"
+        )

@@ -6,11 +6,14 @@ criteria from the user's perspective. Failures identify spec gaps.
 Read: specs/props/sections/s10a-system-admin-stories.md
 """
 
+import datetime
+
 import pytest
 
 from django.urls import reverse
+from django.utils import timezone
 
-from assets.models import Asset, Transaction
+from assets.models import Asset, NFCTag, Transaction
 
 # ---------------------------------------------------------------------------
 # §10A.1 Quick Capture & Drafts
@@ -2384,4 +2387,723 @@ class TestUS_SA_138_AssetTypeOnEditForm:
         ), (
             "Asset edit form must include access to conversion page"
             " (a link or section mentioning conversion/serialisation)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Additional acceptance criteria — uncovered gaps (S10A audit Feb 2026)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_002_DraftsQueue:
+    """US-SA-002 additional criteria: barcode/creator visibility and
+    pagination.
+
+    MoSCoW: MUST
+    Spec refs: S2.1.4-01, S2.1.4-02, S2.1.4-06, S2.1.4-07
+    """
+
+    def test_drafts_queue_shows_barcode_and_created_by(
+        self, admin_client, admin_user
+    ):
+        """S2.1.4-02: Drafts queue must display barcode and created-by
+        user for each draft."""
+        from assets.factories import AssetFactory
+
+        draft = AssetFactory(
+            name="Barcode Visibility Draft",
+            status="draft",
+            category=None,
+            current_location=None,
+            created_by=admin_user,
+        )
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Barcode must appear in the queue
+        assert (
+            draft.barcode in content
+        ), f"Barcode '{draft.barcode}' not found in drafts queue"
+        # Created-by user must appear (username or display name)
+        assert admin_user.username in content or (
+            admin_user.display_name and admin_user.display_name in content
+        ), "Created-by user not visible in drafts queue"
+
+    def test_drafts_queue_is_paginated(self, admin_client, admin_user):
+        """S2.1.4-06: Drafts queue must paginate when many drafts exist."""
+        from assets.factories import AssetFactory
+
+        # Create 30+ drafts to force pagination
+        for i in range(32):
+            AssetFactory(
+                name=f"Pagination Draft {i:03d}",
+                status="draft",
+                category=None,
+                current_location=None,
+                created_by=admin_user,
+            )
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        # Pagination controls should be present
+        assert (
+            "page" in content
+            or "next" in content
+            or "previous" in content
+            or "paginator" in content
+        ), "Pagination controls not found in drafts queue with 32+ items"
+
+
+@pytest.mark.django_db
+class TestUS_SA_005_BulkEditDraftsFromQueue:
+    """US-SA-005 additional criteria: blank fields do not overwrite.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.8.3-01, S2.8.3-02
+    """
+
+    def test_bulk_edit_blank_fields_do_not_overwrite_existing(
+        self, admin_client, admin_user, category
+    ):
+        """S2.8.3-02: Bulk editing with blank name/field must not
+        overwrite the existing value on each asset."""
+        from assets.factories import AssetFactory
+
+        draft = AssetFactory(
+            name="My Named Draft",
+            status="draft",
+            category=None,
+            current_location=None,
+            created_by=admin_user,
+        )
+        # Bulk-edit with a category but no name override
+        resp = admin_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "selected_ids": [draft.pk],
+                "category": category.pk,
+                "action": "bulk_edit",
+            },
+        )
+        draft.refresh_from_db()
+        assert (
+            draft.name == "My Named Draft"
+        ), "Bulk edit with blank name overwrote the existing name"
+
+
+@pytest.mark.django_db
+class TestUS_SA_008_UploadAndManageAssetImages:
+    """US-SA-008 additional criteria: deleting primary promotes next.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.5-03, S2.2.5-05
+    """
+
+    def test_deleting_primary_image_promotes_next_to_primary(
+        self, admin_client, active_asset, admin_user
+    ):
+        """S2.2.5-03: When the primary image is deleted the next image
+        should automatically become primary."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from assets.models import AssetImage
+
+        gif_bytes = (
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00"
+            b"\x00\x02\x02D\x01\x00;"
+        )
+
+        img1 = AssetImage.objects.create(
+            asset=active_asset,
+            image=SimpleUploadedFile("first.gif", gif_bytes, "image/gif"),
+            uploaded_by=admin_user,
+            is_primary=True,
+        )
+        img2 = AssetImage.objects.create(
+            asset=active_asset,
+            image=SimpleUploadedFile("second.gif", gif_bytes, "image/gif"),
+            uploaded_by=admin_user,
+            is_primary=False,
+        )
+
+        # Delete the primary image via the view
+        admin_client.post(
+            reverse(
+                "assets:image_delete",
+                args=[active_asset.pk, img1.pk],
+            )
+        )
+
+        img2.refresh_from_db()
+        assert (
+            img2.is_primary
+        ), "Second image was not promoted to primary after primary deleted"
+
+
+@pytest.mark.django_db
+class TestUS_SA_011_MergeDuplicateAssets:
+    """US-SA-011 additional criteria: images and tags transfer on merge.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.7-02, S2.2.7-06
+    """
+
+    def test_merge_transfers_images_to_primary(
+        self, admin_client, active_asset, category, location, admin_user
+    ):
+        """S2.2.7-02: Merge must move images from secondary to primary."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from assets.factories import AssetFactory
+        from assets.models import AssetImage
+
+        secondary = AssetFactory(
+            name="Duplicate With Image",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        gif_bytes = (
+            b"GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00"
+            b"\xff\xff\xff,\x00\x00\x00\x00\x01\x00\x01\x00"
+            b"\x00\x02\x02D\x01\x00;"
+        )
+        AssetImage.objects.create(
+            asset=secondary,
+            image=SimpleUploadedFile("dup.gif", gif_bytes, "image/gif"),
+            uploaded_by=admin_user,
+        )
+
+        admin_client.post(
+            reverse("assets:asset_merge_execute"),
+            {
+                "primary_id": active_asset.pk,
+                "asset_ids": f"{active_asset.pk},{secondary.pk}",
+            },
+        )
+
+        assert AssetImage.objects.filter(
+            asset=active_asset
+        ).exists(), (
+            "Image from secondary was not transferred to primary after merge"
+        )
+
+    def test_merge_transfers_tags_to_primary(
+        self, admin_client, active_asset, category, location, admin_user, tag
+    ):
+        """S2.2.7-06: Merge must copy tags from secondary to primary."""
+        from assets.factories import AssetFactory
+
+        secondary = AssetFactory(
+            name="Duplicate With Tag",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        secondary.tags.add(tag)
+
+        admin_client.post(
+            reverse("assets:asset_merge_execute"),
+            {
+                "primary_id": active_asset.pk,
+                "asset_ids": f"{active_asset.pk},{secondary.pk}",
+            },
+        )
+
+        active_asset.refresh_from_db()
+        assert (
+            tag in active_asset.tags.all()
+        ), "Tag from secondary was not transferred to primary after merge"
+
+
+@pytest.mark.django_db
+class TestUS_SA_013_DisposeAsset:
+    """US-SA-013 additional criteria: disposal blocked when checked out.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.3-05, S2.3.15-01
+    """
+
+    def test_disposal_blocked_when_asset_is_checked_out(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        admin_user,
+    ):
+        """S2.3.15-01: An asset that is currently checked out must not
+        be disposable — the view must block the transition."""
+        # Check out the asset
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        # Attempt to dispose via the delete endpoint
+        admin_client.post(
+            reverse("assets:asset_delete", args=[active_asset.pk]),
+            {},
+        )
+        active_asset.refresh_from_db()
+        assert (
+            active_asset.status != "disposed"
+        ), "Checked-out asset was disposed — disposal should be blocked"
+
+
+@pytest.mark.django_db
+class TestUS_SA_014_MarkAssetLostOrStolen:
+    """US-SA-014 additional criteria: lost allowed when checked out;
+    notes required.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.3-07, S2.2.3-08, S2.2.3-11
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Asset edit form FORM_STATUS_CHOICES excludes 'lost' and"
+            " 'stolen', so the edit form silently ignores the status change"
+            " request — a checked-out asset cannot be marked lost via the"
+            " edit form (S2.2.3-11). A dedicated lost/stolen workflow or"
+            " form choice is missing."
+        ),
+    )
+    def test_mark_as_lost_allowed_when_checked_out(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        admin_user,
+    ):
+        """S2.2.3-11: Marking an asset as lost must be allowed even if
+        it is currently checked out."""
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        admin_client.post(
+            reverse("assets:asset_edit", args=[active_asset.pk]),
+            {
+                "name": active_asset.name,
+                "category": active_asset.category.pk,
+                "current_location": active_asset.current_location.pk,
+                "condition": active_asset.condition,
+                "quantity": active_asset.quantity,
+                "status": "lost",
+                "notes": "Lost while checked out",
+            },
+        )
+        active_asset.refresh_from_db()
+        assert active_asset.status == "lost", (
+            "Marking a checked-out asset as lost was blocked — should be"
+            " allowed (S2.2.3-11)"
+        )
+
+    def test_mark_as_lost_requires_notes(self, admin_client, active_asset):
+        """S2.2.3-08: Transitioning to lost status must require notes
+        (lost_stolen_notes or notes field). Without notes the transition
+        should be rejected."""
+        admin_client.post(
+            reverse("assets:asset_edit", args=[active_asset.pk]),
+            {
+                "name": active_asset.name,
+                "category": active_asset.category.pk,
+                "current_location": active_asset.current_location.pk,
+                "condition": active_asset.condition,
+                "quantity": active_asset.quantity,
+                "status": "lost",
+                # Deliberately omit notes
+            },
+        )
+        active_asset.refresh_from_db()
+        # If the spec requires notes, the asset should remain active
+        assert active_asset.status == "active", (
+            "Asset was marked as lost without notes — notes should be"
+            " required (S2.2.3-08)"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_017_CheckInAnyAsset:
+    """US-SA-017 additional criteria: checkin form prefills home_location.
+
+    MoSCoW: MUST
+    Spec refs: S2.3.3-02, S2.3.3-05
+    """
+
+    def test_checkin_form_prefills_location(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        admin_user,
+    ):
+        """S2.3.3-05: The check-in form must pre-select the asset's
+        home_location when one is set."""
+        # Set home location on the asset
+        active_asset.home_location = location
+        active_asset.save(update_fields=["home_location"])
+
+        # Set the asset as checked out so the checkin form shows
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save(update_fields=["checked_out_to"])
+
+        resp = admin_client.get(
+            reverse("assets:asset_checkin", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # The home location's pk should appear as selected in the form
+        assert f'value="{location.pk}" selected' in content or (
+            f'value="{location.pk}"' in content and "selected" in content
+        ), (
+            "Check-in form does not pre-select home_location"
+            f" (pk={location.pk})"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_018_TransferAssetBetweenLocations:
+    """US-SA-018 additional criteria: transfer rejected when checked out.
+
+    MoSCoW: MUST
+    Spec refs: S2.3.4-01, S2.3.4-02
+    """
+
+    def test_transfer_rejected_when_asset_is_checked_out(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        warehouse,
+        admin_user,
+    ):
+        """S2.3.4-02: Transferring a checked-out asset must be blocked
+        or explicitly warned (the asset's location must not change)."""
+        original_location = active_asset.current_location
+
+        # Check out the asset
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=warehouse["bay1"],
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        dest = warehouse["bay4"]
+        resp = admin_client.post(
+            reverse("assets:asset_transfer", args=[active_asset.pk]),
+            {"location": dest.pk, "notes": ""},
+        )
+        active_asset.refresh_from_db()
+        # Transfer must be rejected for checked-out assets
+        assert (
+            active_asset.current_location != dest
+        ), "Transfer succeeded on a checked-out asset — should be rejected"
+
+
+@pytest.mark.django_db
+class TestUS_SA_019_CustodyHandover:
+    """US-SA-019 additional criteria: handover creates two transactions.
+
+    MoSCoW: MUST
+    Spec refs: S2.3.5-01, S2.3.5-02, S2.3.5-03
+    """
+
+    def test_handover_creates_two_transactions(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        admin_user,
+        category,
+    ):
+        """S2.3.5-02: A handover from borrower A to borrower B must
+        record at least two transactions: the original checkout and the
+        handover event."""
+        from django.contrib.auth.models import Group
+
+        from assets.factories import UserFactory
+
+        borrower_b_group, _ = Group.objects.get_or_create(name="Borrower")
+        borrower_b = UserFactory(
+            username="borrower_b",
+            email="borrower_b@example.com",
+        )
+        borrower_b.groups.add(borrower_b_group)
+
+        # Check out to borrower A
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        # Handover to borrower B
+        admin_client.post(
+            reverse("assets:asset_handover", args=[active_asset.pk]),
+            {
+                "borrower": borrower_b.pk,
+                "notes": "Handover to B",
+                "location": location.pk,
+            },
+        )
+
+        tx_count = Transaction.objects.filter(asset=active_asset).count()
+        assert tx_count >= 2, (
+            f"Expected at least 2 transactions (checkout + handover), "
+            f"got {tx_count}"
+        )
+        assert Transaction.objects.filter(
+            asset=active_asset, action="handover"
+        ).exists(), "No 'handover' transaction was created"
+
+
+@pytest.mark.django_db
+class TestUS_SA_021_BackdateTransaction:
+    """US-SA-021 additional criteria: backdated flag set; future date
+    rejected.
+
+    MoSCoW: MUST
+    Spec refs: S2.3.9-01, S2.3.9-02, S2.3.9-03, S2.3.9-04
+    """
+
+    def test_backdated_transaction_is_marked_is_backdated(
+        self, admin_client, active_asset, borrower_user, location
+    ):
+        """S2.3.9-03: When a checkout is submitted with a past date the
+        created Transaction must have is_backdated=True."""
+        past_date = (timezone.now() - datetime.timedelta(days=7)).strftime(
+            "%Y-%m-%dT%H:%M"
+        )
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination": location.pk,
+                "notes": "",
+                "action_date": past_date,
+            },
+        )
+        tx = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).first()
+        assert tx is not None, "No checkout transaction was created"
+        assert tx.is_backdated, (
+            "Transaction created with a past date does not have "
+            "is_backdated=True"
+        )
+
+    def test_backdated_transaction_future_date_rejected(
+        self, admin_client, active_asset, borrower_user, location
+    ):
+        """S2.3.9-04: Submitting a checkout with a future date must be
+        rejected — no transaction should be created."""
+        future_date = (timezone.now() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%dT%H:%M"
+        )
+        initial_count = Transaction.objects.filter(asset=active_asset).count()
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination": location.pk,
+                "notes": "",
+                "action_date": future_date,
+            },
+        )
+        final_count = Transaction.objects.filter(asset=active_asset).count()
+        assert final_count == initial_count, (
+            "A transaction was created with a future date — future dates "
+            "should be rejected (S2.3.9-04)"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_022_BulkCheckOut:
+    """US-SA-022 additional criteria: already-checked-out assets skipped.
+
+    MoSCoW: MUST
+    Spec refs: S2.3.10-01, S2.3.10-02, S2.3.10-03
+    """
+
+    def test_bulk_checkout_excludes_already_checked_out(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        category,
+        admin_user,
+    ):
+        """S2.3.10-03: Bulk checkout must skip assets that are already
+        checked out — they must not be double-checked-out."""
+        from assets.factories import AssetFactory
+
+        asset2 = AssetFactory(
+            name="Asset Not Yet Checked Out",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+
+        # Pre-check-out active_asset to borrower_user
+        Transaction.objects.create(
+            asset=active_asset,
+            action="checkout",
+            user=admin_user,
+            borrower=borrower_user,
+            from_location=active_asset.current_location,
+            to_location=location,
+        )
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+
+        checkout_count_before = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).count()
+
+        # Bulk-checkout both assets
+        admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "bulk_action": "bulk_checkout",
+                "asset_ids": [active_asset.pk, asset2.pk],
+                "bulk_borrower": borrower_user.pk,
+            },
+        )
+
+        # active_asset should NOT have gained another checkout transaction
+        checkout_count_after = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).count()
+        assert checkout_count_after == checkout_count_before, (
+            "Bulk checkout created a second checkout for an already "
+            "checked-out asset"
+        )
+        # asset2 should now be checked out
+        assert Transaction.objects.filter(
+            asset=asset2, action="checkout"
+        ).exists(), "asset2 was not checked out by the bulk checkout"
+
+
+@pytest.mark.django_db
+class TestUS_SA_093_ScanCodeDuringQuickCapture:
+    """US-SA-093 additional criteria: NFC UID during capture creates NFC
+    tag record.
+
+    MoSCoW: MUST
+    Spec refs: S2.1.2-03, S2.1.2-04
+    """
+
+    def test_scanning_nfc_code_creates_nfc_tag_on_draft(
+        self, admin_client, admin_user
+    ):
+        """S2.1.2-03: When a scanned code does not match the barcode
+        format (e.g. an NFC UID like '04A3B2C1D0E5F6') the system must
+        treat it as an NFC tag ID and create an NFCTag record linked to
+        the new draft."""
+        # NFC UIDs typically don't have a hyphen and don't match
+        # BARCODE_PATTERN (^[A-Z]+-[A-Z0-9]+$)
+        nfc_uid = "04A3B2C1D0E5F6"
+        admin_client.post(
+            reverse("assets:quick_capture"),
+            {"scanned_code": nfc_uid, "name": "NFC Captured Item"},
+        )
+        assert NFCTag.objects.filter(
+            tag_id__iexact=nfc_uid, removed_at__isnull=True
+        ).exists(), f"No active NFCTag record was created for UID '{nfc_uid}'"
+        nfc_tag = NFCTag.objects.get(
+            tag_id__iexact=nfc_uid, removed_at__isnull=True
+        )
+        assert (
+            nfc_tag.asset.status == "draft"
+        ), "NFCTag is not linked to a draft asset"
+
+
+@pytest.mark.django_db
+class TestUS_SA_030_AssignNFCTag:
+    """US-SA-030 additional criteria: assigning an already-assigned tag
+    is rejected.
+
+    MoSCoW: MUST
+    Spec refs: S2.5.2-01, S2.5.4-02
+    """
+
+    def test_assigning_already_assigned_nfc_tag_rejected(
+        self, admin_client, active_asset, category, location, admin_user
+    ):
+        """S2.5.4-02: Attempting to assign an NFC tag that is already
+        actively assigned to another asset must be rejected — no second
+        active assignment must be created."""
+        from assets.factories import AssetFactory
+
+        tag_id = "ALREADY_TAKEN_TAG_01"
+        asset_a = AssetFactory(
+            name="Asset A Has The Tag",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        NFCTag.objects.create(
+            asset=asset_a,
+            tag_id=tag_id,
+            assigned_by=admin_user,
+        )
+
+        # Try to assign the same tag to active_asset
+        admin_client.post(
+            reverse("assets:nfc_add", args=[active_asset.pk]),
+            {"tag_id": tag_id, "notes": ""},
+        )
+
+        # There must still be exactly one active assignment for this tag
+        active_count = NFCTag.objects.filter(
+            tag_id__iexact=tag_id,
+            removed_at__isnull=True,
+        ).count()
+        assert active_count == 1, (
+            f"Expected 1 active NFC assignment for '{tag_id}', "
+            f"got {active_count} — duplicate assignment was not rejected"
         )
