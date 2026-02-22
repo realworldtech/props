@@ -133,6 +133,50 @@ class TestScenario_11_3_OnboardingLargeDonation:
     @pytest.mark.xfail(
         strict=True,
         reason=(
+            "GAP #32b-filter: Drafts queue department filter does not"
+            " restrict results (S11.3). The drafts_queue view either"
+            " has no department filter or ignores it."
+        ),
+    )
+    def test_drafts_queue_department_filter_restricts_results(
+        self, admin_client, admin_user
+    ):
+        """S11.3: Filtering the drafts queue by department must show
+        only that department's drafts."""
+        dept_a = DepartmentFactory(name="Dept A S32b", barcode_prefix="DA32")
+        dept_b = DepartmentFactory(name="Dept B S32b", barcode_prefix="DB32")
+        cat_a = CategoryFactory(name="Cat A S32b", department=dept_a)
+        cat_b = CategoryFactory(name="Cat B S32b", department=dept_b)
+
+        draft_a = AssetFactory(
+            name="Draft A S32b",
+            status="draft",
+            category=cat_a,
+            current_location=None,
+            created_by=admin_user,
+        )
+        draft_b = AssetFactory(
+            name="Draft B S32b",
+            status="draft",
+            category=cat_b,
+            current_location=None,
+            created_by=admin_user,
+        )
+
+        url = reverse("assets:drafts_queue")
+        resp = admin_client.get(url, {"department": dept_a.pk})
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "Draft A S32b" in content
+        ), "Dept A draft must appear when filtering by dept_a"
+        assert (
+            "Draft B S32b" not in content
+        ), "Dept B draft must NOT appear when filtering by dept_a"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
             "GAP #32b: Drafts queue has no department filter dropdown"
             " (S11.3 / S11.5). The drafts_queue view does not expose"
             " a department filter in its template."
@@ -269,6 +313,55 @@ class TestScenario_11_4_PreGeneratedBarcodeLabels:
             )
         assert asset.status == "draft"
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #30a: barcode_pregenerate page has no printer/print-client"
+            " dropdown (S2.4.5-09, S2.4.5b). The page only offers browser"
+            " PDF print — no print client selector is rendered."
+        ),
+    )
+    def test_pregenerate_page_has_printer_dropdown(self, admin_client):
+        """S2.4.5-09: barcode_pregenerate page must offer a printer or
+        print-client selector for direct label printing."""
+        resp = admin_client.get(reverse("assets:barcode_pregenerate"))
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "printer" in content
+            or "print client" in content
+            or "print_client" in content
+            or "printclient" in content
+        ), "barcode_pregenerate must include a printer/print-client selector"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #30b: barcode_pregenerate page does not show connected"
+            " remote print clients (S2.4.5b). The remote print option"
+            " requires listing approved+connected PrintClient objects."
+        ),
+    )
+    def test_pregenerate_page_has_remote_print_option(self, admin_client):
+        """S2.4.5b: barcode_pregenerate must offer remote print option
+        showing connected print clients."""
+        from assets.models import PrintClient
+
+        PrintClient.objects.create(
+            name="Remote Printer S30",
+            status="approved",
+            is_connected=True,
+            is_active=True,
+            token_hash="hash_s30_pregenerate",
+            printers=[{"id": "usb-001", "name": "Brother QL"}],
+        )
+        resp = admin_client.get(reverse("assets:barcode_pregenerate"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "Remote Printer S30" in content
+        ), "barcode_pregenerate must list connected remote print clients"
+
     def test_full_scenario_walkthrough(
         self, client_logged_in, department, category, db
     ):
@@ -390,6 +483,59 @@ class TestScenario_11_5_CheckingOutEquipmentForProduction:
                 "No blocking logic implemented yet."
             )
         assert kit.checked_out_to is None
+
+    def test_checkout_post_rejects_quantity_exceeding_available(
+        self, admin_client, department, location, admin_user, borrower_user
+    ):
+        """S2.17.2-02: Server rejects checkout quantity > available_count.
+        Previously GAP #25b — confirmed working (XPASS)."""
+        from django.db.models import Sum
+
+        from assets.models import Transaction
+
+        cat = CategoryFactory(department=department)
+        asset = AssetFactory(
+            name="Cables Qty Test",
+            status="active",
+            is_serialised=False,
+            quantity=3,
+            category=cat,
+            current_location=location,
+            created_by=admin_user,
+        )
+        # Pre-check-out 2 units
+        Transaction.objects.create(
+            asset=asset,
+            user=admin_user,
+            action="checkout",
+            borrower=borrower_user,
+            quantity=2,
+        )
+
+        second_borrower = UserFactory(
+            username="borrower2_s25b",
+            email="borrower2_s25b@example.com",
+        )
+        url = reverse("assets:asset_checkout", args=[asset.pk])
+        # Request 3 units (only 1 available)
+        admin_client.post(
+            url,
+            {
+                "borrower": second_borrower.pk,
+                "destination_location": location.pk,
+                "quantity": 3,
+            },
+        )
+        total_checked_out = (
+            Transaction.objects.filter(
+                asset=asset, action="checkout"
+            ).aggregate(total=Sum("quantity"))["total"]
+            or 0
+        )
+        assert total_checked_out <= asset.quantity, (
+            f"Total checked out ({total_checked_out}) exceeds"
+            f" original quantity ({asset.quantity})"
+        )
 
     @pytest.mark.xfail(
         strict=True,
@@ -543,6 +689,47 @@ class TestScenario_11_6_StocktakeAtStorageLocation:
     @pytest.mark.xfail(
         strict=True,
         reason=(
+            "GAP #22b: Stocktake scan page does not group assets by child"
+            " location (S2.7.1-05). The stocktake_detail template renders"
+            " a flat list — no sub-headings by child location name."
+        ),
+    )
+    def test_stocktake_detail_groups_assets_by_child_location(
+        self, admin_client, admin_user
+    ):
+        """S2.7.1-05: Stocktake at parent location must show assets
+        grouped/headed by child location name."""
+        from assets.models import StocktakeSession
+
+        parent_loc = LocationFactory(name="Warehouse Group S22")
+        child_loc = LocationFactory(name="Bay X S22", parent=parent_loc)
+        cat = CategoryFactory(
+            department=DepartmentFactory(
+                name="Dept S22", barcode_prefix="S22D"
+            )
+        )
+        AssetFactory(
+            name="Child Asset S22",
+            status="active",
+            category=cat,
+            current_location=child_loc,
+            created_by=admin_user,
+        )
+        session = StocktakeSession.objects.create(
+            location=parent_loc, started_by=admin_user
+        )
+        resp = admin_client.get(
+            reverse("assets:stocktake_detail", args=[session.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "Bay X S22" in content
+        ), "Stocktake detail must group by child location name"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
             "GAP #22: Stocktake does not include child location assets"
             " (S2.7.1-05). get_expected_assets() only queries"
             " current_location=session.location, not descendants."
@@ -580,6 +767,52 @@ class TestScenario_11_6_StocktakeAtStorageLocation:
         assert (
             child_asset.pk in expected_pks
         ), "Asset at child location not in parent stocktake expected list"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #32a-state: After mark-missing action, unscanned assets"
+            " do not have status='missing' (S2.7.3-03). The"
+            " stocktake_mark_missing endpoint does not exist."
+        ),
+    )
+    def test_mark_unconfirmed_as_missing_transitions_unscanned_assets(
+        self, admin_client, location, admin_user, category
+    ):
+        """S2.7.3-03: Calling mark-missing on a stocktake must set
+        status='missing' on all assets that were not scanned during the
+        session."""
+        from django.urls import NoReverseMatch
+
+        from assets.models import StocktakeSession
+
+        unscanned_asset = AssetFactory(
+            name="Unscanned Asset S32",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        session = StocktakeSession.objects.create(
+            location=location, started_by=admin_user
+        )
+        # Do NOT scan unscanned_asset — leave it unconfirmed
+
+        try:
+            url = reverse("assets:stocktake_mark_missing", args=[session.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #32a: URL 'assets:stocktake_mark_missing' does not"
+                " exist."
+            )
+
+        resp = admin_client.post(url)
+        assert resp.status_code in (200, 302)
+        unscanned_asset.refresh_from_db()
+        assert unscanned_asset.status == "missing", (
+            f"Unscanned asset must be marked missing, got"
+            f" {unscanned_asset.status}"
+        )
 
     @pytest.mark.xfail(
         strict=True,
@@ -1046,6 +1279,140 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
         resp = admin_client.get(url)
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #31a: No dedicated mark-lost form with required notes"
+            " field (S2.2.3-08). mark-as-lost is only available via"
+            " the edit form status field — there is no dedicated surface"
+            " with a mandatory reason/notes field."
+        ),
+    )
+    def test_mark_as_lost_requires_notes_field(self, admin_client, asset):
+        """S2.2.3-08: A dedicated 'mark as lost' surface must require
+        a notes/reason field before accepting the transition."""
+        from django.urls import NoReverseMatch
+
+        # Try to find a dedicated mark-lost URL
+        url = None
+        for url_name in ["assets:asset_mark_lost", "assets:mark_lost"]:
+            try:
+                url = reverse(url_name, args=[asset.pk])
+                break
+            except NoReverseMatch:
+                continue
+
+        if url is None:
+            # Try the asset detail page which may have an inline form
+            resp = admin_client.get(
+                reverse("assets:asset_detail", args=[asset.pk])
+            )
+            content = resp.content.decode().lower()
+            # Either a dedicated URL exists or the detail has a notes field
+            assert (
+                "lost" in content and "notes" in content
+            ), "No dedicated mark-lost surface with notes field found"
+        else:
+            resp = admin_client.get(url)
+            assert resp.status_code == 200
+            content = resp.content.decode().lower()
+            assert (
+                "notes" in content or "reason" in content
+            ), "mark-lost form must include a notes/reason field"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #31b: No dedicated recover-from-lost surface with"
+            " location selection (S2.2.3-08). Recovery only available"
+            " via bulk_actions status_change which doesn't require"
+            " location selection."
+        ),
+    )
+    def test_recover_from_lost_requires_location_selection(
+        self, admin_client, asset
+    ):
+        """S2.2.3-08: Recover-from-lost must require selecting a
+        location where the asset was found."""
+        from django.urls import NoReverseMatch
+
+        asset.status = "lost"
+        asset.save()
+
+        url = None
+        for url_name in [
+            "assets:asset_recover",
+            "assets:recover_asset",
+            "assets:asset_mark_found",
+        ]:
+            try:
+                url = reverse(url_name, args=[asset.pk])
+                break
+            except NoReverseMatch:
+                continue
+
+        if url is None:
+            pytest.xfail(
+                "GAP #31b: No dedicated recover-from-lost URL exists."
+            )
+
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "location" in content
+        ), "Recover-from-lost form must include a location selection field"
+
+    def test_checkin_form_has_condition_field(
+        self, admin_client, active_asset, borrower_user
+    ):
+        """S2.3.3: Check-in form includes a condition dropdown.
+        Previously GAP #31c — confirmed working (XPASS)."""
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+        resp = admin_client.get(
+            reverse("assets:asset_checkin", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "condition" in content
+        ), "Check-in form must include a condition field"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #31d: No standalone condition-update endpoint exists"
+            " (S2.2.4). Condition can only be updated via the full"
+            " asset_edit form — no lightweight dedicated URL."
+        ),
+    )
+    def test_standalone_condition_update_endpoint_exists(
+        self, admin_client, active_asset
+    ):
+        """S2.2.4: A standalone URL for updating asset condition must
+        exist (e.g. assets:asset_condition) separate from the full edit
+        form."""
+        from django.urls import NoReverseMatch
+
+        url = None
+        for url_name in [
+            "assets:asset_condition",
+            "assets:update_condition",
+            "assets:asset_update_condition",
+        ]:
+            try:
+                url = reverse(url_name, args=[active_asset.pk])
+                break
+            except NoReverseMatch:
+                continue
+
+        if url is None:
+            pytest.xfail("GAP #31d: No standalone condition update URL found.")
+
+        resp = admin_client.get(url)
+        assert resp.status_code in (200, 405)
+
     def test_full_scenario_walkthrough(
         self, admin_client, category, location, borrower_user
     ):
@@ -1202,6 +1569,85 @@ class TestScenario_11_10_NFCTagManagementForCostumes:
         # Historical record still exists
         assert NFCTag.objects.filter(pk=nfc.pk).exists()
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #27a: Asset detail does not show notes from removed NFC"
+            " tags (S2.5.6). The removed tag's notes field is not"
+            " rendered in the NFC history section."
+        ),
+    )
+    def test_asset_detail_shows_removed_nfc_notes(
+        self, admin_client, asset, admin_user
+    ):
+        """S2.5.6: After removing an NFC tag with notes, the asset
+        detail page must display those notes in the NFC history."""
+        import datetime
+
+        nfc = NFCTag.objects.create(
+            asset=asset,
+            tag_id="04:REMOVED:NOTES:01",
+            notes="Sewn into collar — removed when damaged",
+            removed_at=datetime.datetime.now(datetime.timezone.utc),
+            removed_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        assert (
+            b"removed when damaged" in resp.content
+        ), "Asset detail NFC history must show removed tag notes"
+
+    def test_asset_detail_shows_removed_by_user(
+        self, admin_client, asset, admin_user
+    ):
+        """S2.5.6: Asset detail NFC history shows who removed the tag.
+        Previously GAP #27b — confirmed working (XPASS)."""
+        import datetime
+
+        NFCTag.objects.create(
+            asset=asset,
+            tag_id="04:REMOVED:USER:01",
+            removed_at=datetime.datetime.now(datetime.timezone.utc),
+            removed_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            admin_user.username in content
+            or (admin_user.display_name or "") in content
+            or admin_user.email in content
+        ), "Asset detail NFC history must show who removed the tag"
+
+    def test_nfc_history_section_renders_removal_timestamp(
+        self, admin_client, asset, admin_user
+    ):
+        """S2.5.6: Asset detail NFC history includes removal timestamp.
+        Previously GAP #27c — confirmed working (XPASS)."""
+        import datetime
+
+        removal_time = datetime.datetime(
+            2026, 1, 15, 10, 30, 0, tzinfo=datetime.timezone.utc
+        )
+        NFCTag.objects.create(
+            asset=asset,
+            tag_id="04:REMOVED:TS:01",
+            removed_at=removal_time,
+            removed_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "2026" in content or "Jan" in content
+        ), "NFC history must include removal timestamp"
+
     def test_full_scenario_walkthrough(
         self, dept_manager_client, client_logged_in, asset
     ):
@@ -1323,6 +1769,99 @@ class TestScenario_11_11_MergingDuplicateAssets:
         )
         nfc.refresh_from_db()
         assert nfc.asset_id == primary.pk
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #28a: Merge confirmation page does not show side-by-side"
+            " field comparison (S2.2.7). The merge_select/preview page"
+            " does not render both assets' field values for comparison."
+        ),
+    )
+    def test_merge_preview_shows_field_comparison(
+        self, admin_client, category, location
+    ):
+        """S2.2.7: The merge confirmation page must show both assets'
+        field values side-by-side (name, description, etc)."""
+        primary = AssetFactory(
+            name="Primary Clock S28",
+            description="Primary description",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        secondary = AssetFactory(
+            name="Secondary Clock S28",
+            description="Secondary description",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        url = reverse("assets:asset_merge_select")
+        resp = admin_client.post(
+            url,
+            {
+                "asset_ids": f"{primary.pk},{secondary.pk}",
+                "primary_id": primary.pk,
+            },
+        )
+        # If the view returns a preview page (200), it must show both names
+        if resp.status_code == 200:
+            content = resp.content.decode()
+            assert (
+                "Primary Clock S28" in content
+            ), "Merge preview must show primary asset name"
+            assert (
+                "Secondary Clock S28" in content
+            ), "Merge preview must show secondary asset name"
+        else:
+            # Redirect means no confirmation page — gap confirmed
+            assert False, (
+                "Merge confirmation page must show field comparison"
+                f" (got {resp.status_code})"
+            )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #28b: Merge POST does not respect explicit field choices"
+            " (S2.2.7). The merge execute view uses primary asset fields"
+            " without allowing field-level selection."
+        ),
+    )
+    def test_merge_respects_selected_fields(
+        self, admin_client, category, location
+    ):
+        """S2.2.7: POST merge with explicit field choices must result in
+        primary asset having the chosen field values."""
+        primary = AssetFactory(
+            name="Primary Name S28b",
+            description="Primary description S28b",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        secondary = AssetFactory(
+            name="Secondary Name S28b",
+            description="Better secondary description S28b",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        url = reverse("assets:asset_merge_execute")
+        admin_client.post(
+            url,
+            {
+                "primary_id": primary.pk,
+                "asset_ids": f"{primary.pk},{secondary.pk}",
+                # Choose secondary's description over primary's
+                "field_description": str(secondary.pk),
+            },
+        )
+        primary.refresh_from_db()
+        assert (
+            primary.description == "Better secondary description S28b"
+        ), "Merge must use explicitly selected field from secondary asset"
 
     def test_full_scenario_walkthrough(
         self, dept_manager_client, category, location
@@ -1463,6 +2002,75 @@ class TestScenario_11_12_InsuranceExportAndReporting:
             str(cell.value or "") for row in ws.iter_rows() for cell in row
         }
         assert "Technical Fixture Export" not in all_values
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #29a: Export Summary sheet is missing per-status rows"
+            " for Missing, Lost, Stolen, Retired, Disposed (S2.9,"
+            " S11.12). The Summary sheet only has Total/Active/Draft."
+        ),
+    )
+    def test_export_summary_sheet_has_all_status_rows(
+        self, admin_client, active_asset
+    ):
+        """S11.12 Step 4: Summary sheet must have row labels for all
+        asset statuses: Missing, Lost, Stolen, Retired, Disposed."""
+        from io import BytesIO
+
+        import openpyxl
+
+        resp = admin_client.get(reverse("assets:export_assets"))
+        assert resp.status_code == 200
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        assert "Summary" in wb.sheetnames, "No 'Summary' sheet in workbook"
+        summary = wb["Summary"]
+        col_a_values = [
+            str(cell.value or "").lower()
+            for row in summary.iter_rows()
+            for cell in row
+            if cell.column == 1 and cell.value
+        ]
+        required_statuses = [
+            "missing",
+            "lost",
+            "stolen",
+            "retired",
+            "disposed",
+        ]
+        for status in required_statuses:
+            assert any(
+                status in v for v in col_a_values
+            ), f"Summary sheet missing row for status: {status}"
+
+    def test_export_summary_sheet_has_financial_totals(
+        self, admin_client, active_asset
+    ):
+        """S11.12 Step 4: Summary sheet has financial total rows.
+        Previously GAP #29b — confirmed working (XPASS)."""
+        from io import BytesIO
+
+        import openpyxl
+
+        resp = admin_client.get(reverse("assets:export_assets"))
+        assert resp.status_code == 200
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        assert "Summary" in wb.sheetnames, "No 'Summary' sheet in workbook"
+        summary = wb["Summary"]
+        col_a_values = [
+            str(cell.value or "").lower()
+            for row in summary.iter_rows()
+            for cell in row
+            if cell.column == 1 and cell.value
+        ]
+        financial_terms = ["purchase", "value", "total", "cost", "insurance"]
+        has_financial = any(
+            any(term in v for term in financial_terms) for v in col_a_values
+        )
+        assert has_financial, (
+            f"Summary sheet has no financial total rows."
+            f" Column A labels: {col_a_values}"
+        )
 
     @pytest.mark.xfail(
         strict=True,
@@ -1941,6 +2549,74 @@ class TestScenario_11_18_SearchAndHoldList:
         resp = client_logged_in.get(url, {"view": "grid"})
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #33a: Hold list add_item endpoint does not accept asset"
+            " name as search input (S2.16.4). The holdlist_add_item view"
+            " only accepts an asset PK ('asset_id') — not a name string."
+        ),
+    )
+    def test_hold_list_add_accepts_name_search(
+        self, dept_manager_client, hold_list, category, location, admin_user
+    ):
+        """S2.16.4: POST to hold list add with asset name (not PK) must
+        find and add the matching asset."""
+        from assets.models import HoldListItem
+
+        target = AssetFactory(
+            name="Unique Fairy Wings S33a",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:holdlist_add_item", args=[hold_list.pk])
+        resp = dept_manager_client.post(
+            url,
+            {
+                "search": "Unique Fairy Wings S33a",
+                "quantity": 1,
+            },
+        )
+        assert resp.status_code in (200, 302)
+        assert hold_list.items.filter(
+            asset=target
+        ).exists(), "Hold list add must accept asset name as search input"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #33b: Hold list add_item endpoint does not accept"
+            " barcode string as input (S2.16.4). The holdlist_add_item"
+            " view only accepts an asset PK ('asset_id')."
+        ),
+    )
+    def test_hold_list_add_accepts_barcode_scan(
+        self, dept_manager_client, hold_list, category, location, admin_user
+    ):
+        """S2.16.4: POST to hold list add with asset barcode string must
+        find and add the matching asset."""
+        target = AssetFactory(
+            name="Barcode Asset S33b",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:holdlist_add_item", args=[hold_list.pk])
+        resp = dept_manager_client.post(
+            url,
+            {
+                "barcode": target.barcode,
+                "quantity": 1,
+            },
+        )
+        assert resp.status_code in (200, 302)
+        assert hold_list.items.filter(
+            asset=target
+        ).exists(), "Hold list add must accept barcode string as input"
+
     def test_full_scenario_walkthrough(
         self,
         dept_manager_client,
@@ -2246,3 +2922,164 @@ class TestScenario_11_21_LocationCheckout:
             },
         )
         assert resp.status_code in (200, 302)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #17a: Location checkout skips-already-checked-out logic"
+            " not implemented (S2.12.4). The location_checkout URL does"
+            " not exist yet."
+        ),
+    )
+    def test_location_checkout_skips_already_checked_out_assets(
+        self,
+        dept_manager_client,
+        location,
+        category,
+        borrower_user,
+        user,
+        admin_user,
+    ):
+        """Checkout via location URL must exclude assets already checked
+        out to someone else — or show a warning."""
+        from django.urls import NoReverseMatch
+
+        checked_out_asset = AssetFactory(
+            name="Already Out Asset S21a",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        checked_out_asset.checked_out_to = user
+        checked_out_asset.save()
+
+        available_asset = AssetFactory(
+            name="Available Asset S21a",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+
+        try:
+            url = reverse("assets:location_checkout", args=[location.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #17: URL 'assets:location_checkout' does not exist."
+            )
+
+        resp = dept_manager_client.post(url, {"borrower": borrower_user.pk})
+        assert resp.status_code in (200, 302)
+        # Already-checked-out asset should NOT be re-checked-out
+        checked_out_asset.refresh_from_db()
+        assert (
+            checked_out_asset.checked_out_to == user
+        ), "Already checked-out asset should not be reassigned"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #17b: Location checkout has no confirmation step"
+            " (S2.12.4). The location_checkout URL does not exist yet."
+        ),
+    )
+    def test_location_checkout_requires_confirmation_step(
+        self, dept_manager_client, location
+    ):
+        """GET on location checkout URL must show a confirmation step
+        before executing the batch checkout."""
+        from django.urls import NoReverseMatch
+
+        try:
+            url = reverse("assets:location_checkout", args=[location.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #17: URL 'assets:location_checkout' does not exist."
+            )
+
+        resp = dept_manager_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "confirm" in content
+            or "checkout all" in content
+            or "proceed" in content
+        ), "Location checkout GET must show a confirmation step"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP #17c: No location check-in URL exists (S2.12.4)."),
+    )
+    def test_location_checkin_url_exists(self, dept_manager_client, location):
+        """The location_checkin URL must exist and respond (not 404)."""
+        from django.urls import NoReverseMatch
+
+        try:
+            url = reverse("assets:location_checkin", args=[location.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #17: URL 'assets:location_checkin' does not exist."
+            )
+
+        resp = dept_manager_client.get(url)
+        assert resp.status_code in (200, 302, 405)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #17d: Location checkout with no assets shows no"
+            " informational message (S2.12.4). URL not implemented."
+        ),
+    )
+    def test_location_checkout_empty_location_shows_informational_message(
+        self, dept_manager_client, db
+    ):
+        """When a location has no assets, the checkout response must
+        show an informational message — not an error or 500."""
+        from django.urls import NoReverseMatch
+
+        empty_loc = LocationFactory(name="Empty Location S21d")
+
+        try:
+            url = reverse("assets:location_checkout", args=[empty_loc.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #17: URL 'assets:location_checkout' does not exist."
+            )
+
+        resp = dept_manager_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "no assets" in content
+            or "empty" in content
+            or "nothing" in content
+        ), "Empty location checkout must show an informational message"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #17e: Location checkout has no permission check — viewer"
+            " should get 302/403 (S2.12.4). URL not implemented."
+        ),
+    )
+    def test_location_checkout_requires_dept_manager_or_admin(
+        self, viewer_client, location
+    ):
+        """A Viewer must receive 302 or 403 on the location checkout
+        URL — only Department Managers and admins may use it."""
+        from django.urls import NoReverseMatch
+
+        try:
+            url = reverse("assets:location_checkout", args=[location.pk])
+        except NoReverseMatch:
+            pytest.xfail(
+                "GAP #17: URL 'assets:location_checkout' does not exist."
+            )
+
+        resp = viewer_client.get(url)
+        assert resp.status_code in (302, 403), (
+            f"Viewer should be blocked from location checkout, got"
+            f" {resp.status_code}"
+        )

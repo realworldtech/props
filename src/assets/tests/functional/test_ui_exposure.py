@@ -844,6 +844,150 @@ class TestS12_16_SerialisedInventory:
             or b"Available" in resp.content
         )
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #18a: Asset list does not show available count 'X of Y'"
+            " for serialised assets (S2.17.1b-04). The asset list shows"
+            " generic quantity — no per-asset availability breakdown."
+        ),
+    )
+    def test_asset_list_shows_available_count_for_serialised(
+        self, admin_client, serialised_asset_with_units, borrower_user
+    ):
+        """S2.17.1b-04: Asset list must show available/total count for
+        serialised assets (e.g. '4 of 5' or 'Available: 4')."""
+        from assets.models import Transaction
+
+        asset = serialised_asset_with_units["asset"]
+        serials = serialised_asset_with_units["serials"]
+
+        # Check out one serial so available_count < total
+        serials[0].checked_out_to = borrower_user
+        serials[0].save()
+
+        resp = admin_client.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Expect something like "4 of 5" or "4/5" or "Available: 4"
+        assert (
+            "4 of 5" in content
+            or "4/5" in content
+            or "available" in content.lower()
+        ), "Asset list must show available/total count for serialised assets"
+
+    def test_asset_detail_shows_condition_summary(
+        self, admin_client, serialised_asset_with_units
+    ):
+        """S2.17.1b: Serialised asset detail shows per-condition summary.
+        Previously GAP #18b — confirmed working (XPASS)."""
+        asset = serialised_asset_with_units["asset"]
+        serials = serialised_asset_with_units["serials"]
+
+        # Set varying conditions
+        serials[0].condition = "good"
+        serials[0].save()
+        serials[1].condition = "fair"
+        serials[1].save()
+
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "good" in content or "fair" in content
+        ), "Serialised asset detail must show per-condition breakdown"
+        assert (
+            "condition" in content
+        ), "Serialised asset detail must show condition summary"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #18c: Checkout form for serialised asset has no"
+            " auto-assign toggle (S2.17.2-01). The form only offers"
+            " manual serial selection — no auto-assign option."
+        ),
+    )
+    def test_serialised_checkout_has_auto_assign_toggle(
+        self, admin_client, serialised_asset_with_units
+    ):
+        """S2.17.2-01: Serialised asset checkout form must include an
+        auto-assign toggle so staff can let the system pick units.
+        NOTE: the word 'auto' appears in the page but not as an
+        auto-assign feature — checking for dedicated toggle."""
+        asset = serialised_asset_with_units["asset"]
+        resp = admin_client.get(
+            reverse("assets:asset_checkout", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        # Must have a dedicated auto-assign toggle/button — not just 'auto'
+        # appearing anywhere in the page
+        assert (
+            "auto-assign" in content
+            or "autoassign" in content
+            or "auto_assign" in content
+            or ("auto" in content and "assign" in content)
+        ), "Serialised checkout must have auto-assign option"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #18d: Check-in form for serialised asset has no"
+            " per-serial condition field (S2.17.2-07). The asset_checkin"
+            " form does not include a condition input per serial."
+        ),
+    )
+    def test_checkin_form_has_per_serial_condition_field(
+        self, admin_client, serialised_asset_with_units, borrower_user
+    ):
+        """S2.17.2-07: Check-in form for a serialised asset must include
+        a per-serial condition input — not just a generic condition label
+        in the navigation or elsewhere."""
+        asset = serialised_asset_with_units["asset"]
+        serials = serialised_asset_with_units["serials"]
+
+        # Check out a serial first
+        serials[0].checked_out_to = borrower_user
+        serials[0].save()
+
+        resp = admin_client.get(
+            reverse("assets:asset_checkin", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Must have a form input (select/radio) named 'condition' for serials
+        assert (
+            'name="condition' in content
+            or "condition_" in content
+            or "serial-condition" in content.lower()
+        ), "Serialised check-in must include a per-serial condition input field"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #18e: No 'serial_add' URL exists (S2.17.1c). There is"
+            " no endpoint for adding individual serials to a serialised"
+            " asset from the frontend."
+        ),
+    )
+    def test_serial_add_url_exists(
+        self, admin_client, serialised_asset_with_units
+    ):
+        """S2.17.1c: A URL for adding individual serials must exist and
+        respond 200."""
+        from django.urls import NoReverseMatch
+
+        asset = serialised_asset_with_units["asset"]
+        try:
+            url = reverse("assets:serial_add", args=[asset.pk])
+        except NoReverseMatch:
+            pytest.xfail("GAP #18e: URL 'assets:serial_add' does not exist.")
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
 
 @pytest.mark.django_db
 class TestS12_17_AssetKits:
@@ -907,6 +1051,238 @@ class TestS12_17_AssetKits:
         )
         assert resp.status_code == 200
         assert kit_with_components["kit"].name.encode() in resp.content
+
+    def test_kit_checkout_template_shows_required_components(
+        self, admin_client, kit_with_components
+    ):
+        """S2.17.4-01: Kit checkout form shows required components.
+        Previously GAP #19a — confirmed working (XPASS)."""
+        kit = kit_with_components["kit"]
+        resp = admin_client.get(
+            reverse("assets:asset_checkout", args=[kit.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "required" in content or "dimmer pack" in content.lower()
+        ), "Kit checkout form must list required components"
+
+    def test_kit_checkout_template_shows_optional_components(
+        self, admin_client, kit_with_components
+    ):
+        """S2.17.4-01: Kit checkout form shows optional section.
+        Previously GAP #19b — confirmed working (XPASS)."""
+        from assets.models import AssetKit
+
+        kit = kit_with_components["kit"]
+        # Make one component optional
+        optional = kit_with_components["par_can"]
+        AssetKit.objects.filter(kit=kit, component=optional).update(
+            is_required=False
+        )
+
+        resp = admin_client.get(
+            reverse("assets:asset_checkout", args=[kit.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "optional" in content
+        ), "Kit checkout form must have an 'Optional' section/label"
+
+    def test_kit_checkin_url_exists_and_loads(
+        self, admin_client, kit_with_components, borrower_user
+    ):
+        """S2.17.4: The check-in page for a kit asset loads without error.
+        Previously GAP #19c — confirmed working (XPASS)."""
+        kit = kit_with_components["kit"]
+        kit.checked_out_to = borrower_user
+        kit.save()
+
+        resp = admin_client.get(reverse("assets:asset_checkin", args=[kit.pk]))
+        assert (
+            resp.status_code == 200
+        ), f"Kit check-in page returned {resp.status_code}"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #19d: Kit check-in form does not show a per-component"
+            " checklist (S2.17.4-04). The form renders but lists each"
+            " component name only generically — no checkbox per component."
+        ),
+    )
+    def test_kit_checkin_shows_component_checklist(
+        self, admin_client, kit_with_components, borrower_user
+    ):
+        """S2.17.4-04: Kit check-in form must show a dedicated per-component
+        checklist with checkboxes so staff can confirm each item was returned.
+        Generic mention of the kit word is not sufficient."""
+        kit = kit_with_components["kit"]
+        kit.checked_out_to = borrower_user
+        kit.save()
+
+        resp = admin_client.get(reverse("assets:asset_checkin", args=[kit.pk]))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        # Must have a dedicated component checklist with checkboxes
+        # (input[type=checkbox] related to each component)
+        assert 'type="checkbox"' in content and (
+            "dimmer" in content.lower() or "par can" in content.lower()
+        ), "Kit check-in must show per-component checkbox checklist"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #19e: No 'print kit labels' URL exists (S2.17.5)."
+            " There is no dedicated endpoint for printing labels for all"
+            " kit components at once."
+        ),
+    )
+    def test_kit_label_generation_url_exists(
+        self, admin_client, kit_with_components
+    ):
+        """S2.17.5: A 'print kit labels' URL must exist for printing
+        labels for a kit and all its components."""
+        from django.urls import NoReverseMatch
+
+        kit = kit_with_components["kit"]
+        url = None
+        for url_name in [
+            "assets:kit_labels",
+            "assets:kit_print_labels",
+            "assets:asset_kit_labels",
+        ]:
+            try:
+                url = reverse(url_name, args=[kit.pk])
+                break
+            except NoReverseMatch:
+                continue
+
+        if url is None:
+            pytest.xfail("GAP #19e: No kit label printing URL found.")
+
+        resp = admin_client.get(url)
+        assert resp.status_code in (200, 302, 405)
+
+
+@pytest.mark.django_db
+class TestS12_18_PublicListing:
+    """S12.18 -- Public Asset Listing (S2.18).
+
+    MoSCoW: COULD (S2.18 deferred to future scope per spec).
+    These tests document the gap — all marked xfail(strict=True).
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #20a: Public listing URL '/public/' does not exist"
+            " (S2.18.1). The feature is marked COULD/future scope but"
+            " the URL returns 404."
+        ),
+    )
+    def test_public_listing_loads_without_authentication(self, client):
+        """S2.18.1: /public/ must return 200 for anonymous users."""
+        from django.test import Client
+
+        anon = Client()
+        resp = anon.get("/public/")
+        assert (
+            resp.status_code == 200
+        ), f"/public/ returned {resp.status_code} — expected 200"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #20b: Public listing URL does not exist (S2.18.1-02)."
+            " Cannot verify public-only asset filtering."
+        ),
+    )
+    def test_public_listing_shows_only_public_assets(
+        self, client, category, location, admin_user
+    ):
+        """S2.18.1-02: Public listing must only show assets marked as
+        public — not private/default assets."""
+        from django.test import Client
+
+        from assets.factories import AssetFactory
+
+        # Create a public asset (is_public=True if field exists)
+        public_asset = AssetFactory(
+            name="Public Prop S20b",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        private_asset = AssetFactory(
+            name="Private Prop S20b",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+
+        # Try to set is_public on the public asset
+        if hasattr(public_asset, "is_public"):
+            public_asset.is_public = True
+            public_asset.save()
+        else:
+            pytest.xfail("GAP #20b: Asset model has no is_public field.")
+
+        anon = Client()
+        resp = anon.get("/public/")
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert (
+            "Public Prop S20b" in content
+        ), "Public listing must show public assets"
+        assert (
+            "Private Prop S20b" not in content
+        ), "Public listing must not show private assets"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #20c: Public listing URL does not exist (S2.18.1-03)."
+            " Cannot verify sensitive field hiding."
+        ),
+    )
+    def test_public_listing_hides_sensitive_fields(
+        self, client, category, location, borrower_user, admin_user
+    ):
+        """S2.18.1-03: Public listing must not reveal borrower names
+        or private/internal notes."""
+        from django.test import Client
+
+        from assets.factories import AssetFactory
+
+        asset = AssetFactory(
+            name="Public Asset S20c",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        asset.notes = "Internal staff note — confidential"
+        asset.checked_out_to = borrower_user
+        if hasattr(asset, "is_public"):
+            asset.is_public = True
+        asset.save()
+
+        anon = Client()
+        resp = anon.get("/public/")
+        if resp.status_code != 200:
+            pytest.xfail("GAP #20c: /public/ does not return 200.")
+        content = resp.content.decode()
+        assert (
+            "Internal staff note" not in content
+        ), "Public listing must not show internal notes"
+        borrower_name = borrower_user.display_name or borrower_user.username
+        assert (
+            borrower_name not in content
+        ), "Public listing must not show borrower names"
 
 
 @pytest.mark.django_db

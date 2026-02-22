@@ -307,6 +307,57 @@ class TestUS_XA_007_PreventConcurrentCheckout:
     @pytest.mark.xfail(
         strict=True,
         reason=(
+            "GAP #34b: Concurrent checkout error message does not suggest"
+            " refreshing (S11.15 Steps 4-5). The error response provides"
+            " no guidance to the user about what to do next."
+        ),
+    )
+    def test_concurrent_checkout_error_suggests_refresh(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        second_user,
+        location,
+    ):
+        """S11.15 Steps 4-5: After a rejected second checkout, the
+        response must contain 'refresh' or similar guidance."""
+        url = reverse("assets:asset_checkout", args=[active_asset.pk])
+
+        # First checkout succeeds
+        admin_client.post(
+            url,
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        active_asset.refresh_from_db()
+        assert active_asset.checked_out_to == borrower_user
+
+        # Second checkout attempt — error must suggest refresh
+        resp = admin_client.post(
+            url,
+            {
+                "borrower": second_user.pk,
+                "destination_location": location.pk,
+            },
+            follow=True,
+        )
+        content = resp.content.decode().lower()
+        assert (
+            "refresh" in content
+            or "reload" in content
+            or "try again" in content
+            or "already checked out" in content
+        ), (
+            "Concurrent checkout error should suggest refreshing or"
+            " provide guidance to the user"
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
             "GAP #34: Concurrent checkout error message doesn't name the"
             " current borrower (S11.15 Steps 4-5). The rejection message"
             " is generic and does not identify who has the asset."

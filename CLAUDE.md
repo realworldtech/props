@@ -154,13 +154,50 @@ Spec documents are expected at `docs/spec/` in the working tree. If the spec rep
 ## Testing
 
 - pytest with `pytest-django`; config in `pyproject.toml` (`DJANGO_SETTINGS_MODULE = "props.settings"`)
-- Test files: `src/assets/tests.py`, `src/accounts/tests.py`, `src/props/tests.py`
-- Shared fixtures in `src/conftest.py` — provides `user`, `admin_user`, `member_user`, `viewer_user`, `client_logged_in`, `admin_client`, `department`, `category`, `location`, `asset`, etc.
+- **Test layout** (reorganised Feb 2026):
+  - `src/assets/tests/` — 12 feature-grouped unit/integration test files
+  - `src/accounts/tests/` — 4 files (auth, registration, profile, admin)
+  - `src/props/tests/` — 3 files (branding, infrastructure, non-functional)
+  - `src/assets/tests/functional/` — behavioural tests derived from S10/S11/S12 spec sections
+- Shared fixtures in `src/conftest.py` — provides `user`, `admin_user`, `member_user`, `viewer_user`, `client_logged_in`, `admin_client`, `dept_manager_client`, `department`, `category`, `location`, `asset`, hold list fixtures, etc.
+- Functional test fixtures in `src/assets/tests/functional/conftest.py` — scenario-level fixtures (`active_asset`, `borrower_user`, `warehouse`, `serialised_asset_with_units`, `kit_with_components`, etc.)
 - Tests use local filesystem storage (S3 overridden in conftest.py)
 - Target 80%+ test coverage
 - **Test-driven development is mandatory.** For every change: (1) write the test first, (2) run it with `pytest` and verify it fails, (3) implement the code, (4) run the test again and verify it passes. Do not skip the red-green cycle — the failing test must be executed, not just written.
 - **Tests must pass in both environments.** After implementation, run `pytest` locally (venv) and also inside Docker with `docker compose exec web pytest`. If Docker is not running, ask the user to start it — do not skip the Docker verification.
 - **Bug fix workflow.** When fixing a bug, always start by asking: "why didn't we catch this in testing?" Then, before writing any fix: (1) write a test that reproduces the bug, (2) run it and confirm it fails, (3) fix the bug, (4) run the test and confirm it passes. The bug is usually an edge case we hadn't considered — the test ensures we don't regress. Only skip the reproduction test if the bug genuinely cannot be tested (e.g. infrastructure-only issue), and note why.
+
+### Functional test rules (S10/S11/S12 coverage)
+
+The functional suite in `src/assets/tests/functional/` documents spec compliance. When writing or reviewing these tests, apply these rules:
+
+**Test one acceptance criterion per test method — not one feature per test.**
+Each user story (US-SA-xxx, US-DM-xxx, etc.) lists several acceptance criteria. Every acceptance criterion needs its own `test_` method. A test that only checks `response.status_code == 200` is not covering an acceptance criterion — it is only checking that the URL exists.
+
+**The "sub-behaviour" trap.** The most common gap pattern in this codebase is:
+> The feature exists and loads correctly, but a specific sub-behaviour required by the spec is wrong or missing.
+
+Examples from audit (Feb 2026): hold list count computed but not rendered in template (#21); stocktake query includes parent location but not child locations (#22); checkout form shows `quantity` as max instead of `available_count` (#25); concurrent checkout error message doesn't name the current borrower (#34).
+
+These are never caught by "does the page load?" tests. For every acceptance criterion that says the UI *shows*, *displays*, *includes*, *names*, or *requires*, write a test that asserts the specific content or constraint — not just HTTP 200.
+
+**Write both positive and negative tests.**
+- Positive: the feature works for the valid case
+- Negative/boundary: the feature correctly rejects or handles the edge case
+
+**Spec-gap tests use `xfail(strict=True)`.**
+When you write a test that documents a known gap (feature missing or broken), mark it:
+```python
+@pytest.mark.xfail(strict=True, reason="GAP #N: one-line description (spec ref)")
+```
+`strict=True` means if the app is fixed and the test starts passing, pytest will report it as XPASS and flag it for promotion to a normal test. Do not use `xfail` without `strict=True`.
+
+**Spec-gap audit cycle.**
+After any significant implementation work, run:
+```bash
+.venv/bin/pytest src/assets/tests/functional/ -v --no-cov --tb=no -q 2>&1 | grep -c "xfail"
+```
+Then cross-reference the open `spec-gap` GitHub issues against the xfail list. For any open issue with no corresponding xfail test, add one. For any xfail test that now passes (XPASS), close the issue and promote the test.
 
 ## Dependencies
 

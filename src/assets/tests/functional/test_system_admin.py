@@ -2312,3 +2312,76 @@ class TestUS_SA_071_HandleAISuggestionNewCategoryOrDept:
             reverse("assets:asset_detail", args=[active_asset.pk])
         )
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# §10A.x Asset Type on Edit Form (Issue #26)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_138_AssetTypeOnEditForm:
+    """US-SA-138: Asset type (serialised / kit) accessible from edit form.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.17.1d, S2.2.7
+    UI Surface: /assets/<pk>/edit/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #26a: Asset edit form does not include asset type section"
+            " (S2.17.1d). The edit form has no 'asset type', 'serialised',"
+            " or 'is_kit' fields — type cannot be changed on the edit form."
+        ),
+    )
+    def test_edit_form_contains_asset_type_section(
+        self, admin_client, active_asset
+    ):
+        """S2.17.1d: The asset edit page must expose an 'asset type'
+        section showing whether the asset is standard, serialised, or a
+        kit — so staff can see the type context while editing."""
+        resp = admin_client.get(
+            reverse("assets:asset_edit", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "asset type" in content
+            or "serialised" in content
+            or "is_kit" in content
+            or "is_serialised" in content
+        ), (
+            "Asset edit form must include asset type section"
+            " ('asset type', 'serialised', or 'is_kit')"
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP #26b: Asset edit form does not include a link or section"
+            " pointing to the serialisation conversion page (S2.17.1d)."
+            " The conversion URL exists but is not reachable from the edit"
+            " form."
+        ),
+    )
+    def test_edit_form_contains_conversion_access(
+        self, admin_client, active_asset
+    ):
+        """S2.17.1d: The asset edit page must include a link or section
+        that navigates to the serialisation conversion page."""
+        resp = admin_client.get(
+            reverse("assets:asset_edit", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        # The conversion URL pattern or label should appear
+        assert (
+            "convert" in content
+            or "serialis" in content
+            or "serializ" in content
+        ), (
+            "Asset edit form must include access to conversion page"
+            " (a link or section mentioning conversion/serialisation)"
+        )
