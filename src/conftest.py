@@ -34,6 +34,19 @@ settings.CHANNEL_LAYERS = {
 # Shorten print service auth timeout for fast tests (default 30s)
 settings.PRINT_SERVICE_AUTH_TIMEOUT = 0.5
 
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Clear the in-memory cache before each test.
+
+    Prevents rate-limit counters (django_ratelimit) from bleeding
+    across tests, which causes flaky failures under pytest-xdist.
+    """
+    from django.core.cache import cache
+
+    cache.clear()
+
+
 from assets.factories import (  # noqa: E402
     AssetFactory,
     AssetSerialFactory,
