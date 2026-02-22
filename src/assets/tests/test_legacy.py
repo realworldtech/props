@@ -17827,12 +17827,12 @@ class TestV611DockerHealthChecks:
     def _compose_path():
         from pathlib import Path
 
-        p = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        p = Path(__file__).parent.parent.parent.parent / "docker-compose.yml"
         return p if p.exists() else None
 
     @pytest.mark.skipif(
         not (
-            __import__("pathlib").Path(__file__).parent.parent.parent
+            __import__("pathlib").Path(__file__).parent.parent.parent.parent
             / "docker-compose.yml"
         ).exists(),
         reason="docker-compose.yml not available",
@@ -17842,7 +17842,9 @@ class TestV611DockerHealthChecks:
         import re
         from pathlib import Path
 
-        compose = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        compose = (
+            Path(__file__).parent.parent.parent.parent / "docker-compose.yml"
+        )
         content = compose.read_text()
         match = re.search(
             r"^\s{2}web:\s*\n((?:\s{4,}.+\n)*)",
@@ -17856,7 +17858,7 @@ class TestV611DockerHealthChecks:
 
     @pytest.mark.skipif(
         not (
-            __import__("pathlib").Path(__file__).parent.parent.parent
+            __import__("pathlib").Path(__file__).parent.parent.parent.parent
             / "docker-compose.yml"
         ).exists(),
         reason="docker-compose.yml not available",
@@ -17866,7 +17868,9 @@ class TestV611DockerHealthChecks:
         import re
         from pathlib import Path
 
-        compose = Path(__file__).parent.parent.parent / "docker-compose.yml"
+        compose = (
+            Path(__file__).parent.parent.parent.parent / "docker-compose.yml"
+        )
         content = compose.read_text()
         match = re.search(
             r"^\s{2}celery-worker:\s*\n((?:\s{4,}.+\n)*)",

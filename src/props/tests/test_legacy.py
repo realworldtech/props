@@ -629,7 +629,7 @@ class TestBrandColourPropagation:
         not a colour) is permitted."""
         from pathlib import Path
 
-        templates_dir = Path(__file__).parent.parent / "templates"
+        templates_dir = Path(__file__).parent.parent.parent / "templates"
         violations = []
         for html_file in sorted(templates_dir.rglob("*.html")):
             rel = str(html_file.relative_to(templates_dir))
@@ -652,7 +652,9 @@ class TestBrandColourPropagation:
         import re
         from pathlib import Path
 
-        input_css = Path(__file__).parent.parent / "tailwind" / "input.css"
+        input_css = (
+            Path(__file__).parent.parent.parent / "tailwind" / "input.css"
+        )
         content = input_css.read_text()
 
         # Split into @theme block and the rest
@@ -880,7 +882,7 @@ def _compose_file():
     """
     from pathlib import Path
 
-    path = Path(__file__).parent.parent.parent / "docker-compose.yml"
+    path = Path(__file__).parent.parent.parent.parent / "docker-compose.yml"
     return path if path.exists() else None
 
 
@@ -1042,7 +1044,7 @@ class TestDeploymentConstraints:
         """V690, V628: pip-tools dependency management."""
         from pathlib import Path
 
-        req_in = Path(__file__).parent.parent.parent / "requirements.in"
+        req_in = Path(__file__).parent.parent.parent.parent / "requirements.in"
         assert req_in.exists()
         content = req_in.read_text()
         assert "Django" in content
@@ -1058,7 +1060,7 @@ class TestDeploymentConstraints:
         """V694: AGPL-3.0 license."""
         from pathlib import Path
 
-        license_file = Path(__file__).parent.parent.parent / "LICENSE"
+        license_file = Path(__file__).parent.parent.parent.parent / "LICENSE"
         assert license_file.exists()
         content = license_file.read_text()
         assert "GNU AFFERO GENERAL PUBLIC LICENSE" in content
@@ -1160,7 +1162,9 @@ class TestAccessibilityAndCodeQuality:
         """V907: Code quality tools configured."""
         from pathlib import Path
 
-        pyproject = Path(__file__).parent.parent.parent / "pyproject.toml"
+        pyproject = (
+            Path(__file__).parent.parent.parent.parent / "pyproject.toml"
+        )
         assert pyproject.exists()
         content = pyproject.read_text()
         assert "[tool.black]" in content
@@ -1273,7 +1277,7 @@ class TestDarkModeTemplateCompliance:
         import re
         from pathlib import Path
 
-        templates_dir = Path(__file__).parent.parent / "templates"
+        templates_dir = Path(__file__).parent.parent.parent / "templates"
         violations = []
 
         for html_file in sorted(templates_dir.rglob("*.html")):
@@ -1315,7 +1319,10 @@ class TestTailwindCSSBuild:
         from pathlib import Path
 
         static_input = (
-            Path(__file__).parent.parent / "static" / "css" / "input.css"
+            Path(__file__).parent.parent.parent
+            / "static"
+            / "css"
+            / "input.css"
         )
         assert not static_input.exists(), (
             "input.css must not be in static/css/ — "
@@ -1328,7 +1335,7 @@ class TestTailwindCSSBuild:
         from pathlib import Path
 
         tailwind_input = (
-            Path(__file__).parent.parent / "tailwind" / "input.css"
+            Path(__file__).parent.parent.parent / "tailwind" / "input.css"
         )
         assert (
             tailwind_input.exists()
@@ -1339,7 +1346,10 @@ class TestTailwindCSSBuild:
         from pathlib import Path
 
         compiled = (
-            Path(__file__).parent.parent / "static" / "css" / "tailwind.css"
+            Path(__file__).parent.parent.parent
+            / "static"
+            / "css"
+            / "tailwind.css"
         )
         assert compiled.exists(), (
             "Compiled tailwind.css missing from static/css/ — "

@@ -2494,9 +2494,8 @@ class TestUserRoleContextProcessor:
     def test_context_processor_returns_role(self, db):
         from django.test import RequestFactory
 
+        from accounts.models import CustomUser
         from props.context_processors import user_role
-
-        from .models import CustomUser
 
         user = CustomUser.objects.create_user(
             username="ctx_user",
@@ -2530,9 +2529,8 @@ class TestUserRoleContextProcessor:
         from django.contrib.auth.models import Group
         from django.test import RequestFactory
 
+        from accounts.models import CustomUser
         from props.context_processors import user_role
-
-        from .models import CustomUser
 
         user = CustomUser.objects.create_user(
             username="ctx_member",
