@@ -2636,10 +2636,6 @@ class TestBorrowerRole:
 
     def test_borrower_cannot_login(self, client, db, password):
         from django.contrib.auth.models import Group
-        from django.core.cache import cache
-
-        # Clear ratelimit cache so earlier login tests don't block us
-        cache.clear()
 
         group, _ = Group.objects.get_or_create(name="Borrower")
         borrower_user = User.objects.create_user(
