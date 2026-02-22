@@ -12,3 +12,4 @@ per-file-ignores =
     src/assets/tests/test_*.py:F401,F811,E402
     src/accounts/tests/test_*.py:F401,F811,E402
     src/props/tests/test_*.py:F401,F811,E402
+    src/assets/tests/functional/*.py:F401,F811,E402,F841,E501
