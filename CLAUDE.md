@@ -199,6 +199,43 @@ After any significant implementation work, run:
 ```
 Then cross-reference the open `spec-gap` GitHub issues against the xfail list. For any open issue with no corresponding xfail test, add one. For any xfail test that now passes (XPASS), close the issue and promote the test.
 
+### Form submission testing — Issue #5 pattern (REQUIRED)
+
+Any test that submits a form **must** extract field names and values from the rendered HTML, not hardcode them. Hardcoded POST payloads bypass the template→view contract and let silent regressions through undetected.
+
+**Wrong pattern (violates #5):**
+```python
+resp = client.post(url, {"borrower": borrower.pk, "destination_location": location.pk})
+```
+
+**Correct pattern (round-trip):**
+```python
+# 1. GET the form
+get_resp = client.get(url)
+assert get_resp.status_code == 200
+
+# 2. Extract actual form field names/values from the rendered HTML
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(get_resp.content, "html.parser")
+form = soup.find("form")
+# Build POST data from the rendered form — update only the fields you want to change
+post_data = {
+    inp["name"]: inp.get("value", "")
+    for inp in form.find_all(["input", "select", "textarea"])
+    if inp.get("name")
+}
+post_data["borrower"] = borrower.pk  # override specific field
+
+# 3. POST the extracted data
+resp = client.post(url, post_data)
+```
+
+The reference implementation is `TestApprovalFormTemplateIntegration` in `src/accounts/tests/test_registration.py`. BeautifulSoup is available in the test environment (`pip install beautifulsoup4`).
+
+**Scope:** Apply the round-trip pattern to any test that verifies form submission *behaviour* (state changes, transactions created, etc.). Tests that deliberately probe arbitrary view input handling (e.g. security boundary tests) may hardcode payloads — but must note why.
+
+**Audit rule:** When spec-coverage auditing, flag any test that POSTs hardcoded form data for a state-changing operation as a `#5-violation` requiring upgrade to the round-trip pattern.
+
 ## Dependencies
 
 - Dependencies are managed with `pip-tools`: edit `requirements.in`, then compile with `pip-compile requirements.in` to regenerate `requirements.txt`.
