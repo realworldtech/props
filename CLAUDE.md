@@ -25,7 +25,7 @@ docker compose --profile prod up -d
 docker compose exec web pytest
 
 # Run a single test
-pytest src/assets/tests.py::TestClassName::test_method_name
+pytest src/assets/tests/test_views.py::TestClassName::test_method_name
 
 # Coverage
 coverage run -m pytest && coverage report
@@ -169,72 +169,20 @@ Spec documents are expected at `docs/spec/` in the working tree. If the spec rep
 
 ### Functional test rules (S10/S11/S12 coverage)
 
-The functional suite in `src/assets/tests/functional/` documents spec compliance. When writing or reviewing these tests, apply these rules:
+- **One `test_` method per acceptance criterion**, not per feature. `status_code == 200` is not coverage.
+- **Sub-behaviour trap:** a feature can exist and load correctly while a required sub-behaviour is missing (value computed but not rendered; constraint enforced server-side but wrong value in form; error message too vague). For every criterion that says the UI *shows/displays/includes/names/requires*, assert that specific content — not just HTTP 200.
+- Write a **positive test** (valid case works) and a **negative/boundary test** (invalid case is rejected) for each criterion.
+- **Known gaps:** `@pytest.mark.xfail(strict=True, reason="GAP #N: description (spec ref)")`. `strict=True` is mandatory — XPASS means the gap is closed and the test needs promotion to a regular test.
+- **Spec-gap audit cycle:** after significant implementation, run `pytest src/assets/tests/functional/ -v --no-cov -q 2>&1 | grep -c xfail` and cross-reference open `spec-gap` GitHub issues. Add xfail tests for any uncovered open issue; promote any XPASS tests and close the corresponding issue.
+- **Full coverage audit:** start from the spec sections (S10a/b/c/d, S11, S12), enumerate every `- [ ]` acceptance criterion bullet, and verify each has a corresponding test. Do not start from the issue list — that only covers known gaps.
 
-**Test one acceptance criterion per test method — not one feature per test.**
-Each user story (US-SA-xxx, US-DM-xxx, etc.) lists several acceptance criteria. Every acceptance criterion needs its own `test_` method. A test that only checks `response.status_code == 200` is not covering an acceptance criterion — it is only checking that the URL exists.
+### Form submission testing — Issue #5 (REQUIRED)
 
-**The "sub-behaviour" trap.** The most common gap pattern in this codebase is:
-> The feature exists and loads correctly, but a specific sub-behaviour required by the spec is wrong or missing.
+Any test verifying a state-changing form submission **must** use the round-trip pattern: GET the form, parse the rendered HTML with stdlib `html.parser` to extract actual field names/values, then POST those extracted values. Never hardcode form field names — they bypass the template→view contract and allow silent regressions when either side changes.
 
-Examples from audit (Feb 2026): hold list count computed but not rendered in template (#21); stocktake query includes parent location but not child locations (#22); checkout form shows `quantity` as max instead of `available_count` (#25); concurrent checkout error message doesn't name the current borrower (#34).
+Reference implementation: `TestApprovalFormTemplateIntegration` in `src/accounts/tests/test_registration.py`.
 
-These are never caught by "does the page load?" tests. For every acceptance criterion that says the UI *shows*, *displays*, *includes*, *names*, or *requires*, write a test that asserts the specific content or constraint — not just HTTP 200.
-
-**Write both positive and negative tests.**
-- Positive: the feature works for the valid case
-- Negative/boundary: the feature correctly rejects or handles the edge case
-
-**Spec-gap tests use `xfail(strict=True)`.**
-When you write a test that documents a known gap (feature missing or broken), mark it:
-```python
-@pytest.mark.xfail(strict=True, reason="GAP #N: one-line description (spec ref)")
-```
-`strict=True` means if the app is fixed and the test starts passing, pytest will report it as XPASS and flag it for promotion to a normal test. Do not use `xfail` without `strict=True`.
-
-**Spec-gap audit cycle.**
-After any significant implementation work, run:
-```bash
-.venv/bin/pytest src/assets/tests/functional/ -v --no-cov --tb=no -q 2>&1 | grep -c "xfail"
-```
-Then cross-reference the open `spec-gap` GitHub issues against the xfail list. For any open issue with no corresponding xfail test, add one. For any xfail test that now passes (XPASS), close the issue and promote the test.
-
-### Form submission testing — Issue #5 pattern (REQUIRED)
-
-Any test that submits a form **must** extract field names and values from the rendered HTML, not hardcode them. Hardcoded POST payloads bypass the template→view contract and let silent regressions through undetected.
-
-**Wrong pattern (violates #5):**
-```python
-resp = client.post(url, {"borrower": borrower.pk, "destination_location": location.pk})
-```
-
-**Correct pattern (round-trip):**
-```python
-# 1. GET the form
-get_resp = client.get(url)
-assert get_resp.status_code == 200
-
-# 2. Extract actual form field names/values from the rendered HTML
-from bs4 import BeautifulSoup
-soup = BeautifulSoup(get_resp.content, "html.parser")
-form = soup.find("form")
-# Build POST data from the rendered form — update only the fields you want to change
-post_data = {
-    inp["name"]: inp.get("value", "")
-    for inp in form.find_all(["input", "select", "textarea"])
-    if inp.get("name")
-}
-post_data["borrower"] = borrower.pk  # override specific field
-
-# 3. POST the extracted data
-resp = client.post(url, post_data)
-```
-
-The reference implementation is `TestApprovalFormTemplateIntegration` in `src/accounts/tests/test_registration.py`. BeautifulSoup is available in the test environment (`pip install beautifulsoup4`).
-
-**Scope:** Apply the round-trip pattern to any test that verifies form submission *behaviour* (state changes, transactions created, etc.). Tests that deliberately probe arbitrary view input handling (e.g. security boundary tests) may hardcode payloads — but must note why.
-
-**Audit rule:** When spec-coverage auditing, flag any test that POSTs hardcoded form data for a state-changing operation as a `#5-violation` requiring upgrade to the round-trip pattern.
+Exception: security boundary tests that deliberately probe arbitrary view input may hardcode payloads, but must comment why.
 
 ## Dependencies
 
