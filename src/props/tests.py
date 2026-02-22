@@ -4,7 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from django.conf import settings
 from django.core.cache import cache
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
 from props.colors import (
@@ -1410,3 +1412,28 @@ class TestMigrations:
                 f"Missing migrations detected: {out.getvalue()}"
                 f"\nRun: python manage.py makemigrations"
             )
+
+
+# ============================================================
+# APP_VERSION SETTING AND CONTEXT PROCESSOR TESTS
+# ============================================================
+
+
+class VersionSettingsTest(TestCase):
+    def test_app_version_setting_exists(self):
+        """APP_VERSION should exist and be a non-empty string."""
+        self.assertTrue(hasattr(settings, "APP_VERSION"))
+        self.assertIsInstance(settings.APP_VERSION, str)
+        self.assertGreater(len(settings.APP_VERSION), 0)
+
+
+class VersionContextProcessorTest(TestCase):
+    def test_app_version_in_site_settings_context(self):
+        """site_settings context processor should include app_version."""
+        from props.context_processors import site_settings
+
+        factory = RequestFactory()
+        request = factory.get("/")
+        context = site_settings(request)
+        self.assertIn("app_version", context)
+        self.assertIsInstance(context["app_version"], str)

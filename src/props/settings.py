@@ -13,6 +13,11 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
 
+# Application version (CalVer YYYY.MM.PATCH)
+# Set via APP_VERSION env var (baked into Docker image at build time).
+# Falls back to "dev" for local development.
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
 ALLOWED_HOSTS = [
     h.strip()
     for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")

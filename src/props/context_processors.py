@@ -61,6 +61,7 @@ def site_settings(request):
         "brand_css_properties": brand_css,
         "logo_url": logo_url,
         "color_mode": color_mode,
+        "app_version": settings.APP_VERSION,
     }
 
 
