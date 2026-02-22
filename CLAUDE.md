@@ -203,3 +203,9 @@ assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp
 
 - Dependencies are managed with `pip-tools`: edit `requirements.in`, then compile with `pip-compile requirements.in` to regenerate `requirements.txt`.
 - **Always regenerate `requirements.txt`** after adding or changing entries in `requirements.in`. Never commit a modified `requirements.in` without an updated `requirements.txt` to match.
+
+## Plan Execution Notes
+
+- **Background agents cannot run Bash.** Plans that assume parallel background agents will execute shell commands fail silently. Use a single approved script instead of parallel agent dispatch for any shell-based work.
+- **N-files operations → one script.** For repetitive "run this command on each of N files" tasks, write a script and approve it once. Faster, consistent output, one approval.
+- **Single-session synthesis → collapse steps.** Multi-step synthesis tasks (cross-reference → write → validate → assemble) can be done in one pass when working in a single session. The step breakdown only matters for handoffs between sessions or people.
