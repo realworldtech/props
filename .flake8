@@ -9,3 +9,4 @@ exclude =
 per-file-ignores =
     src/conftest.py:F401,E402
     src/props/settings.py:E402,F541
+    src/assets/tests/test_*.py:F401,F811,E402

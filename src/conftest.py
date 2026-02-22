@@ -300,3 +300,102 @@ def kit_component(kit_asset, asset):
         quantity=1,
         is_required=True,
     )
+
+
+# --- Hold list fixtures ---
+
+
+@pytest.fixture
+def hold_list_status(db):
+    from assets.models import HoldListStatus
+
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Draft",
+        defaults={"is_default": True, "sort_order": 10},
+    )
+    return status
+
+
+@pytest.fixture
+def hold_list(hold_list_status, department, admin_user):
+    from assets.models import HoldList
+
+    return HoldList.objects.create(
+        name="Show Hold",
+        department=department,
+        status=hold_list_status,
+        start_date="2026-03-01",
+        end_date="2026-03-31",
+        created_by=admin_user,
+    )
+
+
+@pytest.fixture
+def active_hold_status(db):
+    """Non-terminal hold list status."""
+    from assets.models import HoldListStatus
+
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Confirmed",
+        defaults={"is_default": False, "is_terminal": False, "sort_order": 20},
+    )
+    return status
+
+
+@pytest.fixture
+def terminal_hold_status(db):
+    """Terminal hold list status."""
+    from assets.models import HoldListStatus
+
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Fulfilled",
+        defaults={"is_default": False, "is_terminal": True, "sort_order": 40},
+    )
+    return status
+
+
+@pytest.fixture
+def active_hold_list(active_hold_status, department, user):
+    """An active (non-terminal) hold list."""
+    from assets.models import HoldList
+
+    return HoldList.objects.create(
+        name="Show Hold List",
+        status=active_hold_status,
+        department=department,
+        created_by=user,
+        start_date="2026-01-01",
+        end_date="2026-12-31",
+    )
+
+
+@pytest.fixture
+def _seed_holdlist_statuses(db):
+    """Seed hold list statuses for tests that need them."""
+    from django.core.management import call_command
+
+    call_command("seed_holdlist_statuses")
+
+
+@pytest.fixture
+def hl_active_status(db):
+    """Non-terminal hold list status for VV tests."""
+    from assets.models import HoldListStatus
+
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Draft",
+        defaults={"is_default": True, "is_terminal": False, "sort_order": 10},
+    )
+    return status
+
+
+@pytest.fixture
+def hl_terminal_status(db):
+    """Terminal hold list status for VV tests."""
+    from assets.models import HoldListStatus
+
+    status, _ = HoldListStatus.objects.get_or_create(
+        name="Fulfilled",
+        defaults={"is_default": False, "is_terminal": True, "sort_order": 40},
+    )
+    return status
