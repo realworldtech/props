@@ -1437,3 +1437,23 @@ class VersionContextProcessorTest(TestCase):
         context = site_settings(request)
         self.assertIn("app_version", context)
         self.assertIsInstance(context["app_version"], str)
+
+
+class VersionFooterTest(TestCase):
+    def test_version_shown_in_footer_for_authenticated_user(self):
+        """Footer should display the app version for logged-in users."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        User.objects.create_user(
+            username="footertest",
+            email="footer@test.com",
+            password="testpass123",
+        )
+        self.client.login(username="footertest", password="testpass123")
+        response = self.client.get("/")
+        # Follow redirects to reach a page with the footer
+        if response.status_code == 302:
+            response = self.client.get(response.url)
+        content = response.content.decode()
+        self.assertIn(settings.APP_VERSION, content)

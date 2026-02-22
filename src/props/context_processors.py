@@ -65,6 +65,11 @@ def site_settings(request):
     }
 
 
+def unfold_environment(request):
+    """Return version string for Unfold admin environment badge."""
+    return f"v{settings.APP_VERSION}"
+
+
 def user_role(request):
     """Expose the current user's role and capability flags to templates."""
     user = getattr(request, "user", None)

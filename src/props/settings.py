@@ -316,6 +316,7 @@ UNFOLD = {
     "SITE_TITLE": SITE_NAME,
     "SITE_HEADER": SITE_SHORT_NAME,
     "SITE_SYMBOL": "inventory_2",
+    "ENVIRONMENT": "props.context_processors.unfold_environment",
     "SITE_LOGO": "props.branding.get_site_logo",
     "SITE_FAVICONS": "props.branding.get_site_favicons",
     "COLORS": {
