@@ -27,6 +27,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
+ENV APP_VERSION=${APP_VERSION}
+
 WORKDIR /app
 
 # Install system dependencies
@@ -63,5 +67,9 @@ USER appuser
 EXPOSE 8000
 
 WORKDIR /app/src
+
+LABEL org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/realworldtech/props" \
+      org.opencontainers.image.revision="${GIT_COMMIT}"
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "props.wsgi:application"]
