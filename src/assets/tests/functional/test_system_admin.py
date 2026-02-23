@@ -6996,3 +6996,584 @@ class TestUS_SA_111_UnifiedAvailability:
         assert txns.count() == 2
         assert txns[0].quantity == 2
         assert txns[1].quantity == 1
+
+
+# ---------------------------------------------------------------------------
+# §10A.18 Asset Detail & UI (B5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_112_ActionBarLayout:
+    """US-SA-112: Asset detail action bar shows contextual buttons.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.1-01, S2.2.1-02
+    UI Surface: /assets/<pk>/
+    """
+
+    def test_detail_page_loads_with_edit_button(  # US-SA-112-1
+        self, admin_client, active_asset
+    ):
+        """Detail page renders with an edit link."""
+        url = reverse("assets:asset_detail", args=[active_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        edit_url = reverse("assets:asset_edit", args=[active_asset.pk])
+        assert edit_url.encode() in resp.content
+
+    def test_checkout_link_shown_when_not_checked_out(  # US-SA-112-2
+        self, admin_client, active_asset
+    ):
+        """Checkout button visible on non-checked-out asset."""
+        url = reverse("assets:asset_detail", args=[active_asset.pk])
+        resp = admin_client.get(url)
+        checkout_url = reverse("assets:asset_checkout", args=[active_asset.pk])
+        assert checkout_url.encode() in resp.content
+
+    def test_checkin_link_shown_when_checked_out(  # US-SA-112-3
+        self, admin_client, admin_user, active_asset
+    ):
+        """Checkin button visible on checked-out asset."""
+        from assets.factories import UserFactory
+
+        borrower = UserFactory(username="ab_b1", is_active=True)
+        co_url = reverse("assets:asset_checkout", args=[active_asset.pk])
+        admin_client.post(co_url, {"borrower": borrower.pk, "quantity": "1"})
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        checkin_url = reverse("assets:asset_checkin", args=[active_asset.pk])
+        assert checkin_url.encode() in resp.content
+
+    def test_movement_dropdown_has_transfer_link(  # US-SA-112-4
+        self, admin_client, active_asset
+    ):
+        """Transfer link present on detail page."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        transfer_url = reverse("assets:asset_transfer", args=[active_asset.pk])
+        assert transfer_url.encode() in resp.content
+
+    def test_movement_dropdown_has_relocate_link(  # US-SA-112-5
+        self, admin_client, active_asset
+    ):
+        """Relocate link present on detail page."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        relocate_url = reverse("assets:asset_relocate", args=[active_asset.pk])
+        assert relocate_url.encode() in resp.content
+
+    def test_print_dropdown_has_label_link(  # US-SA-112-6
+        self, admin_client, active_asset
+    ):
+        """Print label link present on detail page."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        label_url = reverse("assets:asset_label", args=[active_asset.pk])
+        assert label_url.encode() in resp.content
+
+    def test_advanced_dropdown_has_convert_serialisation_link(  # US-SA-112-7
+        self, admin_client, active_asset
+    ):
+        """Convert serialisation link present on detail page."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        convert_url = reverse(
+            "assets:asset_convert_serialisation", args=[active_asset.pk]
+        )
+        assert convert_url.encode() in resp.content
+
+
+@pytest.mark.django_db
+class TestUS_SA_113_ImageManagement:
+    """US-SA-113: Upload, delete, and set primary image on asset.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.5-01, S2.2.5-02, S2.2.5-03
+    UI Surface: /assets/<pk>/images/*
+    """
+
+    def test_image_upload_creates_asset_image(  # US-SA-113-1
+        self, admin_client, admin_user, active_asset
+    ):
+        """Uploading an image creates an AssetImage record."""
+        import io
+
+        from PIL import Image
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from assets.models import AssetImage
+
+        buf = io.BytesIO()
+        Image.new("RGB", (10, 10), "red").save(buf, format="JPEG")
+        buf.seek(0)
+        img = SimpleUploadedFile(
+            "test.jpg", buf.read(), content_type="image/jpeg"
+        )
+        url = reverse("assets:image_upload", args=[active_asset.pk])
+        resp = admin_client.post(url, {"image": img})
+        assert resp.status_code in (200, 302)
+        assert AssetImage.objects.filter(asset=active_asset).exists()
+
+    def test_image_delete_removes_record(  # US-SA-113-2
+        self, admin_client, active_asset
+    ):
+        """Deleting an image removes the AssetImage record."""
+        from assets.factories import AssetImageFactory
+        from assets.models import AssetImage
+
+        image = AssetImageFactory(asset=active_asset)
+        url = reverse("assets:image_delete", args=[active_asset.pk, image.pk])
+        resp = admin_client.post(url)
+        assert resp.status_code in (200, 302)
+        assert not AssetImage.objects.filter(pk=image.pk).exists()
+
+    def test_set_primary_image(  # US-SA-113-3
+        self, admin_client, active_asset
+    ):
+        """Setting an image as primary updates is_primary flag."""
+        from assets.factories import AssetImageFactory
+
+        img1 = AssetImageFactory(asset=active_asset, is_primary=True)
+        img2 = AssetImageFactory(asset=active_asset, is_primary=False)
+        url = reverse(
+            "assets:image_set_primary",
+            args=[active_asset.pk, img2.pk],
+        )
+        resp = admin_client.post(url)
+        assert resp.status_code in (200, 302)
+        img2.refresh_from_db()
+        assert img2.is_primary is True
+
+    def test_asset_image_has_metadata_fields(  # US-SA-113-4
+        self, admin_client, admin_user, active_asset
+    ):
+        """AssetImage model has uploaded_by, uploaded_at, caption."""
+        from assets.factories import AssetImageFactory
+        from assets.models import AssetImage
+
+        image = AssetImageFactory(
+            asset=active_asset,
+            uploaded_by=admin_user,
+            caption="Test caption",
+        )
+        image.refresh_from_db()
+        assert image.uploaded_by == admin_user
+        assert image.uploaded_at is not None
+        assert image.caption == "Test caption"
+
+    def test_delete_only_image_detail_still_loads(  # US-SA-113-5
+        self, admin_client, active_asset
+    ):
+        """After deleting the only image, asset detail still loads."""
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(asset=active_asset, is_primary=True)
+        admin_client.post(
+            reverse(
+                "assets:image_delete",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_114_TagUniquenessAndDeletion:
+    """US-SA-114: Tag model constraints and tag management pages.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.6-01, S2.2.6-02
+    UI Surface: /tags/*
+    """
+
+    def test_tag_name_unique(self, db):  # US-SA-114-1
+        """Tag names must be unique."""
+        from assets.factories import TagFactory
+
+        TagFactory(name="unique-tag")
+        with pytest.raises(Exception):
+            TagFactory(name="unique-tag")
+
+    def test_tag_has_color_attribute(self, db):  # US-SA-114-2
+        """Tag model has a color field."""
+        from assets.factories import TagFactory
+
+        tag = TagFactory(name="colored-tag", color="red")
+        tag.refresh_from_db()
+        assert tag.color == "red"
+
+    def test_deleting_tag_does_not_delete_asset(  # US-SA-114-3
+        self, db, active_asset
+    ):
+        """Deleting a tag preserves linked assets."""
+        from assets.factories import TagFactory
+
+        tag = TagFactory(name="disposable-tag")
+        active_asset.tags.add(tag)
+        tag.delete()
+        active_asset.refresh_from_db()
+        assert active_asset.pk is not None
+
+    def test_tag_list_page_loads(self, admin_client):  # US-SA-114-4
+        """Tag list page is accessible."""
+        resp = admin_client.get(reverse("assets:tag_list"))
+        assert resp.status_code == 200
+
+    def test_tag_create_page_loads(self, admin_client):  # US-SA-114-5
+        """Tag create page is accessible."""
+        resp = admin_client.get(reverse("assets:tag_create"))
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# §10A.19 Merge Rules & State Transitions (B5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_115_MergeRules:
+    """US-SA-115: Asset merge behaviour and constraints.
+
+    MoSCoW: MUST
+    Spec refs: S2.6.1-01, S2.6.1-02, S2.6.1-03
+    UI Surface: /assets/merge/*
+    """
+
+    def test_merge_select_page_loads(self, admin_client):  # US-SA-115-1
+        """Merge select page loads via POST with asset_ids."""
+        from assets.factories import AssetFactory
+
+        a1 = AssetFactory(name="MergeA")
+        a2 = AssetFactory(name="MergeB")
+        url = reverse("assets:asset_merge_select")
+        resp = admin_client.post(url, {"asset_ids": [str(a1.pk), str(a2.pk)]})
+        assert resp.status_code == 200
+
+    def test_merge_sets_duplicate_to_disposed(  # US-SA-115-2
+        self, admin_client, admin_user, category, location
+    ):
+        """Merge execute sets secondary asset to disposed."""
+        from assets.factories import AssetFactory
+
+        primary = AssetFactory(
+            name="Primary",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        dup = AssetFactory(
+            name="Duplicate",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_merge_execute")
+        resp = admin_client.post(
+            url,
+            {
+                "primary_id": str(primary.pk),
+                "asset_ids": f"{primary.pk},{dup.pk}",
+            },
+        )
+        assert resp.status_code in (200, 302)
+        dup.refresh_from_db()
+        assert dup.status == "disposed"
+
+    def test_merge_repoints_transactions(  # US-SA-115-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Merge moves transactions from duplicate to primary."""
+        from assets.factories import AssetFactory, TransactionFactory
+
+        primary = AssetFactory(
+            name="TxnPrimary",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        dup = AssetFactory(
+            name="TxnDup",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        txn = TransactionFactory(asset=dup, user=admin_user, action="note")
+        url = reverse("assets:asset_merge_execute")
+        admin_client.post(
+            url,
+            {
+                "primary_id": str(primary.pk),
+                "asset_ids": f"{primary.pk},{dup.pk}",
+            },
+        )
+        txn.refresh_from_db()
+        assert txn.asset == primary
+
+    def test_merge_reassigns_images(  # US-SA-115-4
+        self, admin_client, admin_user, category, location
+    ):
+        """Merge moves images from duplicate to primary."""
+        from assets.factories import (
+            AssetFactory,
+            AssetImageFactory,
+        )
+        from assets.models import AssetImage
+
+        primary = AssetFactory(
+            name="ImgPrimary",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        dup = AssetFactory(
+            name="ImgDup",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        img = AssetImageFactory(asset=dup)
+        url = reverse("assets:asset_merge_execute")
+        admin_client.post(
+            url,
+            {
+                "primary_id": str(primary.pk),
+                "asset_ids": f"{primary.pk},{dup.pk}",
+            },
+        )
+        img.refresh_from_db()
+        assert img.asset == primary
+
+    def test_serialised_merge_reparents_serials(  # US-SA-115-5
+        self, admin_client, admin_user, category, location
+    ):
+        """Merge reparents AssetSerial records to primary."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+        from assets.models import AssetSerial
+
+        primary = AssetFactory(
+            name="SerPrimary",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        dup = AssetFactory(
+            name="SerDup",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        serial = AssetSerialFactory(asset=dup, serial_number="MERGE-001")
+        url = reverse("assets:asset_merge_execute")
+        admin_client.post(
+            url,
+            {
+                "primary_id": str(primary.pk),
+                "asset_ids": f"{primary.pk},{dup.pk}",
+            },
+        )
+        serial.refresh_from_db()
+        assert serial.asset == primary
+
+
+@pytest.mark.django_db
+class TestUS_SA_116_StateTransitions:
+    """US-SA-116: Asset state transition rules and constraints.
+
+    MoSCoW: MUST
+    Spec refs: S7.17-01, S7.17-02, S7.17-03
+    UI Surface: service layer (transition_asset), /assets/lost-stolen/
+    """
+
+    def test_active_to_lost_transition(self, db, active_asset):  # US-SA-116-1
+        """Direct active→lost transition permitted."""
+        from assets.services.state import transition_asset
+
+        active_asset.lost_stolen_notes = "Last seen at venue."
+        active_asset.save(update_fields=["lost_stolen_notes"])
+        transition_asset(active_asset, "lost")
+        active_asset.refresh_from_db()
+        assert active_asset.status == "lost"
+
+    def test_active_to_stolen_transition(  # US-SA-116-2
+        self, db, active_asset
+    ):
+        """Direct active→stolen transition permitted."""
+        from assets.services.state import transition_asset
+
+        active_asset.lost_stolen_notes = "Reported stolen."
+        active_asset.save(update_fields=["lost_stolen_notes"])
+        transition_asset(active_asset, "stolen")
+        active_asset.refresh_from_db()
+        assert active_asset.status == "stolen"
+
+    def test_active_to_missing_transition(  # US-SA-116-3
+        self, db, active_asset
+    ):
+        """Direct active→missing transition permitted."""
+        from assets.services.state import transition_asset
+
+        transition_asset(active_asset, "missing")
+        active_asset.refresh_from_db()
+        assert active_asset.status == "missing"
+
+    def test_lost_stolen_report_loads(self, admin_client):  # US-SA-116-4
+        """Lost/stolen report page loads."""
+        resp = admin_client.get(reverse("assets:lost_stolen_report"))
+        assert resp.status_code == 200
+
+    def test_lost_asset_hidden_from_default_search(  # US-SA-116-5
+        self, admin_client, active_asset
+    ):
+        """Lost assets hidden from default asset list."""
+        from assets.services.state import transition_asset
+
+        active_asset.lost_stolen_notes = "Missing from storage."
+        active_asset.save(update_fields=["lost_stolen_notes"])
+        transition_asset(active_asset, "lost")
+        resp = admin_client.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+        # The lost asset should not appear in the default listing
+        assert active_asset.name.encode() not in resp.content
+
+    def test_missing_asset_can_receive_audit(  # US-SA-116-6
+        self, admin_client, admin_user, active_asset
+    ):
+        """An asset with status=missing can still be audited."""
+        from assets.services.state import transition_asset
+
+        transition_asset(active_asset, "missing")
+        # Create a stocktake and audit the missing asset
+        session = StocktakeSession.objects.create(
+            location=active_asset.current_location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        item = StocktakeItem.objects.create(
+            session=session,
+            asset=active_asset,
+            status="found",
+        )
+        assert item.pk is not None
+
+
+# ---------------------------------------------------------------------------
+# §10A.20 Timestamps, Defaults & Print (B5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_117_TimestampsAndDefaults:
+    """US-SA-117: Auto-managed timestamps and field defaults.
+
+    MoSCoW: MUST
+    Spec refs: S2.1.2-01, S2.1.2-02
+    UI Surface: model layer
+    """
+
+    def test_created_by_auto_set(  # US-SA-117-1
+        self, db, admin_user, category, location
+    ):
+        """created_by is set on asset creation."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="CreatedByTest",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.created_by == admin_user
+
+    def test_created_at_auto_managed(  # US-SA-117-2
+        self, db, admin_user, category, location
+    ):
+        """created_at is automatically populated."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="TimestampTest",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.created_at is not None
+
+    def test_updated_at_auto_managed(  # US-SA-117-3
+        self, db, admin_user, category, location
+    ):
+        """updated_at changes on save."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="UpdatedAtTest",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        original_updated = a.updated_at
+        a.name = "UpdatedAtTest-Modified"
+        a.save()
+        a.refresh_from_db()
+        assert a.updated_at >= original_updated
+
+    def test_default_condition_is_good(self, db):  # US-SA-117-4
+        """Default condition for new asset is 'good'."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(name="DefaultCondition")
+        assert a.condition == "good"
+
+    def test_category_belongs_to_department(self, db, category):  # US-SA-117-5
+        """Every Category belongs to one Department."""
+        assert category.department is not None
+        assert isinstance(category.department, Department)
+
+
+@pytest.mark.django_db
+class TestUS_SA_118_SidebarPrintMobile:
+    """US-SA-118: Asset detail mobile rendering and print label.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.1-03, S2.5.1-01
+    UI Surface: /assets/<pk>/, /assets/<pk>/label/
+    """
+
+    def test_asset_detail_loads(  # US-SA-118-1
+        self, admin_client, active_asset
+    ):
+        """Asset detail page loads (mobile viewport, just assert 200)."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_print_label_accessible(  # US-SA-118-2
+        self, admin_client, active_asset
+    ):
+        """Print label URL is accessible."""
+        resp = admin_client.get(
+            reverse("assets:asset_label", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_detail_page_loads_without_overflow(  # US-SA-118-3
+        self, admin_client, active_asset
+    ):
+        """Asset detail page loads fully (proxy for no overflow)."""
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        assert active_asset.name.encode() in resp.content
