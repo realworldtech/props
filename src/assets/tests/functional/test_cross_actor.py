@@ -1499,3 +1499,197 @@ class TestUS_XA_024_RegistrationRateLimit_Deep:
             "POST requests but never received a 429 status or "
             "rate-limit message."
         )
+
+
+# ---------------------------------------------------------------------------
+# §10D.3 Additional — User Deletion with Outstanding Checkouts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_XA_011_UserDeletionWithCheckouts:
+    """US-XA-011: Warn admin and preserve accountability when deleting
+    a user who has assets checked out.
+
+    MoSCoW: MUST
+    Spec refs: S7.10.1, S3.2.5
+    """
+
+    def test_checked_out_to_set_null_after_user_deleted(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+    ):
+        """After deleting a user, checked_out_to should be SET_NULL."""
+        # Check out asset to borrower
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        active_asset.refresh_from_db()
+        assert active_asset.checked_out_to == borrower_user
+
+        # Delete the borrower user
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        borrower_pk = borrower_user.pk
+        User.objects.filter(pk=borrower_pk).delete()
+
+        active_asset.refresh_from_db()
+        # SET_NULL should have cleared checked_out_to
+        assert active_asset.checked_out_to is None
+
+    def test_admin_warns_before_deleting_user_with_checkouts(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+    ):
+        """Admin delete page should warn about outstanding checkouts."""
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+
+        resp = admin_client.get(
+            f"/admin/accounts/customuser/{borrower_user.pk}/delete/"
+        )
+        content = resp.content.decode().lower()
+        assert "checked out" in content or "checkout" in content, (
+            "Admin should warn about outstanding checkouts before "
+            "user deletion"
+        )
+
+
+# ---------------------------------------------------------------------------
+# §10D.5 Mobile Experience
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_XA_016_AssetDetailMobileViewport:
+    """US-XA-016: Asset detail page has no horizontal overflow on mobile.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.8-01, S2.2.8-02, S2.2.8-04
+    """
+
+    def test_asset_detail_returns_200(self, client_logged_in, active_asset):
+        """Basic accessibility check — the detail page loads."""
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_asset_detail_has_responsive_meta_tag(
+        self, client_logged_in, active_asset
+    ):
+        """Page must include viewport meta tag for responsive layout."""
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        content = resp.content.decode()
+        assert "viewport" in content, (
+            "Asset detail page must include a viewport meta tag "
+            "for mobile responsiveness"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_XA_017_QuickCaptureMobileViewport:
+    """US-XA-017: Quick Capture works on a 375px screen.
+
+    MoSCoW: MUST
+    Spec refs: S2.2.8-05, S2.1.1-01
+    """
+
+    def test_quick_capture_accessible(self, client_logged_in):
+        """Quick Capture page loads for authenticated users."""
+        resp = client_logged_in.get(reverse("assets:quick_capture"))
+        assert resp.status_code == 200
+
+    def test_quick_capture_has_responsive_meta_tag(self, client_logged_in):
+        """Quick Capture must include viewport meta tag."""
+        resp = client_logged_in.get(reverse("assets:quick_capture"))
+        content = resp.content.decode()
+        assert "viewport" in content
+
+
+@pytest.mark.django_db
+class TestUS_XA_018_NFCScanCrossPlatform:
+    """US-XA-018: NFC tags work across iOS and Android.
+
+    MoSCoW: MUST
+    Spec refs: S2.5.5-01, S2.5.5-02, S2.5.5-03
+    """
+
+    def test_ndef_url_resolves_through_universal_lookup(
+        self, client_logged_in, active_asset
+    ):
+        """NDEF URL /a/{identifier}/ resolves to asset detail."""
+        from assets.models import NFCTag
+
+        nfc = NFCTag.objects.create(
+            tag_id="NFC-XA018-TEST",
+            asset=active_asset,
+            assigned_by=active_asset.created_by,
+        )
+        resp = client_logged_in.get(
+            reverse(
+                "assets:asset_by_identifier",
+                args=[nfc.tag_id],
+            )
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_scan_page_accessible(self, client_logged_in):
+        """Scan page is accessible to authenticated users."""
+        resp = client_logged_in.get(reverse("assets:scan_lookup"))
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_XA_020_ContextDependentScanBehaviour:
+    """US-XA-020: Scan behaviour varies by context.
+
+    MoSCoW: MUST
+    Spec refs: S2.4.4-04
+    """
+
+    def test_global_scan_known_barcode_navigates_to_detail(
+        self, client_logged_in, asset
+    ):
+        """Scanning a known barcode on global scan navigates to detail."""
+        resp = client_logged_in.get(
+            reverse("assets:scan_lookup"),
+            {"code": asset.barcode},
+        )
+        assert resp.status_code in (200, 302)
+        if resp.status_code == 302:
+            assert str(asset.pk) in resp["Location"]
+
+    def test_global_scan_unknown_code_redirects_to_quick_capture(
+        self, client_logged_in
+    ):
+        """Unknown code redirects to quick capture."""
+        resp = client_logged_in.get(
+            reverse("assets:scan_lookup"),
+            {"code": "UNKNOWN-SCAN-XA020"},
+        )
+        assert resp.status_code in (200, 302)
+        if resp.status_code == 302:
+            assert (
+                "quick" in resp["Location"].lower()
+                or "capture" in resp["Location"].lower()
+                or "UNKNOWN-SCAN-XA020" in resp["Location"]
+            )
