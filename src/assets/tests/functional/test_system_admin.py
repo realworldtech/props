@@ -490,6 +490,7 @@ class TestUS_SA_006_CreateAssetViaFullForm:
                 "current_location": location.pk,
                 "condition": "good",
                 "quantity": 1,
+                "status": "active",
             },
         )
         assert Asset.objects.filter(
@@ -507,6 +508,7 @@ class TestUS_SA_006_CreateAssetViaFullForm:
                 "current_location": location.pk,
                 "condition": "good",
                 "quantity": 1,
+                "status": "active",
             },
         )
         asset = Asset.objects.filter(name="Barcode Test Asset").first()
@@ -558,10 +560,11 @@ class TestUS_SA_008_UploadManageAssetImages:
     """
 
     def test_image_upload_url_accessible(self, admin_client, active_asset):
+        # POST-only view; GET redirects to asset detail
         resp = admin_client.get(
             reverse("assets:image_upload", args=[active_asset.pk])
         )
-        assert resp.status_code in (200, 405)
+        assert resp.status_code in (200, 302)
 
     def test_upload_image_creates_asset_image_record(
         self, admin_client, active_asset
@@ -955,7 +958,7 @@ class TestUS_SA_016_CheckOutOnBehalfOfAnotherUser:
             reverse("assets:asset_checkout", args=[active_asset.pk]),
             {
                 "borrower": borrower_user.pk,
-                "destination": dest.pk,
+                "destination_location": dest.pk,
                 "notes": "",
             },
         )
@@ -1147,7 +1150,7 @@ class TestUS_SA_020_RelocateCheckedOutAsset:
         dest2 = warehouse["bay4"]
         admin_client.post(
             reverse("assets:asset_relocate", args=[active_asset.pk]),
-            {"new_location": dest2.pk, "notes": ""},
+            {"location": dest2.pk, "notes": ""},
         )
         active_asset.refresh_from_db()
         assert active_asset.current_location == dest2
@@ -1289,9 +1292,9 @@ class TestUS_SA_023_BulkCheckIn:
         resp = admin_client.post(
             reverse("assets:bulk_actions"),
             {
-                "action": "checkin",
-                "selected_ids": [active_asset.pk, asset2.pk],
-                "return_location": location.pk,
+                "bulk_action": "bulk_checkin",
+                "asset_ids": [active_asset.pk, asset2.pk],
+                "bulk_checkin_location": location.pk,
             },
         )
         assert Transaction.objects.filter(
@@ -1324,7 +1327,7 @@ class TestUS_SA_095_CheckInDraftAsset:
     ):
         admin_client.post(
             reverse("assets:asset_checkin", args=[draft_asset.pk]),
-            {"return_location": location.pk, "notes": ""},
+            {"location": location.pk, "notes": ""},
         )
         draft_asset.refresh_from_db()
         assert draft_asset.current_location == location
@@ -1373,10 +1376,11 @@ class TestUS_SA_025_PrintLabels:
         assert resp.status_code == 200
 
     def test_zpl_label_endpoint_accessible(self, admin_client, active_asset):
+        # ZPL view sends to printer then redirects; ?raw=1 returns 200
         resp = admin_client.get(
             reverse("assets:asset_label_zpl", args=[active_asset.pk])
         )
-        assert resp.status_code in (200, 400, 503)
+        assert resp.status_code in (200, 302)
 
 
 @pytest.mark.django_db
@@ -1389,10 +1393,11 @@ class TestUS_SA_026_ClearRegenerateBarcode:
     """
 
     def test_clear_barcode_page_accessible(self, admin_client, active_asset):
+        # POST-only view; GET redirects to asset detail
         resp = admin_client.get(
             reverse("assets:clear_barcode", args=[active_asset.pk])
         )
-        assert resp.status_code in (200, 405)
+        assert resp.status_code in (200, 302)
 
 
 @pytest.mark.django_db
@@ -1407,8 +1412,9 @@ class TestUS_SA_028_BulkPrintLabels:
     def test_bulk_actions_accessible_for_print(
         self, admin_client, active_asset
     ):
+        # POST-only view; GET redirects to asset list
         resp = admin_client.get(reverse("assets:bulk_actions"))
-        assert resp.status_code in (200, 405)
+        assert resp.status_code in (200, 302)
 
 
 @pytest.mark.django_db
@@ -1531,9 +1537,18 @@ class TestUS_SA_033_ViewNFCTagHistory:
     UI Surface: /assets/<pk>/ + /nfc/<tag_uid>/history/
     """
 
-    def test_nfc_history_page_loads(self, admin_client, active_asset):
+    def test_nfc_history_page_loads(
+        self, admin_client, active_asset, admin_user
+    ):
+        from assets.factories import NFCTagFactory
+
+        nfc = NFCTagFactory(
+            asset=active_asset,
+            tag_id="HISTORY001",
+            assigned_by=admin_user,
+        )
         resp = admin_client.get(
-            reverse("assets:nfc_history", args=[active_asset.pk])
+            reverse("assets:nfc_history", args=[nfc.tag_id])
         )
         assert resp.status_code == 200
 
@@ -1846,9 +1861,9 @@ class TestUS_SA_044_BulkTransferAssets:
         resp = admin_client.post(
             reverse("assets:bulk_actions"),
             {
-                "action": "transfer",
-                "selected_ids": [active_asset.pk, asset2.pk],
-                "destination": dest.pk,
+                "bulk_action": "transfer",
+                "asset_ids": [active_asset.pk, asset2.pk],
+                "location": dest.pk,
             },
         )
         assert Transaction.objects.filter(
@@ -1868,7 +1883,6 @@ class TestUS_SA_045_BulkEditAssets:
     def test_bulk_edit_category(
         self,
         admin_client,
-        active_asset,
         category,
         location,
         admin_user,
@@ -1879,9 +1893,10 @@ class TestUS_SA_045_BulkEditAssets:
             name="New Category",
             department=category.department,
         )
-        asset2 = AssetFactory(
-            name="Asset For Bulk Edit",
-            status="active",
+        # V259: bulk category edit only applies to draft assets
+        draft = AssetFactory(
+            name="Draft For Bulk Edit",
+            status="draft",
             category=category,
             current_location=location,
             created_by=admin_user,
@@ -1889,13 +1904,13 @@ class TestUS_SA_045_BulkEditAssets:
         resp = admin_client.post(
             reverse("assets:bulk_actions"),
             {
-                "action": "edit",
-                "selected_ids": [active_asset.pk, asset2.pk],
-                "category": new_cat.pk,
+                "bulk_action": "bulk_edit",
+                "asset_ids": [draft.pk],
+                "edit_category": new_cat.pk,
             },
         )
-        active_asset.refresh_from_db()
-        assert active_asset.category == new_cat
+        draft.refresh_from_db()
+        assert draft.category == new_cat
 
 
 @pytest.mark.django_db
@@ -1922,8 +1937,9 @@ class TestUS_SA_047_BulkChangeAssetStatus:
     """
 
     def test_bulk_status_change_accessible(self, admin_client):
+        # POST-only view; GET redirects to asset list
         resp = admin_client.get(reverse("assets:bulk_actions"))
-        assert resp.status_code in (200, 405)
+        assert resp.status_code in (200, 302)
 
 
 # ---------------------------------------------------------------------------
@@ -2060,6 +2076,7 @@ class TestUS_SA_055_SetDeptBarcodePrefix:
                 "current_location": location.pk,
                 "condition": "good",
                 "quantity": 1,
+                "status": "active",
             },
         )
         asset = Asset.objects.filter(name="Prefix Test Asset").first()
@@ -2292,7 +2309,8 @@ class TestUS_SA_066_ManageUsersViaAdmin:
         resp = admin_client.get("/admin/accounts/customuser/")
         assert resp.status_code == 200
         content = resp.content.decode()
-        assert "username" in content.lower()
+        # list_display includes display_user (renders username) and email
+        assert "email" in content.lower()
 
 
 @pytest.mark.django_db
@@ -2350,10 +2368,20 @@ class TestUS_SA_068_ViewAndApplyAISuggestions:
     def test_ai_apply_suggestions_url_accessible(
         self, admin_client, active_asset
     ):
-        resp = admin_client.get(
-            reverse("assets:ai_apply_suggestions", args=[active_asset.pk])
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(
+            asset=active_asset,
+            ai_processing_status="completed",
         )
-        assert resp.status_code in (200, 405)
+        # POST-only view; GET redirects to asset detail
+        resp = admin_client.get(
+            reverse(
+                "assets:ai_apply_suggestions",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        assert resp.status_code in (200, 302)
 
 
 @pytest.mark.django_db
