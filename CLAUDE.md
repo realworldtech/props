@@ -25,7 +25,7 @@ docker compose --profile prod up -d
 docker compose exec web pytest
 
 # Run a single test
-pytest src/assets/tests.py::TestClassName::test_method_name
+pytest src/assets/tests/test_views.py::TestClassName::test_method_name
 
 # Coverage
 coverage run -m pytest && coverage report
@@ -154,13 +154,50 @@ Spec documents are expected at `docs/spec/` in the working tree. If the spec rep
 ## Testing
 
 - pytest with `pytest-django`; config in `pyproject.toml` (`DJANGO_SETTINGS_MODULE = "props.settings"`)
-- Test files: `src/assets/tests.py`, `src/accounts/tests.py`, `src/props/tests.py`
-- Shared fixtures in `src/conftest.py` — provides `user`, `admin_user`, `member_user`, `viewer_user`, `client_logged_in`, `admin_client`, `department`, `category`, `location`, `asset`, etc.
+- **Test layout** (reorganised Feb 2026):
+  - `src/assets/tests/` — 12 feature-grouped unit/integration test files
+  - `src/accounts/tests/` — 4 files (auth, registration, profile, admin)
+  - `src/props/tests/` — 3 files (branding, infrastructure, non-functional)
+  - `src/assets/tests/functional/` — behavioural tests derived from S10/S11/S12 spec sections
+- Shared fixtures in `src/conftest.py` — provides `user`, `admin_user`, `member_user`, `viewer_user`, `client_logged_in`, `admin_client`, `dept_manager_client`, `department`, `category`, `location`, `asset`, hold list fixtures, etc.
+- Functional test fixtures in `src/assets/tests/functional/conftest.py` — scenario-level fixtures (`active_asset`, `borrower_user`, `warehouse`, `serialised_asset_with_units`, `kit_with_components`, etc.)
 - Tests use local filesystem storage (S3 overridden in conftest.py)
 - Target 80%+ test coverage
 - **Test-driven development is mandatory.** For every change: (1) write the test first, (2) run it with `pytest` and verify it fails, (3) implement the code, (4) run the test again and verify it passes. Do not skip the red-green cycle — the failing test must be executed, not just written.
 - **Tests must pass in both environments.** After implementation, run `pytest` locally (venv) and also inside Docker with `docker compose exec web pytest`. If Docker is not running, ask the user to start it — do not skip the Docker verification.
 - **Bug fix workflow.** When fixing a bug, always start by asking: "why didn't we catch this in testing?" Then, before writing any fix: (1) write a test that reproduces the bug, (2) run it and confirm it fails, (3) fix the bug, (4) run the test and confirm it passes. The bug is usually an edge case we hadn't considered — the test ensures we don't regress. Only skip the reproduction test if the bug genuinely cannot be tested (e.g. infrastructure-only issue), and note why.
+
+### Functional test rules (S10/S11/S12 coverage)
+
+- **One `test_` method per acceptance criterion**, not per feature. `status_code == 200` is not coverage.
+- **Sub-behaviour trap:** a feature can exist and load correctly while a required sub-behaviour is missing (value computed but not rendered; constraint enforced server-side but wrong value in form; error message too vague). For every criterion that says the UI *shows/displays/includes/names/requires*, assert that specific content — not just HTTP 200.
+- Write a **positive test** (valid case works) and a **negative/boundary test** (invalid case is rejected) for each criterion.
+- **Known gaps:** `@pytest.mark.xfail(strict=True, reason="GAP #N: description (spec ref)")`. `strict=True` is mandatory — XPASS means the gap is closed and the test needs promotion to a regular test.
+- **Spec-gap audit cycle:** after significant implementation, run `pytest src/assets/tests/functional/ -v --no-cov -q 2>&1 | grep -c xfail` and cross-reference open `spec-gap` GitHub issues. Add xfail tests for any uncovered open issue; promote any XPASS tests and close the corresponding issue.
+- **Full coverage audit:** start from the spec sections (S10a/b/c/d, S11, S12), enumerate every `- [ ]` acceptance criterion bullet, and verify each has a corresponding test. Do not start from the issue list — that only covers known gaps.
+
+### Form submission testing — Issue #5 (REQUIRED)
+
+Any test verifying a state-changing form submission **must** use the round-trip pattern: GET the form, parse the rendered HTML with stdlib `html.parser` to extract actual field names/values, then POST those extracted values. Never hardcode form field names — they bypass the template→view contract and allow silent regressions when either side changes.
+
+Reference implementation: `TestApprovalFormTemplateIntegration` in `src/accounts/tests/test_registration.py`.
+
+Exception: security boundary tests that deliberately probe arbitrary view input may hardcode payloads, but must comment why.
+
+### Affordance exposure testing (REQUIRED)
+
+Testing that a POST to a URL works only proves the endpoint exists. It does not prove a user can find it. For every user-facing feature, also test that the upstream page exposes the relevant button, link, or form. Example: after testing that `POST /assets/<pk>/checkout/` works, also test that `GET /assets/<pk>/` renders a link to `/assets/<pk>/checkout/`. This catches the recurring pattern of functionality fully implemented in views/services but never wired into any template (the kit checkout service is the canonical example).
+
+Pattern:
+```python
+# Not just "does the action work?"
+resp = admin_client.post(reverse("assets:asset_checkout", args=[asset.pk]), data)
+assert resp.status_code == 302
+
+# Also "is there an affordance on the referring page?"
+detail_resp = admin_client.get(reverse("assets:asset_detail", args=[asset.pk]))
+assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp.content
+```
 
 ## Dependencies
 
