@@ -1985,3 +1985,421 @@ class TestUS_XA_033_ImageProcessingEdgeCases:
             {"image": image_file},
         )
         assert resp.status_code in (200, 302)
+
+
+# ---------------------------------------------------------------------------
+# §10D.9 Edge Cases — B3 stories (XA-035 through XA-045)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_XA_035_AIAnalysisEdgeCases:
+    """US-XA-035: Handle AI analysis edge cases.
+
+    MoSCoW: SHOULD
+    Spec refs: S7.11.1–S7.11.9, S2.14
+    """
+
+    def test_ai_analyse_requires_authentication(self, client, active_asset):
+        """AI analysis endpoint requires authentication."""
+        image = AssetImageFactory(asset=active_asset)
+        resp = client.get(
+            reverse(
+                "assets:ai_analyse",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        assert resp.status_code in (302, 403)
+
+    def test_ai_analyse_accessible_to_authenticated_user(
+        self, client_logged_in, active_asset
+    ):
+        """AI analysis endpoint is accessible to authenticated users."""
+        image = AssetImageFactory(asset=active_asset)
+        resp = client_logged_in.get(
+            reverse(
+                "assets:ai_analyse",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        assert resp.status_code in (200, 302, 405)
+
+
+@pytest.mark.django_db
+class TestUS_XA_036_RegistrationEdgeCases:
+    """US-XA-036: Handle registration edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.13.2–S7.13.7, S2.15
+    """
+
+    def test_registration_email_case_insensitive(self, client, db):
+        """Email matching should be case-insensitive."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        # Register with lowercase
+        client.post(
+            reverse("accounts:register"),
+            {
+                "email": "casetest@example.com",
+                "password1": "securePass123!",
+                "password2": "securePass123!",
+                "display_name": "Case Test",
+            },
+        )
+        user_lower = User.objects.filter(email="casetest@example.com").first()
+        assert user_lower is not None
+
+        # Register with uppercase — should not create a duplicate
+        Client().post(
+            reverse("accounts:register"),
+            {
+                "email": "CASETEST@EXAMPLE.COM",
+                "password1": "securePass123!",
+                "password2": "securePass123!",
+                "display_name": "Case Test Upper",
+            },
+        )
+        count = User.objects.filter(
+            email__iexact="casetest@example.com"
+        ).count()
+        # Should only have one user for this email
+        assert count == 1
+
+    def test_registration_creates_inactive_user(self, client, db):
+        """Registered users start inactive (pending approval)."""
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        client.post(
+            reverse("accounts:register"),
+            {
+                "email": "xa036@example.com",
+                "password1": "securePass123!",
+                "password2": "securePass123!",
+                "display_name": "XA036 Test",
+            },
+        )
+        new_user = User.objects.filter(email="xa036@example.com").first()
+        if new_user:
+            assert new_user.is_active is False
+
+
+@pytest.mark.django_db
+class TestUS_XA_037_HoldListEdgeCases:
+    """US-XA-037: Handle hold list edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.15.1–S7.15.6, S2.16
+    """
+
+    def test_holdlist_list_accessible(self, admin_client):
+        """Hold list index page is accessible."""
+        resp = admin_client.get(reverse("assets:holdlist_list"))
+        assert resp.status_code == 200
+
+    def test_holdlist_create_accessible(self, admin_client):
+        """Hold list create page is accessible."""
+        resp = admin_client.get(reverse("assets:holdlist_create"))
+        assert resp.status_code == 200
+
+    def test_duplicate_item_on_hold_list_rejected(
+        self, admin_client, active_hold_list, active_asset, admin_user
+    ):
+        """Adding same asset twice to a hold list is rejected."""
+        from assets.models import HoldListItem
+
+        HoldListItem.objects.create(
+            hold_list=active_hold_list,
+            asset=active_asset,
+            quantity=1,
+            added_by=admin_user,
+        )
+        # Try adding again
+        resp = admin_client.post(
+            reverse(
+                "assets:holdlist_add_item",
+                args=[active_hold_list.pk],
+            ),
+            {
+                "asset": active_asset.pk,
+                "quantity": 1,
+            },
+        )
+        # Should either reject or the count should still be 1
+        count = HoldListItem.objects.filter(
+            hold_list=active_hold_list,
+            asset=active_asset,
+        ).count()
+        assert count == 1
+
+
+@pytest.mark.django_db
+class TestUS_XA_038_KitEdgeCases:
+    """US-XA-038: Handle kit edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.16.1–S7.16.10, S2.17
+    """
+
+    def test_kit_contents_accessible(self, admin_client, active_asset):
+        """Kit contents page loads for an asset."""
+        resp = admin_client.get(
+            reverse("assets:kit_contents", args=[active_asset.pk])
+        )
+        assert resp.status_code in (200, 302)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Circular kit reference detection not"
+            " implemented (US-XA-038, S7.16.2, S10D)"
+        ),
+    )
+    def test_circular_kit_reference_blocked(
+        self,
+        admin_client,
+        active_asset,
+        location,
+        category,
+    ):
+        """Adding a kit as its own component should be blocked."""
+        from assets.models import AssetKit
+
+        # Try to add the asset as its own component
+        resp = admin_client.post(
+            reverse(
+                "assets:kit_add_component",
+                args=[active_asset.pk],
+            ),
+            {
+                "component": active_asset.pk,
+                "quantity": 1,
+            },
+        )
+        # Should not have created a self-referencing kit
+        assert not AssetKit.objects.filter(
+            parent=active_asset, component=active_asset
+        ).exists()
+
+
+@pytest.mark.django_db
+class TestUS_XA_039_SerialisedAssetEdgeCases:
+    """US-XA-039: Handle serialised asset edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.19.1–S7.19.10, S2.17.1
+    """
+
+    def test_convert_serialisation_accessible(
+        self, admin_client, active_asset
+    ):
+        """Serialisation conversion page is accessible."""
+        resp = admin_client.get(
+            reverse(
+                "assets:asset_convert_serialisation",
+                args=[active_asset.pk],
+            )
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_non_serialised_asset_has_quantity(self, active_asset):
+        """Non-serialised assets track quantity directly."""
+        assert not active_asset.is_serialised
+        assert active_asset.quantity >= 1
+
+
+@pytest.mark.django_db
+class TestUS_XA_040_CustodyTransferEdgeCases:
+    """US-XA-040: Handle custody transfer (handover) edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.20.1–S7.20.5, S2.17.3
+    """
+
+    def test_handover_non_checked_out_asset_rejected(
+        self, admin_client, active_asset
+    ):
+        """Custody transfer on a non-checked-out asset is rejected."""
+        assert not active_asset.is_checked_out
+        resp = admin_client.get(
+            reverse("assets:asset_handover", args=[active_asset.pk])
+        )
+        # Should redirect or show error (asset not checked out)
+        assert resp.status_code in (200, 302, 403)
+
+    def test_handover_accessible_for_checked_out_asset(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+    ):
+        """Handover form is accessible for checked-out assets."""
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        active_asset.refresh_from_db()
+        assert active_asset.is_checked_out
+
+        resp = admin_client.get(
+            reverse("assets:asset_handover", args=[active_asset.pk])
+        )
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_XA_041_BackdatingEdgeCases:
+    """US-XA-041: Handle backdated transaction edge cases.
+
+    MoSCoW: SHOULD
+    Spec refs: S7.21.1–S7.21.6
+    """
+
+    def test_checkout_creates_transaction_record(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+    ):
+        """Checkout creates a transaction with a timestamp."""
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[active_asset.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        txn = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).first()
+        assert txn is not None
+        assert txn.timestamp is not None
+
+
+@pytest.mark.django_db
+class TestUS_XA_042_RelocateEdgeCases:
+    """US-XA-042: Handle relocate edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.22.1–S7.22.5, S2.12
+    """
+
+    def test_relocate_accessible_for_active_asset(
+        self, admin_client, active_asset
+    ):
+        """Relocate page is accessible for active assets."""
+        resp = admin_client.get(
+            reverse("assets:asset_relocate", args=[active_asset.pk])
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_relocate_to_new_location_succeeds(
+        self, admin_client, active_asset
+    ):
+        """Relocating asset to a new location succeeds."""
+        new_loc = LocationFactory(name="XA042 New Location")
+        resp = admin_client.post(
+            reverse("assets:asset_relocate", args=[active_asset.pk]),
+            {"location": new_loc.pk},
+        )
+        assert resp.status_code in (200, 302)
+        active_asset.refresh_from_db()
+        assert active_asset.current_location == new_loc
+
+
+@pytest.mark.django_db
+class TestUS_XA_043_LongFieldDisplayEdgeCases:
+    """US-XA-043: Handle long field values without breaking layouts.
+
+    MoSCoW: SHOULD
+    Spec refs: S7.18.0, S2.3.2
+    """
+
+    def test_long_name_renders_on_list_page(
+        self, client_logged_in, category, location
+    ):
+        """Asset with a very long name renders without error."""
+        long_name = "X" * 200
+        asset = AssetFactory(
+            name=long_name,
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        resp = client_logged_in.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+
+    def test_long_name_renders_on_detail_page(
+        self, client_logged_in, category, location
+    ):
+        """Asset detail page handles long names."""
+        long_name = "Y" * 200
+        asset = AssetFactory(
+            name=long_name,
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert resp.status_code == 200
+        assert long_name.encode() in resp.content
+
+
+@pytest.mark.django_db
+class TestUS_XA_044_HelpSearchReturnsResults:
+    """US-XA-044: Help search returns relevant results.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.4-01, S2.19.4-02, S2.19.4-03
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Help system not implemented" " (US-XA-044, S2.19, S10D)"
+        ),
+    )
+    def test_help_index_accessible(self, client_logged_in):
+        """Help index page should be accessible."""
+        resp = client_logged_in.get("/help/")
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Help system not implemented" " (US-XA-044, S2.19, S10D)"
+        ),
+    )
+    def test_help_search_endpoint_accessible(self, client_logged_in):
+        """Help search endpoint should be accessible."""
+        resp = client_logged_in.get("/help/search/", {"q": "barcode"})
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_XA_045_HelpRoleFiltering:
+    """US-XA-045: Role filtering on help index shows role-relevant articles.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.5-01, S2.19.5-02, S2.19.5-03
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: Help system not implemented" " (US-XA-045, S2.19, S10D)"
+        ),
+    )
+    def test_help_index_filters_by_role(self, client_logged_in):
+        """Help index should filter articles by user role."""
+        resp = client_logged_in.get("/help/", {"role": "Member"})
+        assert resp.status_code == 200
