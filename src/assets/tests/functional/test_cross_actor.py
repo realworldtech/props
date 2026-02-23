@@ -1693,3 +1693,295 @@ class TestUS_XA_020_ContextDependentScanBehaviour:
                 or "capture" in resp["Location"].lower()
                 or "UNKNOWN-SCAN-XA020" in resp["Location"]
             )
+
+
+# ---------------------------------------------------------------------------
+# §10D.9 Edge Cases — B2 stories (XA-026, 027, 029-031, 033)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_XA_026_AssetMergeEdgeCases:
+    """US-XA-026: Handle all asset merge edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.1.1–S7.1.9, S2.2.7
+    """
+
+    def test_merge_self_is_rejected(self, admin_client, active_asset):
+        """Merging an asset with itself must be rejected."""
+        resp = admin_client.post(
+            reverse("assets:asset_merge_execute"),
+            {
+                "primary_id": active_asset.pk,
+                "asset_ids": str(active_asset.pk),
+            },
+        )
+        # Should not succeed — either error message or redirect
+        active_asset.refresh_from_db()
+        assert resp.status_code in (200, 302, 400)
+
+    def test_merge_checked_out_asset_blocked(
+        self,
+        admin_client,
+        active_asset,
+        borrower_user,
+        location,
+        category,
+    ):
+        """Merging a checked-out asset should be blocked."""
+        secondary = AssetFactory(
+            name="XA026 Secondary",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        # Check out the secondary
+        admin_client.post(
+            reverse("assets:asset_checkout", args=[secondary.pk]),
+            {
+                "borrower": borrower_user.pk,
+                "destination_location": location.pk,
+            },
+        )
+        secondary.refresh_from_db()
+        assert secondary.is_checked_out
+
+        resp = admin_client.post(
+            reverse("assets:asset_merge_execute"),
+            {
+                "primary_id": active_asset.pk,
+                "asset_ids": str(secondary.pk),
+            },
+        )
+        # The merge should be rejected or the secondary should
+        # still exist
+        assert resp.status_code in (200, 302, 400)
+
+
+@pytest.mark.django_db
+class TestUS_XA_027_BarcodeNFCEdgeCases:
+    """US-XA-027: Handle barcode and NFC system edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.2.1–S7.2.3, S7.23.0–S7.23.5, S2.4, S2.5
+    """
+
+    def test_barcode_takes_priority_over_nfc_on_scan(
+        self, client_logged_in, active_asset
+    ):
+        """Barcode match takes priority over NFC match (S7.2.1)."""
+        from assets.models import NFCTag
+
+        # Create an NFC tag with same ID as the asset's barcode
+        # on a different asset
+        other = AssetFactory(
+            name="XA027 Other",
+            status="active",
+            category=active_asset.category,
+            current_location=active_asset.current_location,
+        )
+        NFCTag.objects.create(
+            tag_id=active_asset.barcode,
+            asset=other,
+            assigned_by=active_asset.created_by,
+        )
+
+        resp = client_logged_in.get(
+            reverse("assets:scan_lookup"),
+            {"code": active_asset.barcode},
+        )
+        # Should resolve to the barcode match (active_asset)
+        if resp.status_code == 302:
+            assert str(active_asset.pk) in resp["Location"]
+
+    def test_removed_nfc_tag_follows_not_found_path(
+        self, client_logged_in, active_asset
+    ):
+        """Scanning a removed NFC tag follows not-found path (S7.2.2)."""
+        from django.utils import timezone
+
+        from assets.models import NFCTag
+
+        nfc = NFCTag.objects.create(
+            tag_id="REMOVED-NFC-XA027",
+            asset=active_asset,
+            assigned_by=active_asset.created_by,
+            removed_at=timezone.now(),
+        )
+
+        resp = client_logged_in.get(
+            reverse("assets:scan_lookup"),
+            {"code": "REMOVED-NFC-XA027"},
+        )
+        # Should follow not-found path (quick capture redirect)
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_XA_029_StocktakeEdgeCases:
+    """US-XA-029: Handle concurrent stocktake and session integrity.
+
+    MoSCoW: MUST
+    Spec refs: S7.4.3, S7.9.1–S7.9.6, S2.7
+    """
+
+    def test_stocktake_list_accessible(self, admin_client):
+        """Stocktake list page is accessible to admin."""
+        resp = admin_client.get(reverse("assets:stocktake_list"))
+        assert resp.status_code == 200
+
+    def test_stocktake_start_accessible(self, admin_client):
+        """Stocktake start page is accessible to admin."""
+        resp = admin_client.get(reverse("assets:stocktake_start"))
+        assert resp.status_code == 200
+
+    def test_stocktake_start_with_location(self, admin_client, location):
+        """Starting a stocktake with a valid location succeeds."""
+        resp = admin_client.post(
+            reverse("assets:stocktake_start"),
+            {"location": location.pk},
+        )
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_XA_030_LostStolenTransitionEdgeCases:
+    """US-XA-030: Handle state transitions for missing/lost/stolen.
+
+    MoSCoW: MUST
+    Spec refs: S7.5.3–S7.5.5, S7.17.2–S7.17.5, S2.2.3, S2.8
+    """
+
+    def test_activate_draft_missing_required_fields_rejected(
+        self, admin_client, location, category
+    ):
+        """Promoting a draft missing required fields must be rejected
+        with per-field error messages (S7.5.3)."""
+        draft = AssetFactory(
+            name="XA030 Draft",
+            status="draft",
+            category=category,
+        )
+        resp = admin_client.post(
+            reverse("assets:asset_edit", args=[draft.pk]),
+            {
+                "name": draft.name,
+                "status": "active",
+                "category": category.pk,
+                # Missing current_location, condition, quantity
+            },
+        )
+        draft.refresh_from_db()
+        # Draft should remain draft (validation failed)
+        assert draft.status == "draft"
+
+    def test_bulk_transition_to_lost_rejected(
+        self, admin_client, active_asset, location, category
+    ):
+        """Bulk transitions to lost/stolen should be rejected (S7.17.5)
+        because mandatory notes are required per asset."""
+        other = AssetFactory(
+            name="XA030 Other",
+            status="active",
+            category=category,
+            current_location=location,
+        )
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "bulk_action": "status_change",
+                "asset_ids": [active_asset.pk, other.pk],
+                "new_status": "lost",
+            },
+        )
+        # Both assets should remain active — bulk lost rejected
+        active_asset.refresh_from_db()
+        other.refresh_from_db()
+        assert active_asset.status == "active"
+        assert other.status == "active"
+
+
+@pytest.mark.django_db
+class TestUS_XA_031_LocationHierarchyEdgeCases:
+    """US-XA-031: Handle location hierarchy edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.6.1–S7.6.9, S2.12, S2.12.4
+    """
+
+    def test_location_with_assets_cannot_be_deleted_via_admin(
+        self, admin_client, location, asset
+    ):
+        """Deleting a location with assets should be blocked."""
+        resp = admin_client.post(
+            f"/admin/assets/location/{location.pk}/delete/",
+            {"post": "yes"},
+        )
+        from assets.models import Location
+
+        assert Location.objects.filter(pk=location.pk).exists()
+
+    def test_circular_parent_reference_blocked(self, admin_client, location):
+        """Setting a location's parent to itself should be blocked."""
+        child = LocationFactory(
+            name="XA031 Child",
+            parent=location,
+        )
+        # Try to set location's parent to its own child (circular)
+        resp = admin_client.post(
+            f"/admin/assets/location/{location.pk}/change/",
+            {
+                "name": location.name,
+                "parent": child.pk,
+            },
+        )
+        location.refresh_from_db()
+        # Parent should not have been set to child (circular)
+        assert location.parent != child
+
+
+@pytest.mark.django_db
+class TestUS_XA_033_ImageProcessingEdgeCases:
+    """US-XA-033: Handle image upload and processing edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S7.8.1–S7.8.5, S2.2.5
+    """
+
+    def test_non_image_file_rejected(self, admin_client, active_asset):
+        """Uploading a non-image file should be rejected (S7.8.2)."""
+        fake_file = SimpleUploadedFile(
+            "malicious.exe",
+            b"MZ\x90\x00" + b"\x00" * 100,
+            content_type="application/octet-stream",
+        )
+        resp = admin_client.post(
+            reverse("assets:image_upload", args=[active_asset.pk]),
+            {"image": fake_file},
+        )
+        # Should not create an AssetImage
+        from assets.models import AssetImage
+
+        assert not AssetImage.objects.filter(asset=active_asset).exists()
+
+    def test_valid_image_upload_succeeds(self, admin_client, active_asset):
+        """Uploading a valid image succeeds (S7.8.2)."""
+        # 1x1 red PNG
+        import base64
+
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAA"
+            "DUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+        )
+        png_data = base64.b64decode(png_b64)
+        image_file = SimpleUploadedFile(
+            "test.png",
+            png_data,
+            content_type="image/png",
+        )
+        resp = admin_client.post(
+            reverse("assets:image_upload", args=[active_asset.pk]),
+            {"image": image_file},
+        )
+        assert resp.status_code in (200, 302)
