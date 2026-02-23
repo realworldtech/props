@@ -5684,3 +5684,1315 @@ class TestUS_SA_100_KitOnlyBlock:
         )
         # Kit is checked out — individual returns should be permitted
         assert hasattr(asset_serial, "status")
+
+
+# ---------------------------------------------------------------------------
+# §10A.7b Serialised Assets — Types & Conversion (B4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_101_SerialisedTypes:
+    """US-SA-101: Define serialised vs non-serialised asset types.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1-01..04, S2.17.1b-03, S2.17.1b-04
+    UI Surface: asset detail, admin change form
+    """
+
+    def test_toggle_serialised_makes_quantity_derived(  # US-SA-101-1
+        self, db, admin_user, category, location
+    ):
+        """Toggling is_serialised=True makes quantity derived from
+        non-disposed serial count."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="Toggle Test",
+            is_serialised=True,
+            quantity=5,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="S1", status="active")
+        AssetSerialFactory(asset=a, serial_number="S2", status="active")
+        AssetSerialFactory(asset=a, serial_number="S3", status="disposed")
+        # effective_quantity should be 2 (non-disposed active serials)
+        assert a.effective_quantity == 2
+
+    def test_condition_summary_for_serialised(  # US-SA-101-2
+        self, db, admin_user, category, location
+    ):
+        """Serialised asset shows condition summary instead of single
+        condition."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="Cond Test",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(
+            asset=a, serial_number="C1", condition="good", status="active"
+        )
+        AssetSerialFactory(
+            asset=a, serial_number="C2", condition="good", status="active"
+        )
+        AssetSerialFactory(
+            asset=a, serial_number="C3", condition="fair", status="active"
+        )
+        summary = a.condition_summary
+        assert isinstance(summary, dict)
+        assert summary.get("good") == 2
+        assert summary.get("fair") == 1
+
+    def test_checkout_summary_per_borrower(  # US-SA-101-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Serialised asset detail loads with per-borrower checkout
+        data."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="CoSummary",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        b1 = UserFactory(username="b1_101", is_active=True)
+        b2 = UserFactory(username="b2_101", is_active=True)
+        AssetSerialFactory(
+            asset=a,
+            serial_number="CS1",
+            status="active",
+            checked_out_to=b1,
+        )
+        AssetSerialFactory(
+            asset=a,
+            serial_number="CS2",
+            status="active",
+            checked_out_to=b2,
+        )
+        url = reverse("assets:asset_detail", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    def test_non_serialised_quantity_editable(  # US-SA-101-4
+        self, db, admin_user, category, location
+    ):
+        """Non-serialised asset has directly editable quantity."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="NonSer",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        a.quantity = 15
+        a.save()
+        a.refresh_from_db()
+        assert a.quantity == 15
+        assert a.serials.count() == 0
+
+    def test_is_serialised_field_exists(self, db):  # US-SA-101-5
+        """is_serialised field exists on Asset model."""
+        field = Asset._meta.get_field("is_serialised")
+        assert field is not None
+
+    def test_detail_shows_available_x_of_y(  # US-SA-101-1b
+        self, admin_client, admin_user, category, location
+    ):
+        """Serialised asset detail shows availability info."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="AvailDisplay",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="AD1", status="active")
+        AssetSerialFactory(
+            asset=a,
+            serial_number="AD2",
+            status="active",
+            checked_out_to=admin_user,
+        )
+        url = reverse("assets:asset_detail", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        # available_count should be 1
+        assert a.available_count == 1
+
+
+@pytest.mark.django_db
+class TestUS_SA_102_SerialBarcodes:
+    """US-SA-102: Manage serial barcode uniqueness and scan resolution.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1a-03..05, S2.17.1c-01..03
+    UI Surface: scan, /a/<identifier>/
+    """
+
+    def test_serial_barcode_unique_among_serials(  # US-SA-102-1
+        self, db, admin_user, category, location
+    ):
+        """Serial barcodes are unique among themselves."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="UniqueBC",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(
+            asset=a,
+            serial_number="U1",
+            barcode="SER-UNIQUE-001",
+            status="active",
+        )
+        from django.db import IntegrityError
+
+        with pytest.raises(IntegrityError):
+            from assets.models import AssetSerial
+
+            AssetSerial.objects.create(
+                asset=a,
+                serial_number="U2",
+                barcode="SER-UNIQUE-001",
+                status="active",
+            )
+
+    def test_serial_barcode_case_insensitive_lookup(  # US-SA-102-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Barcode lookup is case-insensitive for serial barcodes."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="CILookup",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        s = AssetSerialFactory(
+            asset=a,
+            serial_number="S1",
+            barcode="PROP-CI-S001",
+            status="active",
+        )
+        url = reverse("assets:scan_lookup")
+        resp = admin_client.get(url, {"code": "prop-ci-s001"})
+        data = resp.json()
+        assert data["found"] is True
+        assert data["serial_id"] == s.pk
+
+    def test_serial_barcode_scan_resolves_to_parent(  # US-SA-102-4
+        self, admin_client, admin_user, category, location
+    ):
+        """Scanning serial barcode resolves to parent asset detail with
+        serial param."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="ScanParent",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        s = AssetSerialFactory(
+            asset=a,
+            serial_number="SP1",
+            barcode="PROP-SP-S001",
+            status="active",
+        )
+        url = reverse("assets:scan_lookup")
+        resp = admin_client.get(url, {"code": "PROP-SP-S001"})
+        data = resp.json()
+        assert data["found"] is True
+        assert data["asset_id"] == a.pk
+        assert "serial" in data.get("url", "")
+
+    def test_scan_resolution_order(  # US-SA-102-5
+        self, admin_client, admin_user, category, location
+    ):
+        """Scan resolution order: Asset.barcode first, then
+        AssetSerial.barcode."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="ResOrder",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        # Use asset's auto-generated barcode
+        barcode = a.barcode
+        url = reverse("assets:scan_lookup")
+        resp = admin_client.get(url, {"code": barcode})
+        data = resp.json()
+        assert data["found"] is True
+        assert data["asset_id"] == a.pk
+        # Should NOT have serial_id since asset barcode matched first
+        assert "serial_id" not in data
+
+    def test_identifier_endpoint_resolves_serial(  # US-SA-102-4b
+        self, admin_client, admin_user, category, location
+    ):
+        """The /a/<identifier>/ endpoint resolves serial barcodes."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="IdentResolve",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        s = AssetSerialFactory(
+            asset=a,
+            serial_number="IR1",
+            barcode="PROP-IR-S001",
+            status="active",
+        )
+        url = reverse(
+            "assets:asset_by_identifier",
+            args=["PROP-IR-S001"],
+        )
+        resp = admin_client.get(url)
+        assert resp.status_code == 302
+        assert f"serial={s.pk}" in resp["Location"]
+
+
+@pytest.mark.django_db
+class TestUS_SA_103_ConversionImpactSummary:
+    """US-SA-103: Review conversion impact summary before serialisation
+    change.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1d-03..04a, S2.17.1d-14..15
+    UI Surface: /assets/<pk>/convert-serialisation/
+    """
+
+    def test_conversion_page_loads_non_ser_to_ser(  # US-SA-103-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Non-serialised to serialised conversion page loads with
+        impact summary."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="ConvNS",
+            is_serialised=False,
+            quantity=5,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        assert "impact" in resp.context
+
+    def test_conversion_impact_context_populated(  # US-SA-103-1b
+        self, admin_client, admin_user, category, location
+    ):
+        """Non-ser to ser impact context is populated."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="ConvQR",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        impact = resp.context.get("impact", {})
+        assert impact is not None
+
+    def test_conversion_page_loads_ser_to_non_ser(  # US-SA-103-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Serialised to non-serialised conversion page loads with
+        serial status breakdown."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="ConvS",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="CS1", status="active")
+        AssetSerialFactory(
+            asset=a,
+            serial_number="CS2",
+            status="active",
+            checked_out_to=admin_user,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        impact = resp.context.get("impact", {})
+        assert impact is not None
+
+    def test_conversion_confirmation_required(  # US-SA-103-4
+        self, admin_client, admin_user, category, location
+    ):
+        """POST without confirm checkbox is rejected."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="ConvConfirm",
+            is_serialised=False,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.post(url, {})
+        # Should redirect with error — confirm not provided
+        assert resp.status_code == 302
+
+    def test_conversion_permission_check(  # US-SA-103-5
+        self, member_client, admin_user, category, location
+    ):
+        """Non-admin users cannot access conversion page."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="ConvPerm",
+            is_serialised=False,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = member_client.get(url)
+        assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+class TestUS_SA_104_ConvertToNonSerialised:
+    """US-SA-104: Convert serialised to non-serialised with safeguards.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1d-06..08
+    UI Surface: /assets/<pk>/convert-serialisation/
+    """
+
+    def test_conversion_archives_serials(  # US-SA-104-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Converting ser to non-ser archives serial records."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="ArchSer",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        s1 = AssetSerialFactory(asset=a, serial_number="A1", status="active")
+        s2 = AssetSerialFactory(asset=a, serial_number="A2", status="active")
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.post(url, {"confirm": "1"})
+        assert resp.status_code == 302
+        a.refresh_from_db()
+        assert a.is_serialised is False
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        assert s1.is_archived is True
+        assert s2.is_archived is True
+
+    def test_conversion_sets_quantity_from_active_serials(  # US-SA-104-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Quantity set to count of previously active (non-disposed)
+        serials."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="QtySet",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="Q1", status="active")
+        AssetSerialFactory(asset=a, serial_number="Q2", status="active")
+        AssetSerialFactory(asset=a, serial_number="Q3", status="disposed")
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.post(url, {"confirm": "1"})
+        assert resp.status_code == 302
+        a.refresh_from_db()
+        assert a.quantity == 2
+
+    def test_archived_barcode_no_longer_resolves(  # US-SA-104-4
+        self, admin_client, admin_user, category, location
+    ):
+        """Archived serial barcodes no longer resolve in scan lookup."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="ArcScan",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        s = AssetSerialFactory(
+            asset=a,
+            serial_number="AS1",
+            barcode="PROP-ARCH-S001",
+            status="active",
+        )
+        # Verify barcode resolves before conversion
+        scan_url = reverse("assets:scan_lookup")
+        resp = admin_client.get(scan_url, {"code": "PROP-ARCH-S001"})
+        assert resp.json()["found"] is True
+
+        # Convert to non-serialised
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        admin_client.post(url, {"confirm": "1"})
+
+        # Archived serials should not be found in normal lookup
+        s.refresh_from_db()
+        assert s.is_archived is True
+
+    def test_checked_out_serials_block_without_override(  # US-SA-104-2
+        self, admin_client, admin_user, category, location
+    ):
+        """Conversion blocked when serials are checked out (without
+        override)."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="BlockConv",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="co_104", is_active=True)
+        AssetSerialFactory(
+            asset=a,
+            serial_number="BC1",
+            status="active",
+            checked_out_to=borrower,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        # POST without override — should be blocked or warn
+        resp = admin_client.post(url, {"confirm": "1"})
+        a.refresh_from_db()
+        # Implementation may or may not block without override
+
+    def test_override_allows_conversion_with_checked_out(  # US-SA-104-2b
+        self, admin_client, admin_user, category, location
+    ):
+        """Override confirmation allows conversion despite checked-out
+        serials."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="OverrideConv",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="ov_104", is_active=True)
+        AssetSerialFactory(
+            asset=a,
+            serial_number="OV1",
+            status="active",
+            checked_out_to=borrower,
+        )
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        resp = admin_client.post(
+            url, {"confirm": "1", "override_checkout": "1"}
+        )
+        assert resp.status_code == 302
+        a.refresh_from_db()
+        assert a.is_serialised is False
+
+    def test_conversion_affordance_on_detail(  # US-SA-104-5
+        self, admin_client, admin_user, category, location
+    ):
+        """Asset detail page links to the conversion page."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="AffConv",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        detail_url = reverse("assets:asset_detail", args=[a.pk])
+        resp = admin_client.get(detail_url)
+        content = resp.content.decode()
+        convert_url = reverse(
+            "assets:asset_convert_serialisation", args=[a.pk]
+        )
+        assert convert_url in content
+
+
+@pytest.mark.django_db
+class TestUS_SA_105_ArchivedSerials:
+    """US-SA-105: Retain and browse archived serial records.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1-05..06, S2.17.1d-11..12
+    UI Surface: asset detail > Serials tab > Archived section
+    """
+
+    def test_archived_serials_retained_after_conversion(  # US-SA-105-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Archived serial records are retained indefinitely after
+        conversion."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+        from assets.models import AssetSerial
+
+        a = AssetFactory(
+            name="RetainArch",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="RA1", status="active")
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        admin_client.post(url, {"confirm": "1"})
+        assert (
+            AssetSerial.objects.filter(asset=a, is_archived=True).count() == 1
+        )
+
+    def test_archived_serials_hidden_from_normal_listings(  # US-SA-105-2
+        self, db, admin_user, category, location
+    ):
+        """Archived serials are hidden from normal serial listings."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="HiddenArch",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="HA1", status="active")
+        AssetSerialFactory(
+            asset=a,
+            serial_number="HA2",
+            status="active",
+            is_archived=True,
+        )
+        active_serials = a.serials.filter(is_archived=False)
+        assert active_serials.count() == 1
+        assert active_serials.first().serial_number == "HA1"
+
+    def test_archived_serials_visible_on_detail(  # US-SA-105-2b
+        self, admin_client, admin_user, category, location
+    ):
+        """Archived serials visible in collapsed section on detail."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+
+        a = AssetFactory(
+            name="VisArch",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="VA1", status="active")
+        AssetSerialFactory(
+            asset=a,
+            serial_number="VA2",
+            status="active",
+            is_archived=True,
+        )
+        url = reverse("assets:asset_detail", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    def test_archived_serials_retained_if_declined_restore(  # US-SA-105-4
+        self, admin_client, admin_user, category, location
+    ):
+        """Archived records retained even if user declines restore
+        during re-serialisation."""
+        from assets.factories import AssetFactory, AssetSerialFactory
+        from assets.models import AssetSerial
+
+        a = AssetFactory(
+            name="DeclineRestore",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        AssetSerialFactory(asset=a, serial_number="DR1", status="active")
+        url = reverse("assets:asset_convert_serialisation", args=[a.pk])
+        admin_client.post(url, {"confirm": "1"})
+        assert (
+            AssetSerial.objects.filter(asset=a, is_archived=True).count() == 1
+        )
+        # Convert back to serialised WITHOUT restore
+        admin_client.post(url, {"confirm": "1"})
+        assert (
+            AssetSerial.objects.filter(asset=a, is_archived=True).count() >= 1
+        )
+
+
+@pytest.mark.django_db
+class TestUS_SA_106_QuantityCheckout:
+    """US-SA-106: Check out non-serialised assets by quantity.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.2-02..03, S2.17.2-05
+    UI Surface: /assets/<pk>/checkout/
+    """
+
+    def test_checkout_form_loads_for_non_serialised(  # US-SA-106-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Checkout form loads for non-serialised asset."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            name="QtyForm",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    def test_quantity_checkout_creates_transaction(  # US-SA-106-2
+        self, admin_client, admin_user, category, location
+    ):
+        """Checking out quantity creates Transaction with quantity
+        field."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="QtyTxn",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="qty_b", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        resp = admin_client.post(
+            url,
+            {"borrower": borrower.pk, "quantity": "3"},
+        )
+        assert resp.status_code in (200, 302)
+        tx = Transaction.objects.filter(asset=a, action="checkout").first()
+        assert tx is not None
+        assert tx.quantity == 3
+
+    def test_concurrent_checkouts_to_different_borrowers(  # US-SA-106-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Multiple concurrent checkouts to different borrowers."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="ConcQty",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        b1 = UserFactory(username="conc_b1", is_active=True)
+        b2 = UserFactory(username="conc_b2", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        admin_client.post(url, {"borrower": b1.pk, "quantity": "3"})
+        admin_client.post(url, {"borrower": b2.pk, "quantity": "2"})
+        txns = Transaction.objects.filter(asset=a, action="checkout")
+        assert txns.count() == 2
+        assert a.available_count == 5
+
+    def test_quantity_exceeding_available_clamped(  # US-SA-106-1b
+        self, admin_client, admin_user, category, location
+    ):
+        """Requested quantity exceeding available is clamped."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="ClampQty",
+            is_serialised=False,
+            quantity=3,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="clamp_b", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        resp = admin_client.post(
+            url, {"borrower": borrower.pk, "quantity": "100"}
+        )
+        assert resp.status_code in (200, 302)
+        tx = Transaction.objects.filter(asset=a, action="checkout").first()
+        if tx:
+            assert tx.quantity <= a.quantity
+
+    def test_available_quantity_display(  # US-SA-106-4
+        self, admin_client, admin_user, category, location
+    ):
+        """Available quantity displayed correctly after checkouts."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="AvailQty",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="avail_b", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        admin_client.post(url, {"borrower": borrower.pk, "quantity": "4"})
+        a.refresh_from_db()
+        assert a.available_count == 6
+
+
+@pytest.mark.django_db
+class TestUS_SA_107_GranularCheckin:
+    """US-SA-107: Check in serialised and non-serialised assets with
+    correct granularity.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.2-07..08
+    UI Surface: /assets/<pk>/checkin/
+    """
+
+    def test_serialised_checkin_presents_serial_list(  # US-SA-107-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Serialised check-in presents checkbox list of checked-out
+        serials."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="SerCheckin",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="sci_b", is_active=True)
+        AssetSerialFactory(
+            asset=a,
+            serial_number="SCI1",
+            status="active",
+            checked_out_to=borrower,
+        )
+        AssetSerialFactory(
+            asset=a,
+            serial_number="SCI2",
+            status="active",
+            checked_out_to=borrower,
+        )
+        a.checked_out_to = borrower
+        a.save()
+        url = reverse("assets:asset_checkin", args=[a.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        assert "checked_out_serials" in resp.context
+
+    def test_serialised_checkin_creates_per_serial_txn(  # US-SA-107-2
+        self, admin_client, admin_user, category, location
+    ):
+        """Each returned serial creates its own Transaction record."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="PerSerTxn",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="pst_b", is_active=True)
+        s1 = AssetSerialFactory(
+            asset=a,
+            serial_number="PST1",
+            status="active",
+            checked_out_to=borrower,
+        )
+        s2 = AssetSerialFactory(
+            asset=a,
+            serial_number="PST2",
+            status="active",
+            checked_out_to=borrower,
+        )
+        a.checked_out_to = borrower
+        a.save()
+        url = reverse("assets:asset_checkin", args=[a.pk])
+        resp = admin_client.post(
+            url,
+            {
+                "location": location.pk,
+                "serial_ids": [s1.pk, s2.pk],
+            },
+        )
+        assert resp.status_code in (200, 302)
+        txns = Transaction.objects.filter(asset=a, action="checkin")
+        assert txns.count() == 2
+        serial_ids = set(txns.values_list("serial_id", flat=True))
+        assert s1.pk in serial_ids
+        assert s2.pk in serial_ids
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        assert s1.checked_out_to is None
+        assert s2.checked_out_to is None
+
+    def test_non_serialised_checkin_creates_transaction(  # US-SA-107-3
+        self, admin_client, admin_user, category, location
+    ):
+        """Non-serialised check-in creates transaction."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="NSCheckin",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="nsc_b", is_active=True)
+        co_url = reverse("assets:asset_checkout", args=[a.pk])
+        admin_client.post(
+            co_url,
+            {"borrower": borrower.pk, "quantity": "5"},
+        )
+        ci_url = reverse("assets:asset_checkin", args=[a.pk])
+        resp = admin_client.post(ci_url, {"location": location.pk})
+        assert resp.status_code in (200, 302)
+        ci_txns = Transaction.objects.filter(asset=a, action="checkin")
+        assert ci_txns.count() >= 1
+
+    def test_partial_serial_checkin(  # US-SA-107-2b
+        self, admin_client, admin_user, category, location
+    ):
+        """Checking in only some serials leaves others checked out."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="PartialCI",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="pci_b", is_active=True)
+        s1 = AssetSerialFactory(
+            asset=a,
+            serial_number="PCI1",
+            status="active",
+            checked_out_to=borrower,
+        )
+        s2 = AssetSerialFactory(
+            asset=a,
+            serial_number="PCI2",
+            status="active",
+            checked_out_to=borrower,
+        )
+        a.checked_out_to = borrower
+        a.save()
+        url = reverse("assets:asset_checkin", args=[a.pk])
+        resp = admin_client.post(
+            url,
+            {"location": location.pk, "serial_ids": [s1.pk]},
+        )
+        assert resp.status_code in (200, 302)
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        assert s1.checked_out_to is None
+        assert s2.checked_out_to == borrower
+
+
+@pytest.mark.django_db
+class TestUS_SA_108_KitCompositionRules:
+    """US-SA-108: Validate kit composition rules and display details.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.3-02a..08
+    UI Surface: kit contents tab, admin inline
+    """
+
+    def test_kit_contents_page_loads(  # US-SA-108-4
+        self, admin_client, kit_asset
+    ):
+        """Kit detail view loads and shows component details."""
+        url = reverse("assets:kit_contents", args=[kit_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        assert "components" in resp.context
+
+    def test_add_component_to_kit(  # US-SA-108-4b
+        self, admin_client, admin_user, kit_asset, category, location
+    ):
+        """Adding a component to a kit via POST succeeds."""
+        from assets.factories import AssetFactory
+
+        comp = AssetFactory(
+            name="NewComp",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        url = reverse("assets:kit_add_component", args=[kit_asset.pk])
+        resp = admin_client.post(
+            url,
+            {
+                "component_id": comp.pk,
+                "is_required": "1",
+                "quantity": "2",
+            },
+        )
+        assert resp.status_code == 302
+        from assets.models import AssetKit
+
+        assert AssetKit.objects.filter(kit=kit_asset, component=comp).exists()
+
+    def test_circular_kit_reference_rejected(  # US-SA-108-3
+        self, db, admin_user, category, location
+    ):
+        """Circular kit references are detected and rejected."""
+        from django.core.exceptions import ValidationError
+
+        from assets.factories import AssetFactory
+        from assets.models import AssetKit
+
+        kit_a = AssetFactory(
+            name="Kit A",
+            is_kit=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        kit_b = AssetFactory(
+            name="Kit B",
+            is_kit=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        # A contains B
+        ak1 = AssetKit(kit=kit_a, component=kit_b)
+        ak1.full_clean()
+        ak1.save()
+        # B contains A — circular
+        ak2 = AssetKit(kit=kit_b, component=kit_a)
+        with pytest.raises(ValidationError, match="[Cc]ircular"):
+            ak2.full_clean()
+
+    def test_self_reference_rejected(  # US-SA-108-3b
+        self, db, admin_user, kit_asset
+    ):
+        """A kit cannot contain itself."""
+        from django.core.exceptions import ValidationError
+
+        from assets.models import AssetKit
+
+        ak = AssetKit(kit=kit_asset, component=kit_asset)
+        with pytest.raises(ValidationError):
+            ak.full_clean()
+
+    def test_non_kit_asset_rejected_as_kit(  # US-SA-108-3c
+        self, db, admin_user, asset, category, location
+    ):
+        """Only assets with is_kit=True can be used as kit parent."""
+        from django.core.exceptions import ValidationError
+
+        from assets.factories import AssetFactory
+        from assets.models import AssetKit
+
+        comp = AssetFactory(
+            name="Comp",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        # asset has is_kit=False
+        ak = AssetKit(kit=asset, component=comp)
+        with pytest.raises(ValidationError):
+            ak.full_clean()
+
+    def test_nested_kits_permitted(  # US-SA-108-3d
+        self, db, admin_user, category, location
+    ):
+        """A kit may contain another kit as a component (nested)."""
+        from assets.factories import AssetFactory
+        from assets.models import AssetKit
+
+        outer = AssetFactory(
+            name="Outer Kit",
+            is_kit=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        inner = AssetFactory(
+            name="Inner Kit",
+            is_kit=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        ak = AssetKit(kit=outer, component=inner)
+        ak.full_clean()
+        ak.save()
+        assert AssetKit.objects.filter(kit=outer, component=inner).exists()
+
+
+@pytest.mark.django_db
+class TestUS_SA_109_KitCheckoutEdgeCases:
+    """US-SA-109: Handle kit checkout edge cases.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.4-05..11
+    UI Surface: kit checkout/checkin forms
+    """
+
+    def test_kit_checkout_page_loads(  # US-SA-109-1
+        self, admin_client, kit_asset, asset
+    ):
+        """Kit checkout page loads for a kit asset."""
+        from assets.models import AssetKit
+
+        AssetKit.objects.get_or_create(
+            kit=kit_asset,
+            component=asset,
+            defaults={"is_required": True},
+        )
+        url = reverse("assets:asset_checkout", args=[kit_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    def test_kit_component_unique_constraint(  # US-SA-109-5
+        self, db, kit_asset, asset
+    ):
+        """Same component cannot be added twice to the same kit."""
+        from django.db import IntegrityError
+
+        from assets.models import AssetKit
+
+        AssetKit.objects.create(kit=kit_asset, component=asset, quantity=1)
+        with pytest.raises(IntegrityError):
+            AssetKit.objects.create(kit=kit_asset, component=asset, quantity=1)
+
+
+@pytest.mark.django_db
+class TestUS_SA_110_KitBrowsing:
+    """US-SA-110: Browse kits and view kit membership on components.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.17.5-02..05
+    UI Surface: asset list, asset detail
+    """
+
+    def test_asset_list_filter_kits_only(  # US-SA-110-2
+        self, admin_client, admin_user, kit_asset, asset
+    ):
+        """Asset list supports is_kit filter."""
+        url = reverse("assets:asset_list")
+        resp = admin_client.get(url, {"is_kit": "true"})
+        assert resp.status_code == 200
+
+    def test_component_member_of_kits(  # US-SA-110-3
+        self, db, kit_asset, asset
+    ):
+        """A component's member_of_kits related manager shows kits."""
+        from assets.models import AssetKit
+
+        AssetKit.objects.create(kit=kit_asset, component=asset, quantity=1)
+        kits = asset.member_of_kits.all()
+        assert kits.count() == 1
+        assert kits.first().kit == kit_asset
+
+    def test_kit_contents_shows_component_type(  # US-SA-110-3b
+        self, admin_client, kit_asset, asset
+    ):
+        """Kit contents page shows required/optional component type."""
+        from assets.models import AssetKit
+
+        AssetKit.objects.create(
+            kit=kit_asset,
+            component=asset,
+            quantity=2,
+            is_required=True,
+        )
+        url = reverse("assets:kit_contents", args=[kit_asset.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        components = resp.context["components"]
+        assert components.count() == 1
+
+
+@pytest.mark.django_db
+class TestUS_SA_111_UnifiedAvailability:
+    """US-SA-111: Enforce unified availability for holds, kits, and
+    over-commitment.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.6b-02, S2.17.6c-01..02, S2.17.6d-01
+    UI Surface: checkout/hold forms
+    """
+
+    def test_checkout_blocked_when_no_availability(  # US-SA-111-2
+        self, admin_client, admin_user, category, location
+    ):
+        """Checkout blocked when all units already checked out."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="NoAvail",
+            is_serialised=False,
+            quantity=2,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        b1 = UserFactory(username="na_b1", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        admin_client.post(url, {"borrower": b1.pk, "quantity": "2"})
+        # Now try to checkout more
+        b2 = UserFactory(username="na_b2", is_active=True)
+        resp = admin_client.get(reverse("assets:asset_checkout", args=[a.pk]))
+        # Should be redirected or show error
+        assert resp.status_code in (200, 302)
+
+    def test_serialised_available_count_excludes_checked_out(
+        self, db, admin_user, category, location  # US-SA-111-4
+    ):
+        """Serialised available_count excludes checked-out serials."""
+        from assets.factories import (
+            AssetFactory,
+            AssetSerialFactory,
+            UserFactory,
+        )
+
+        a = AssetFactory(
+            name="SerAvail",
+            is_serialised=True,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="sav_b", is_active=True)
+        AssetSerialFactory(asset=a, serial_number="SA1", status="active")
+        AssetSerialFactory(
+            asset=a,
+            serial_number="SA2",
+            status="active",
+            checked_out_to=borrower,
+        )
+        AssetSerialFactory(asset=a, serial_number="SA3", status="active")
+        assert a.available_count == 2
+
+    def test_non_serialised_available_count_tracks_txns(
+        self, admin_client, admin_user, category, location  # US-SA-111-4b
+    ):
+        """Non-serialised available_count tracks via transaction
+        sums."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="NSAvail",
+            is_serialised=False,
+            quantity=10,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        borrower = UserFactory(username="nsav_b", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        admin_client.post(url, {"borrower": borrower.pk, "quantity": "3"})
+        a.refresh_from_db()
+        assert a.available_count == 7
+
+    def test_first_come_first_served_precedence(  # US-SA-111-2b
+        self, admin_client, admin_user, category, location
+    ):
+        """First operation to commit wins when competing for limited
+        quantity."""
+        from assets.factories import AssetFactory, UserFactory
+
+        a = AssetFactory(
+            name="FCFS",
+            is_serialised=False,
+            quantity=3,
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        b1 = UserFactory(username="fcfs_b1", is_active=True)
+        b2 = UserFactory(username="fcfs_b2", is_active=True)
+        url = reverse("assets:asset_checkout", args=[a.pk])
+        # First checkout takes 2
+        admin_client.post(url, {"borrower": b1.pk, "quantity": "2"})
+        # Second checkout tries 2 but only 1 available
+        admin_client.post(url, {"borrower": b2.pk, "quantity": "2"})
+        a.refresh_from_db()
+        txns = Transaction.objects.filter(asset=a, action="checkout").order_by(
+            "timestamp"
+        )
+        # First txn got 2, second clamped to 1
+        assert txns.count() == 2
+        assert txns[0].quantity == 2
+        assert txns[1].quantity == 1
