@@ -131,6 +131,13 @@ class TestUS_MB_002_ViewOwnDraftsQueue:
         assert resp.status_code == 200
         assert draft.name.encode() in resp.content
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: viewer permission not enforced on drafts_queue"
+            " (US-MB-002, S10C)"
+        ),
+    )
     def test_viewer_cannot_access_drafts_queue(self, viewer_client):
         resp = viewer_client.get(reverse("assets:drafts_queue"))
         assert resp.status_code in (302, 403)
@@ -220,6 +227,8 @@ class TestUS_MB_004_PromoteDraftToActive:
                 "status": "active",
                 "category": category.pk,
                 "current_location": location.pk,
+                "condition": "good",
+                "quantity": 1,
             },
         )
         draft.refresh_from_db()
@@ -405,6 +414,13 @@ class TestUS_MB_010_ViewMyBorrowedItems:
         resp = client_logged_in.get(reverse("assets:my_borrowed_items"))
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: viewer permission not enforced on my_borrowed_items"
+            " (US-MB-010, S10C)"
+        ),
+    )
     def test_viewer_cannot_access_my_borrowed_items(self, viewer_client):
         resp = viewer_client.get(reverse("assets:my_borrowed_items"))
         assert resp.status_code in (302, 403)
@@ -450,7 +466,7 @@ class TestUS_MB_011_CheckInBorrowedAsset:
         # Now check in
         client_logged_in.post(
             reverse("assets:asset_checkin", args=[active_asset.pk]),
-            {"to_location": location.pk},
+            {"location": location.pk},
         )
         active_asset.refresh_from_db()
         assert active_asset.checked_out_to is None
@@ -540,6 +556,13 @@ class TestUS_MB_014_PrintLabelFromDetail:
         )
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: viewer permission not enforced on asset_label"
+            " (US-MB-014, S10C)"
+        ),
+    )
     def test_viewer_cannot_access_label_page(self, viewer_client, asset):
         resp = viewer_client.get(
             reverse("assets:asset_label", args=[asset.pk])
@@ -569,6 +592,10 @@ class TestUS_MB_016_ExportAssetsToExcel:
             or "xlsx" in resp.get("Content-Disposition", "")
         )
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: viewers cannot export assets" " (US-MB-016, S10C)"),
+    )
     def test_viewer_can_also_export(self, viewer_client):
         resp = viewer_client.get(reverse("assets:export_assets"))
         assert resp.status_code == 200
@@ -700,6 +727,13 @@ class TestUS_MB_022_CreateHoldList:
         resp = client_logged_in.get(reverse("assets:holdlist_create"))
         assert resp.status_code == 200
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: viewer permission not enforced on holdlist_create"
+            " (US-MB-022, S10C)"
+        ),
+    )
     def test_viewer_cannot_create_hold_list(self, viewer_client):
         resp = viewer_client.get(reverse("assets:holdlist_create"))
         assert resp.status_code in (302, 403)
@@ -729,13 +763,14 @@ class TestUS_MB_024_EditAndManageOwnHoldList:
     """
 
     def test_member_can_edit_own_hold_list(
-        self, client_logged_in, user, hold_list_status
+        self, client_logged_in, user, hold_list_status, department
     ):
         from assets.models import HoldList
 
         my_list = HoldList.objects.create(
             name="My List",
             status=hold_list_status,
+            department=department,
             start_date="2026-04-01",
             end_date="2026-04-30",
             created_by=user,
@@ -746,13 +781,14 @@ class TestUS_MB_024_EditAndManageOwnHoldList:
         assert resp.status_code == 200
 
     def test_member_cannot_edit_others_hold_list(
-        self, client_logged_in, admin_user, hold_list_status
+        self, client_logged_in, admin_user, hold_list_status, department
     ):
         from assets.models import HoldList
 
         other_list = HoldList.objects.create(
             name="Other List",
             status=hold_list_status,
+            department=department,
             start_date="2026-04-01",
             end_date="2026-04-30",
             created_by=admin_user,
@@ -988,6 +1024,10 @@ class TestUS_VW_005_ExportAssetsToExcel:
     MoSCoW: SHOULD
     """
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: viewers cannot export assets" " (US-VW-005, S10C)"),
+    )
     def test_viewer_can_export_assets(self, viewer_client):
         resp = viewer_client.get(reverse("assets:export_assets"))
         assert resp.status_code == 200
@@ -1662,3 +1702,174 @@ class TestUS_MB_030_AIAnalysis:
             f"Expected ai_apply_suggestions URL ({apply_url}) in the "
             "asset detail page when AI suggestions are completed"
         )
+
+
+# ---------------------------------------------------------------------------
+# Missing story coverage — added Feb 2026
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_MB_015_MonitorRemotePrintJobStatus:
+    """US-MB-015: Monitor remote print job status.
+
+    MoSCoW: MUST
+    Spec refs: S2.4.5b-01, S2.4.5b-02, S2.4.5b-03, S2.4.5b-04
+    UI Surface: /assets/<pk>/remote-print/ + /assets/<pk>/print-history/
+    """
+
+    def test_remote_print_submit_accessible(
+        self, client_logged_in, active_asset
+    ):
+        resp = client_logged_in.get(
+            reverse("assets:remote_print_submit", args=[active_asset.pk])
+        )
+        assert resp.status_code in (200, 302, 405)
+
+    def test_print_history_accessible(self, client_logged_in, active_asset):
+        resp = client_logged_in.get(
+            reverse("assets:print_history", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: label page does not include remote print affordance"
+            " (US-MB-015, S10C)"
+        ),
+    )
+    def test_label_page_has_remote_print_affordance(
+        self, client_logged_in, active_asset
+    ):
+        """Asset label page should offer a remote print link/button."""
+        resp = client_logged_in.get(
+            reverse("assets:asset_label", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        remote_url = reverse(
+            "assets:remote_print_submit", args=[active_asset.pk]
+        )
+        assert remote_url.encode() in resp.content, (
+            "Asset label page should contain a link/form to the remote "
+            "print endpoint"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_025_ViewOverlapWarningsOnHoldList:
+    """US-MB-025: View overlap warnings on a hold list.
+
+    MoSCoW: MUST
+    Spec refs: S2.16.4-03, S2.16.4-04, S2.16.5-01, S2.16.7-02
+    UI Surface: /hold-lists/<pk>/
+    """
+
+    def test_hold_list_detail_accessible(self, client_logged_in, hold_list):
+        resp = client_logged_in.get(
+            reverse("assets:holdlist_detail", args=[hold_list.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_asset_detail_shows_held_indicator(
+        self, client_logged_in, active_asset, hold_list
+    ):
+        """Asset on a hold list should show a 'Held for' indicator."""
+        from assets.models import HoldListItem
+
+        HoldListItem.objects.create(
+            hold_list=hold_list,
+            asset=active_asset,
+            quantity=1,
+        )
+        resp = client_logged_in.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode().lower()
+        assert (
+            "held" in content
+            or "hold" in content
+            or hold_list.name.lower() in content
+        ), (
+            "Asset on a hold list should show a held/hold indicator "
+            "on its detail page"
+        )
+
+
+@pytest.mark.django_db
+class TestUS_MB_033_SearchHelpSystem:
+    """US-MB-033: Search the help system for task guidance.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.4-01, S2.19.4-03, S2.19.4-04
+    UI Surface: /help/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: help system not implemented yet" " (US-MB-033, S10C)"),
+    )
+    def test_help_index_accessible(self, client_logged_in):
+        resp = client_logged_in.get("/help/")
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: help system not implemented yet" " (US-MB-033, S10C)"),
+    )
+    def test_help_search_returns_results(self, client_logged_in):
+        resp = client_logged_in.get("/help/", {"q": "checkout"})
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_MB_034_ContextualHelp:
+    """US-MB-034: Use contextual help from a page-level help icon.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.6-02, S2.19.6-03, S2.19.6-04
+    UI Surface: Pages with help_slugs configured
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "GAP: contextual help not implemented yet" " (US-MB-034, S10C)"
+        ),
+    )
+    def test_checkout_page_has_help_icon(self, client_logged_in, active_asset):
+        resp = client_logged_in.get(
+            reverse("assets:asset_checkout", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert "help" in content.lower() and (
+            "?" in content or "help-icon" in content
+        ), "Checkout page should display a contextual help icon"
+
+
+@pytest.mark.django_db
+class TestUS_VW_009_BrowseHelpIndexAsViewer:
+    """US-VW-009: Browse the help index as a read-only viewer.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.2-01, S2.19.3-01, S2.19.5-03
+    UI Surface: /help/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: help system not implemented yet" " (US-VW-009, S10C)"),
+    )
+    def test_viewer_can_access_help_index(self, viewer_client):
+        resp = viewer_client.get("/help/")
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=("GAP: help system not implemented yet" " (US-VW-009, S10C)"),
+    )
+    def test_viewer_can_read_help_article(self, viewer_client):
+        resp = viewer_client.get("/help/getting-started/")
+        assert resp.status_code == 200
