@@ -9393,3 +9393,221 @@ class TestUS_SA_092_LogoAndFaviconUpload:
         """Login page loads without errors when no branding set."""
         resp = client_logged_in.get(reverse("assets:asset_list"))
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# §10A.15 Location Checkout & Help System (B10) — all xfail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_147_LocationCheckableField:
+    """US-SA-147: Location checkable field.
+
+    MoSCoW: MUST
+    Spec refs: S3.1.4
+    UI Surface: Location model / detail page
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Location.is_checkable field not implemented"
+        " (US-SA-147, S3.1.4)",
+    )
+    def test_location_has_is_checkable_field(self):  # US-SA-147-1
+        """Location model has is_checkable boolean field."""
+        Location._meta.get_field("is_checkable")
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Location.is_checkable field not implemented"
+        " (US-SA-147, S3.1.4)",
+    )
+    def test_checkout_button_only_on_checkable_locations(
+        self, admin_client, location
+    ):  # US-SA-147-2
+        """Checkout button only shows on checkable locations."""
+        resp = admin_client.get(
+            reverse("assets:location_detail", args=[location.pk])
+        )
+        content = resp.content.decode()
+        assert "Check Out" in content
+
+
+@pytest.mark.django_db
+class TestUS_SA_148_LocationCheckout:
+    """US-SA-148: Location-based checkout workflow.
+
+    MoSCoW: MUST
+    Spec refs: S2.12.4-01
+    UI Surface: /locations/<pk>/checkout/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: location_checkout view not implemented"
+        " (US-SA-148, S2.12.4-01)",
+    )
+    def test_location_checkout_url_exists(
+        self, admin_client, location
+    ):  # US-SA-148-1
+        """Location checkout URL resolves."""
+        url = reverse("assets:location_checkout", args=[location.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: location_checkout view not implemented"
+        " (US-SA-148, S2.12.4-01)",
+    )
+    def test_location_checkout_creates_transactions(
+        self, admin_client, location, active_asset
+    ):  # US-SA-148-2
+        """Location checkout creates transactions for assets."""
+        url = reverse("assets:location_checkout", args=[location.pk])
+        resp = admin_client.post(url, {"assets": [active_asset.pk]})
+        assert resp.status_code in (200, 302)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: location_checkout view not implemented"
+        " (US-SA-148, S2.12.4-01)",
+    )
+    def test_already_checked_out_assets_excluded(
+        self, admin_client, location, active_asset
+    ):  # US-SA-148-3
+        """Already checked-out assets excluded from location checkout."""
+        url = reverse("assets:location_checkout", args=[location.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_149_LocationCheckin:
+    """US-SA-149: Location-based check-in workflow.
+
+    MoSCoW: MUST
+    Spec refs: S2.12.4-08
+    UI Surface: /locations/<pk>/checkin/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: location_checkin view not implemented"
+        " (US-SA-149, S2.12.4-08)",
+    )
+    def test_location_checkin_url_exists(
+        self, admin_client, location
+    ):  # US-SA-149-1
+        """Location checkin URL resolves."""
+        url = reverse("assets:location_checkin", args=[location.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: location_checkin view not implemented"
+        " (US-SA-149, S2.12.4-08)",
+    )
+    def test_location_checkin_creates_transactions(
+        self, admin_client, location, active_asset
+    ):  # US-SA-149-2
+        """Location checkin creates return transactions."""
+        url = reverse("assets:location_checkin", args=[location.pk])
+        resp = admin_client.post(url, {"assets": [active_asset.pk]})
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_SA_150_HelpIndex:
+    """US-SA-150: Help system index page.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.2-01
+    UI Surface: /help/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Help system not implemented" " (US-SA-150, S2.19.2-01)",
+    )
+    def test_help_index_accessible(self, admin_client):  # US-SA-150-1
+        """Help index page loads."""
+        resp = admin_client.get("/help/")
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Help system not implemented" " (US-SA-150, S2.19.2-01)",
+    )
+    def test_help_search_returns_results(self, admin_client):  # US-SA-150-2
+        """Help search returns results."""
+        resp = admin_client.get("/help/?q=asset")
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_151_HelpArticleDetail:
+    """US-SA-151: Help article detail page.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.3-01
+    UI Surface: /help/<slug>/
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Help article detail not implemented"
+        " (US-SA-151, S2.19.3-01)",
+    )
+    def test_help_article_renders_markdown(self, admin_client):  # US-SA-151-1
+        """Help article renders markdown content."""
+        resp = admin_client.get("/help/getting-started/")
+        assert resp.status_code == 200
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: Help article detail not implemented"
+        " (US-SA-151, S2.19.3-01)",
+    )
+    def test_help_article_url_pattern_exists(
+        self, admin_client
+    ):  # US-SA-151-2
+        """Help article URL pattern is registered."""
+        url = reverse("assets:help_article", args=["getting-started"])
+        resp = admin_client.get(url)
+        assert resp.status_code in (200, 404)
+
+
+@pytest.mark.django_db
+class TestUS_SA_152_HelpSearchIndex:
+    """US-SA-152: Help search index rebuild command.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.19.4-02
+    UI Surface: Management command
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: rebuild_help_index command not implemented"
+        " (US-SA-152, S2.19.4-02)",
+    )
+    def test_rebuild_help_index_command_exists(self):  # US-SA-152-1
+        """rebuild_help_index management command exists."""
+        from django.core.management import call_command
+
+        call_command("rebuild_help_index")
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="GAP: rebuild_help_index command not implemented"
+        " (US-SA-152, S2.19.4-02)",
+    )
+    def test_rebuild_help_index_idempotent(self):  # US-SA-152-2
+        """rebuild_help_index can be run twice without error."""
+        from django.core.management import call_command
+
+        call_command("rebuild_help_index")
+        call_command("rebuild_help_index")
