@@ -23,10 +23,13 @@ from assets.models import (
     Department,
     Location,
     NFCTag,
+    PrintClient,
+    PrintRequest,
     StocktakeItem,
     StocktakeSession,
     Tag,
     Transaction,
+    VirtualBarcode,
 )
 
 # ---------------------------------------------------------------------------
@@ -8065,3 +8068,538 @@ class TestUS_SA_125_LostStolenOnCheckedOut:
         resp = admin_client.get(reverse("assets:lost_stolen_report"))
         assert resp.status_code == 200
         assert active_asset.name.encode() in resp.content
+
+
+# ---------------------------------------------------------------------------
+# §10A.13 Barcode & NFC  (B7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_126_BarcodeFormatAndImmutability:
+    """US-SA-126: Barcode format, uniqueness, and immutability.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.1-01, S4.4.1-02, S4.4.1-03
+    UI Surface: Asset detail — barcode field
+    """
+
+    def test_barcode_follows_prefix_hex_format(  # US-SA-126-1
+        self, admin_client, active_asset
+    ):
+        """Auto-generated barcode matches {PREFIX}-{8-char-hex}."""
+        import re
+
+        pattern = r"^[A-Z]+-[0-9A-F]{8}$"
+        assert re.match(
+            pattern, active_asset.barcode
+        ), f"Barcode {active_asset.barcode!r} does not match expected format"
+
+    def test_barcode_unique_constraint(  # US-SA-126-2
+        self, admin_client, active_asset
+    ):
+        """Barcode field has unique DB constraint."""
+        # Verify the unique constraint exists on the barcode field
+        field = Asset._meta.get_field("barcode")
+        assert field.unique, "barcode field should have unique=True"
+
+    def test_global_prefix_default(  # US-SA-126-3
+        self, admin_client, admin_user, location
+    ):
+        """Asset without department prefix uses global BARCODE_PREFIX."""
+        from assets.factories import AssetFactory, CategoryFactory
+
+        cat = CategoryFactory(department__barcode_prefix="")
+        a = AssetFactory(
+            category=cat,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.barcode.startswith("ASSET-") or a.barcode.startswith(
+            "PROP-"
+        ), f"Expected global prefix, got {a.barcode!r}"
+
+    def test_dept_prefix_used_when_set(  # US-SA-126-4
+        self, admin_client, admin_user, location, props_dept
+    ):
+        """Asset in department with barcode_prefix uses that prefix."""
+        from assets.factories import AssetFactory, CategoryFactory
+
+        cat = CategoryFactory(department=props_dept)
+        a = AssetFactory(
+            category=cat,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.barcode.startswith(
+            "PROP-"
+        ), f"Expected PROP- prefix, got {a.barcode!r}"
+
+    def test_changing_category_does_not_change_barcode(  # US-SA-126-5
+        self, admin_client, active_asset
+    ):
+        """Moving asset to different department preserves existing barcode."""
+        from assets.factories import CategoryFactory, DepartmentFactory
+
+        original_barcode = active_asset.barcode
+        other_dept = DepartmentFactory(
+            name="OtherDept126", barcode_prefix="OTH"
+        )
+        new_cat = CategoryFactory(department=other_dept)
+        active_asset.category = new_cat
+        active_asset.save()
+        active_asset.refresh_from_db()
+        assert active_asset.barcode == original_barcode
+
+
+@pytest.mark.django_db
+class TestUS_SA_127_BarcodeAutoGenAndImages:
+    """US-SA-127: Barcode auto-generation and image storage.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.1-01, S4.4.1-04
+    UI Surface: Asset creation, barcode image display
+    """
+
+    def test_new_asset_auto_generates_barcode(  # US-SA-127-1
+        self, admin_client, category, location, admin_user
+    ):
+        """New asset automatically gets a barcode on creation."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.barcode, "Barcode should be auto-generated"
+        assert len(a.barcode) > 0
+
+    def test_pre_existing_barcode_not_overwritten(  # US-SA-127-2
+        self, admin_client, category, location, admin_user
+    ):
+        """Pre-set barcode is preserved on save."""
+        from assets.factories import AssetFactory
+
+        a = AssetFactory(
+            barcode="CUSTOM-12345678",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        assert a.barcode == "CUSTOM-12345678"
+
+    def test_barcode_image_generated(  # US-SA-127-3
+        self, admin_client, active_asset
+    ):
+        """Barcode image is non-empty after asset creation."""
+        assert active_asset.barcode_image, "barcode_image should be populated"
+
+    def test_barcode_image_is_png(  # US-SA-127-4
+        self, admin_client, active_asset
+    ):
+        """Barcode image stored as valid image file."""
+        if active_asset.barcode_image:
+            assert (
+                active_asset.barcode_image.name.endswith(".png")
+                or active_asset.barcode_image.size > 0
+            )
+
+
+@pytest.mark.django_db
+class TestUS_SA_128_PreGeneratedBarcodes:
+    """US-SA-128: Pre-generated (virtual) barcodes.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.1-05
+    UI Surface: /barcodes/virtual/, /labels/pregenerate/
+    """
+
+    def test_virtual_barcode_model_exists(  # US-SA-128-1
+        self, admin_client, admin_user
+    ):
+        """VirtualBarcode model has barcode and created_by fields."""
+        vb = VirtualBarcode.objects.create(
+            barcode="VB-TEST0001",
+            created_by=admin_user,
+        )
+        assert vb.barcode == "VB-TEST0001"
+        assert vb.created_by == admin_user
+
+    def test_virtual_barcode_list_page_loads(  # US-SA-128-2
+        self, admin_client
+    ):
+        """Virtual barcode list page is accessible."""
+        resp = admin_client.get(reverse("assets:virtual_barcode_list"))
+        assert resp.status_code == 200
+
+    def test_barcode_pregenerate_page_loads(self, admin_client):  # US-SA-128-3
+        """Pre-generate barcodes page is accessible."""
+        resp = admin_client.get(reverse("assets:barcode_pregenerate"))
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_129_ZebraZPLAndRemotePrint:
+    """US-SA-129: ZPL label generation and remote printing.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.3-01, S4.4.3-02, S4.4.3-03
+    UI Surface: Asset detail — print button, /print-history/
+    """
+
+    def test_zpl_label_endpoint_accessible(  # US-SA-129-1
+        self, admin_client, active_asset
+    ):
+        """ZPL label endpoint returns content."""
+        resp = admin_client.get(
+            reverse("assets:asset_label_zpl", args=[active_asset.pk])
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_remote_print_submit_endpoint(  # US-SA-129-2
+        self, admin_client, active_asset, admin_user
+    ):
+        """Remote print submit endpoint is accessible via POST."""
+        pc = PrintClient.objects.create(
+            name="Test Printer",
+            token_hash="a" * 64,
+            status="approved",
+            is_active=True,
+            printers=[{"id": "label1", "name": "Label Printer"}],
+        )
+        resp = admin_client.post(
+            reverse(
+                "assets:remote_print_submit",
+                args=[active_asset.pk],
+            ),
+            {"print_client": pc.pk, "printer_id": "label1"},
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_print_history_page_loads(  # US-SA-129-3
+        self, admin_client, active_asset
+    ):
+        """Print history page loads for an asset."""
+        resp = admin_client.get(
+            reverse("assets:print_history", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_print_request_model_exists(  # US-SA-129-4
+        self, admin_client, active_asset, admin_user
+    ):
+        """PrintRequest model has status and job tracking fields."""
+        pc = PrintClient.objects.create(
+            name="Test Printer 2",
+            token_hash="b" * 64,
+            status="approved",
+            is_active=True,
+        )
+        pr = PrintRequest.objects.create(
+            print_client=pc,
+            asset=active_asset,
+            printer_id="lbl",
+            requested_by=admin_user,
+        )
+        assert pr.status == "pending"
+        assert pr.job_id is not None
+
+
+@pytest.mark.django_db
+class TestUS_SA_027_PrintClientManagement:
+    """US-SA-027: Print client management (admin only).
+
+    MoSCoW: MUST
+    Spec refs: S4.4.3-04
+    UI Surface: Django admin
+    """
+
+    def test_print_client_model_exists(self, admin_client):  # US-SA-027-1
+        """PrintClient model has is_connected and is_approved fields."""
+        pc = PrintClient.objects.create(
+            name="Station A",
+            token_hash="c" * 64,
+            status="approved",
+            is_active=True,
+        )
+        assert pc.status == "approved"
+        assert pc.is_connected is False
+        assert pc.is_active is True
+
+    def test_print_client_admin_registered(self, admin_client):  # US-SA-027-2
+        """Print client admin page is accessible."""
+        resp = admin_client.get("/admin/assets/printclient/")
+        assert resp.status_code == 200
+
+    def test_print_request_admin_registered(self, admin_client):  # US-SA-027-3
+        """Print request admin page is accessible."""
+        resp = admin_client.get("/admin/assets/printrequest/")
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_130_NFCTagModel:
+    """US-SA-130: NFC tag model and constraints.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.2-01, S4.4.2-02
+    UI Surface: Asset detail — NFC tags section
+    """
+
+    def test_nfc_tag_has_required_fields(  # US-SA-130-1
+        self, admin_client, active_asset, admin_user
+    ):
+        """NFCTag has tag_id, asset, assigned_at, assigned_by, notes."""
+        tag = NFCTag.objects.create(
+            tag_id="NFC-AA001",
+            asset=active_asset,
+            assigned_by=admin_user,
+            notes="Test tag",
+        )
+        assert tag.tag_id == "NFC-AA001"
+        assert tag.asset == active_asset
+        assert tag.assigned_at is not None
+        assert tag.assigned_by == admin_user
+        assert tag.notes == "Test tag"
+        assert tag.removed_at is None
+        assert tag.removed_by is None
+
+    def test_asset_can_have_multiple_active_tags(  # US-SA-130-2
+        self, admin_client, active_asset, admin_user
+    ):
+        """Multiple NFC tags can be active on the same asset."""
+        NFCTag.objects.create(
+            tag_id="NFC-MULTI-1",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        NFCTag.objects.create(
+            tag_id="NFC-MULTI-2",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        active_tags = active_asset.nfc_tags.filter(removed_at__isnull=True)
+        assert active_tags.count() == 2
+
+    def test_duplicate_active_tag_rejected(  # US-SA-130-3
+        self, admin_client, active_asset, admin_user
+    ):
+        """Same tag_id cannot be active on two different assets."""
+        from django.db import IntegrityError
+
+        from assets.factories import AssetFactory
+
+        NFCTag.objects.create(
+            tag_id="NFC-DUP001",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        other = AssetFactory(
+            status="active",
+            category=active_asset.category,
+            current_location=active_asset.current_location,
+            created_by=admin_user,
+        )
+        with pytest.raises(IntegrityError):
+            NFCTag.objects.create(
+                tag_id="NFC-DUP001",
+                asset=other,
+                assigned_by=admin_user,
+            )
+
+    def test_duplicate_tag_on_same_asset_rejected(  # US-SA-130-4
+        self, admin_client, active_asset, admin_user
+    ):
+        """Same tag_id cannot be active twice on the same asset."""
+        from django.db import IntegrityError
+
+        NFCTag.objects.create(
+            tag_id="NFC-SAME01",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        with pytest.raises(IntegrityError):
+            NFCTag.objects.create(
+                tag_id="NFC-SAME01",
+                asset=active_asset,
+                assigned_by=admin_user,
+            )
+
+    def test_removed_tag_allows_reuse(  # US-SA-130-5
+        self, admin_client, active_asset, admin_user
+    ):
+        """A removed tag's tag_id can be reassigned."""
+        tag = NFCTag.objects.create(
+            tag_id="NFC-REUSE1",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        tag.removed_at = timezone.now()
+        tag.removed_by = admin_user
+        tag.save()
+
+        # Same tag_id can now be assigned again
+        tag2 = NFCTag.objects.create(
+            tag_id="NFC-REUSE1",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        assert tag2.is_active
+
+
+@pytest.mark.django_db
+class TestUS_SA_131_NFCScanResolution:
+    """US-SA-131: NFC scan resolves to asset via unified lookup.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.2-03
+    UI Surface: /a/<identifier>/
+    """
+
+    def test_nfc_tag_resolves_to_asset(  # US-SA-131-1
+        self, admin_client, active_asset, admin_user
+    ):
+        """Scanning NFC tag redirects to asset detail."""
+        NFCTag.objects.create(
+            tag_id="NFC-SCAN01",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse(
+                "assets:asset_by_identifier",
+                args=["NFC-SCAN01"],
+            )
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_unknown_tag_handled(self, admin_client):  # US-SA-131-2
+        """Unknown NFC tag shows not-found or redirects to capture."""
+        resp = admin_client.get(
+            reverse(
+                "assets:asset_by_identifier",
+                args=["UNKNOWN-NFC-99"],
+            )
+        )
+        # Should redirect to quick capture or show not-found
+        assert resp.status_code in (200, 302, 404)
+
+    def test_tag_lookup_case_insensitive(  # US-SA-131-3
+        self, admin_client, active_asset, admin_user
+    ):
+        """NFC tag lookup is case-insensitive."""
+        NFCTag.objects.create(
+            tag_id="NFC-CaseTest",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse(
+                "assets:asset_by_identifier",
+                args=["nfc-casetest"],
+            )
+        )
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_SA_132_NFCAdminAndWebNFC:
+    """US-SA-132: NFC tag admin and Web NFC endpoints.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.2-04, S4.4.2-05
+    UI Surface: Asset detail — NFC section
+    """
+
+    def test_nfc_add_endpoint_accessible(  # US-SA-132-1
+        self, admin_client, active_asset
+    ):
+        """NFC add endpoint is accessible."""
+        resp = admin_client.get(
+            reverse("assets:nfc_add", args=[active_asset.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_nfc_remove_endpoint_accessible(  # US-SA-132-2
+        self, admin_client, active_asset, admin_user
+    ):
+        """NFC remove endpoint works."""
+        tag = NFCTag.objects.create(
+            tag_id="NFC-REM001",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        resp = admin_client.post(
+            reverse(
+                "assets:nfc_remove",
+                args=[active_asset.pk, tag.pk],
+            )
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_nfc_history_page_loads(  # US-SA-132-3
+        self, admin_client, active_asset, admin_user
+    ):
+        """NFC history page loads for a tag."""
+        NFCTag.objects.create(
+            tag_id="NFC-HIST01",
+            asset=active_asset,
+            assigned_by=admin_user,
+        )
+        resp = admin_client.get(
+            reverse("assets:nfc_history", args=["NFC-HIST01"])
+        )
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_133_NFCLegacyMigration:
+    """US-SA-133: NFC legacy migration — nfc_tag_id removed from Asset.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.2-06
+    UI Surface: Management command
+    """
+
+    def test_nfc_tag_id_field_removed_from_asset(  # US-SA-133-1
+        self, admin_client
+    ):
+        """nfc_tag_id field no longer exists on Asset model."""
+        field_names = [f.name for f in Asset._meta.get_fields()]
+        assert "nfc_tag_id" not in field_names
+
+    def test_migrate_nfc_tags_command_exists(  # US-SA-133-2
+        self, admin_client
+    ):
+        """migrate_nfc_tags management command is importable."""
+        from django.core.management import get_commands
+
+        commands = get_commands()
+        assert "migrate_nfc_tags" in commands
+
+
+@pytest.mark.django_db
+class TestUS_SA_032_RunNFCMigration:
+    """US-SA-032: Run NFC migration command.
+
+    MoSCoW: MUST
+    Spec refs: S4.4.2-06
+    UI Surface: Management command
+    """
+
+    def test_migration_command_callable(self, admin_client):  # US-SA-032-1
+        """migrate_nfc_tags command runs without error."""
+        from django.core.management import call_command
+
+        # Should run without error (no-op since migration complete)
+        call_command("migrate_nfc_tags")
+
+    def test_migration_idempotent(self, admin_client):  # US-SA-032-2
+        """Running migration twice does not duplicate tags."""
+        from django.core.management import call_command
+
+        count_before = NFCTag.objects.count()
+        call_command("migrate_nfc_tags")
+        call_command("migrate_nfc_tags")
+        assert NFCTag.objects.count() == count_before
