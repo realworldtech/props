@@ -344,7 +344,7 @@ class TestS12_5_BarcodeSystem:
         reason=(
             "GAP #23: QR code not displayed on asset detail sidebar"
             " (S2.4.5-08). Only Code128 barcode is shown; no QR code"
-            " is rendered."
+            " image is rendered."
         ),
     )
     def test_asset_detail_shows_qr_code(self, admin_client, active_asset):
@@ -355,10 +355,12 @@ class TestS12_5_BarcodeSystem:
         )
         assert resp.status_code == 200
         content = resp.content.decode()
-        # A QR code image or element should appear somewhere on the page
-        assert (
-            "qr" in content.lower() or "qrcode" in content.lower()
-        ), "No QR code found in asset detail page"
+        # Must have an actual QR code image (data URI or img tag with qr),
+        # not just the substring "qr" appearing anywhere on the page.
+        has_qr_image = (
+            "data:image" in content and "qr" in content.lower()
+        ) or 'alt="QR' in content
+        assert has_qr_image, "No QR code image found on asset detail page"
 
 
 @pytest.mark.django_db
