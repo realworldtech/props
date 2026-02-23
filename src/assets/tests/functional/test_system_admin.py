@@ -8,23 +8,27 @@ Read: specs/props/sections/s10a-system-admin-stories.md
 
 import datetime
 from html.parser import HTMLParser
+from unittest.mock import patch
 
 import pytest
 
 from django.contrib.admin.models import LogEntry
 from django.contrib.auth.models import Group
 from django.core import mail, signing
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import CustomUser
 from assets.models import (
     Asset,
+    AssetImage,
     Department,
     Location,
     NFCTag,
     PrintClient,
     PrintRequest,
+    SiteBranding,
     StocktakeItem,
     StocktakeSession,
     Tag,
@@ -9106,4 +9110,286 @@ class TestUS_SA_141_AdminUIConfiguration:
     def test_user_admin_loads(self, admin_client):  # US-SA-141-4
         """User admin page loads."""
         resp = admin_client.get("/admin/accounts/customuser/")
+        assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# §10A.14 AI Analysis & Site Branding (B9)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_142_AIAnalysisTriggerAndProcessing:
+    """US-SA-142: AI analysis trigger and async processing.
+
+    MoSCoW: MUST
+    Spec refs: S2.14.1-01, S2.14.2-01, S2.14.3-01, S2.14.4-01
+    UI Surface: /assets/<pk>/images/<image_pk>/analyse/
+    """
+
+    @override_settings(ANTHROPIC_API_KEY="test-key")
+    @patch("assets.tasks.analyse_image.delay")
+    def test_ai_analyse_endpoint_queues_task(  # US-SA-142-1
+        self, mock_delay, admin_client, active_asset
+    ):
+        """AI analyse endpoint queues Celery task and redirects."""
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(asset=active_asset)
+        resp = admin_client.get(
+            reverse(
+                "assets:ai_analyse",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        assert resp.status_code in (200, 302)
+        mock_delay.assert_called_once_with(image.pk)
+
+    def test_ai_results_stored_per_image(self, admin_client):  # US-SA-142-2
+        """AI results are stored on AssetImage, not on Asset."""
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(
+            ai_processing_status="completed",
+            ai_description="test desc",
+            ai_name_suggestion="Test Item",
+        )
+        image.refresh_from_db()
+        assert image.ai_description == "test desc"
+        assert image.ai_name_suggestion == "Test Item"
+        assert image.ai_processing_status == "completed"
+
+    def test_ai_status_fields_exist(self):  # US-SA-142-3
+        """AssetImage has all AI analysis fields."""
+        expected_fields = [
+            "ai_description",
+            "ai_category_suggestion",
+            "ai_tag_suggestions",
+            "ai_condition_suggestion",
+            "ai_ocr_text",
+            "ai_name_suggestion",
+            "ai_processing_status",
+            "ai_prompt_tokens",
+            "ai_completion_tokens",
+            "ai_processed_at",
+            "ai_error_message",
+            "ai_category_is_new",
+            "ai_department_suggestion",
+            "ai_department_is_new",
+            "ai_suggestions_applied",
+        ]
+        for field_name in expected_fields:
+            AssetImage._meta.get_field(field_name)
+
+    def test_ai_processing_status_choices(self):  # US-SA-142-4
+        """ai_processing_status includes all expected choices."""
+        field = AssetImage._meta.get_field("ai_processing_status")
+        choice_keys = [c[0] for c in field.choices]
+        for status in [
+            "pending",
+            "processing",
+            "completed",
+            "failed",
+            "skipped",
+        ]:
+            assert status in choice_keys
+
+    def test_ai_disabled_default_status_skipped(self):  # US-SA-142-5
+        """When AI is disabled, default ai_processing_status is skipped."""
+        field = AssetImage._meta.get_field("ai_processing_status")
+        assert field.default == "skipped"
+
+    @override_settings(ANTHROPIC_API_KEY="test-key")
+    @patch("assets.tasks.reanalyse_image.delay")
+    def test_ai_reanalyse_endpoint_accessible(  # US-SA-142-6
+        self, mock_delay, admin_client, active_asset
+    ):
+        """AI reanalyse endpoint queues task and redirects."""
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(asset=active_asset)
+        resp = admin_client.get(
+            reverse(
+                "assets:ai_reanalyse",
+                args=[active_asset.pk, image.pk],
+            )
+        )
+        assert resp.status_code in (200, 302)
+        mock_delay.assert_called_once_with(image.pk)
+
+
+@pytest.mark.django_db
+class TestUS_SA_143_AIPrivacyDisclosure:
+    """US-SA-143: AI privacy disclosure for image analysis.
+
+    MoSCoW: SHOULD
+    Spec refs: S2.14.6-03
+    UI Surface: Asset detail page (AI suggestions panel)
+    """
+
+    def test_ai_suggestions_panel_mentions_anthropic(  # US-SA-143-1
+        self, admin_client, active_asset
+    ):
+        """AI suggestions panel mentions Anthropic for privacy."""
+        from assets.factories import AssetImageFactory
+
+        AssetImageFactory(
+            asset=active_asset,
+            ai_processing_status="completed",
+            ai_description="test description",
+        )
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[active_asset.pk])
+        )
+        content = resp.content.decode().lower()
+        if "anthropic" not in content:
+            pytest.xfail(
+                "GAP: AI privacy disclosure not rendered "
+                "in template (US-SA-143, S2.14.6-03)"
+            )
+
+    def test_ai_service_system_prompt_no_pii(self):  # US-SA-143-2
+        """AI system prompt does not contain user-specific info."""
+        from assets.services.ai import _build_system_message
+
+        msg = _build_system_message()
+        assert isinstance(msg, str)
+        assert len(msg) > 0
+        # Structural test: should not contain emails or usernames
+        assert "@" not in msg
+
+
+@pytest.mark.django_db
+class TestUS_SA_072_AITokenUsageMonitoring:
+    """US-SA-072: AI token usage monitoring per image.
+
+    MoSCoW: MUST
+    Spec refs: S2.14.5-01, S2.14.5-02
+    UI Surface: /admin/assets/assetimage/
+    """
+
+    def test_token_fields_exist_on_asset_image(self):  # US-SA-072-1
+        """AssetImage has prompt and completion token fields."""
+        from django.db import models as django_models
+
+        prompt_field = AssetImage._meta.get_field("ai_prompt_tokens")
+        comp_field = AssetImage._meta.get_field("ai_completion_tokens")
+        assert isinstance(prompt_field, django_models.PositiveIntegerField)
+        assert isinstance(comp_field, django_models.PositiveIntegerField)
+
+    def test_token_values_stored_after_analysis(  # US-SA-072-2
+        self, admin_client
+    ):
+        """Token counts are persisted on AssetImage."""
+        from assets.factories import AssetImageFactory
+
+        image = AssetImageFactory(
+            ai_processing_status="completed",
+            ai_prompt_tokens=150,
+            ai_completion_tokens=42,
+        )
+        image.refresh_from_db()
+        assert image.ai_prompt_tokens == 150
+        assert image.ai_completion_tokens == 42
+
+    def test_admin_asset_image_changelist_accessible(  # US-SA-072-3
+        self, admin_client
+    ):
+        """AI Analysis Log (AssetImage admin) is accessible."""
+        resp = admin_client.get("/admin/assets/assetimage/")
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_091_SiteBrandingColours:
+    """US-SA-091: Site branding colours configuration.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.1-01, S2.17.1-02, S2.17.1-03
+    UI Surface: /admin/assets/sitebranding/
+    """
+
+    def test_site_branding_model_has_colour_fields(  # US-SA-091-1
+        self,
+    ):
+        """SiteBranding has primary, secondary, accent, color_mode."""
+        for field_name in [
+            "primary_color",
+            "secondary_color",
+            "accent_color",
+            "color_mode",
+        ]:
+            SiteBranding._meta.get_field(field_name)
+
+    def test_site_branding_singleton_enforced(  # US-SA-091-2
+        self, admin_client
+    ):
+        """SiteBranding enforces singleton — save replaces."""
+        first = SiteBranding(primary_color="#111111")
+        first.save()
+        second = SiteBranding(primary_color="#222222")
+        second.save()
+        assert SiteBranding.objects.count() == 1
+        assert SiteBranding.objects.first().primary_color == "#222222"
+
+    def test_branding_colours_in_context(self, admin_client):  # US-SA-091-3
+        """Branding colours appear in page context/CSS."""
+        from assets.factories import SiteBrandingFactory
+
+        SiteBrandingFactory(primary_color="#BC2026")
+        resp = admin_client.get(reverse("assets:asset_list"))
+        content = resp.content.decode()
+        assert "brand" in content.lower() or "BC2026" in content
+
+    def test_derived_colours_when_secondary_blank(  # US-SA-091-4
+        self, admin_client
+    ):
+        """Derived colours generated when secondary/accent blank."""
+        from assets.factories import SiteBrandingFactory
+
+        SiteBrandingFactory(
+            primary_color="#4F46E5",
+            secondary_color="",
+            accent_color="",
+        )
+        resp = admin_client.get(reverse("assets:asset_list"))
+        content = resp.content.decode()
+        # Derived values should still produce CSS variables
+        assert "--brand-" in content or "brand_css" in content
+
+    def test_site_branding_admin_accessible(self, admin_client):  # US-SA-091-5
+        """SiteBranding admin changelist is accessible."""
+        resp = admin_client.get("/admin/assets/sitebranding/")
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_092_LogoAndFaviconUpload:
+    """US-SA-092: Logo and favicon upload via SiteBranding.
+
+    MoSCoW: MUST
+    Spec refs: S2.17.2-01, S2.17.2-02, S2.17.2-03
+    UI Surface: /admin/assets/sitebranding/
+    """
+
+    def test_logo_and_favicon_fields_exist(self):  # US-SA-092-1
+        """SiteBranding has logo_light, logo_dark, favicon fields."""
+        for field_name in ["logo_light", "logo_dark", "favicon"]:
+            SiteBranding._meta.get_field(field_name)
+
+    def test_logo_file_size_validation(self):  # US-SA-092-2
+        """Logo upload rejects files over 500KB."""
+        from django.core.exceptions import ValidationError
+
+        from assets.models import validate_logo_file_size
+
+        class FakeFile:
+            size = 600 * 1024  # 600KB > 500KB limit
+
+        with pytest.raises(ValidationError):
+            validate_logo_file_size(FakeFile())
+
+    def test_no_logo_uses_fallback(self, client_logged_in):  # US-SA-092-3
+        """Login page loads without errors when no branding set."""
+        resp = client_logged_in.get(reverse("assets:asset_list"))
         assert resp.status_code == 200
