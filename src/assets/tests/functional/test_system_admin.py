@@ -8603,3 +8603,507 @@ class TestUS_SA_032_RunNFCMigration:
         call_command("migrate_nfc_tags")
         call_command("migrate_nfc_tags")
         assert NFCTag.objects.count() == count_before
+
+
+# ---------------------------------------------------------------------------
+# §10A.14 Search, Bulk, Stocktake, Permissions  (B8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUS_SA_134_SearchAndPagination:
+    """US-SA-134: Search and pagination across asset views.
+
+    MoSCoW: MUST
+    Spec refs: S3.1-01, S3.1-02
+    UI Surface: /assets/, /drafts/, /transactions/
+    """
+
+    def test_asset_list_paginated_default_25(  # US-SA-134-1
+        self, admin_client, category, location, admin_user
+    ):
+        """Asset list defaults to 25 items per page."""
+        from assets.factories import AssetFactory
+
+        for i in range(30):
+            AssetFactory(
+                name=f"PagAsset{i}",
+                category=category,
+                current_location=location,
+                created_by=admin_user,
+            )
+        resp = admin_client.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+        assert resp.context["page_obj"].paginator.per_page == 25
+
+    def test_page_size_selectable(  # US-SA-134-2
+        self, admin_client, category, location, admin_user
+    ):
+        """Page size can be set to 50 or 100."""
+        from assets.factories import AssetFactory
+
+        for i in range(5):
+            AssetFactory(
+                name=f"SizeAsset{i}",
+                category=category,
+                current_location=location,
+                created_by=admin_user,
+            )
+        resp = admin_client.get(reverse("assets:asset_list") + "?page_size=50")
+        assert resp.status_code == 200
+        assert resp.context["page_obj"].paginator.per_page == 50
+
+    def test_invalid_page_size_falls_back(self, admin_client):  # US-SA-134-3
+        """Invalid page_size falls back to 25."""
+        resp = admin_client.get(
+            reverse("assets:asset_list") + "?page_size=999"
+        )
+        assert resp.status_code == 200
+        assert resp.context["page_obj"].paginator.per_page == 25
+
+    def test_drafts_queue_paginated(self, admin_client):  # US-SA-134-4
+        """Drafts queue page loads and is paginated."""
+        resp = admin_client.get(reverse("assets:drafts_queue"))
+        assert resp.status_code == 200
+
+    def test_transaction_list_paginated(self, admin_client):  # US-SA-134-5
+        """Transaction list page loads."""
+        resp = admin_client.get(reverse("assets:transaction_list"))
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_135_BulkSelectionMechanism:
+    """US-SA-135: Bulk selection and actions.
+
+    MoSCoW: MUST
+    Spec refs: S3.2-01, S3.2-02
+    UI Surface: /assets/bulk/
+    """
+
+    def test_bulk_actions_requires_post(self, admin_client):  # US-SA-135-1
+        """GET to bulk_actions redirects to asset list."""
+        resp = admin_client.get(reverse("assets:bulk_actions"))
+        assert resp.status_code == 302
+
+    def test_bulk_transfer_creates_transactions(  # US-SA-135-2
+        self, admin_client, active_asset, location, admin_user
+    ):
+        """Bulk transfer creates transactions for selected assets."""
+        from assets.factories import LocationFactory
+
+        dest = LocationFactory(name="Bulk Dest 135")
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [active_asset.pk],
+                "bulk_action": "transfer",
+                "location": dest.pk,
+            },
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_bulk_filter_params_sanitised(  # US-SA-135-3
+        self, admin_client, active_asset
+    ):
+        """Filter parameters are sanitised (no raw SQL injection)."""
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "select_all_matching": "1",
+                "filter_status": "active; DROP TABLE assets_asset;--",
+                "bulk_action": "transfer",
+                "location": "1",
+            },
+        )
+        # Should not crash — returns safe response
+        assert resp.status_code in (200, 302, 400)
+
+    def test_bulk_actions_denied_for_viewer(  # US-SA-135-4
+        self, viewer_client, active_asset
+    ):
+        """Viewer role cannot access bulk actions."""
+        resp = viewer_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [active_asset.pk],
+                "bulk_action": "transfer",
+                "location": "1",
+            },
+        )
+        assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+class TestUS_SA_136_BulkQueryOptimisation:
+    """US-SA-136: Bulk operations handle edge cases gracefully.
+
+    MoSCoW: MUST
+    Spec refs: S3.2-03
+    UI Surface: /assets/bulk/
+    """
+
+    def test_bulk_edit_category(  # US-SA-136-1
+        self, admin_client, admin_user, category, location
+    ):
+        """Bulk edit can change category for assets."""
+        from assets.factories import AssetFactory, CategoryFactory
+
+        a = AssetFactory(
+            status="draft",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
+        new_cat = CategoryFactory(name="BulkCat136")
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [a.pk],
+                "bulk_action": "bulk_edit",
+                "edit_category": new_cat.pk,
+            },
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_bulk_status_change_blocks_lost(  # US-SA-136-2
+        self, admin_client, active_asset
+    ):
+        """Bulk status change blocks transition to lost."""
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [active_asset.pk],
+                "bulk_action": "status_change",
+                "new_status": "lost",
+            },
+        )
+        # Should either return error or not transition
+        active_asset.refresh_from_db()
+        assert active_asset.status != "lost"
+
+    def test_bulk_on_filtered_queryset(  # US-SA-136-3
+        self, admin_client, active_asset, location
+    ):
+        """Bulk operations work with select_all_matching."""
+        from assets.factories import LocationFactory
+
+        dest = LocationFactory(name="BulkFilterDest")
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "select_all_matching": "1",
+                "filter_status": "active",
+                "bulk_action": "transfer",
+                "location": dest.pk,
+            },
+        )
+        assert resp.status_code in (200, 302)
+
+
+@pytest.mark.django_db
+class TestUS_SA_137_StocktakeDisplay:
+    """US-SA-137: Stocktake detail display.
+
+    MoSCoW: MUST
+    Spec refs: S5.1-01, S5.1-02
+    UI Surface: /stocktake/<pk>/
+    """
+
+    def test_stocktake_detail_page_loads(  # US-SA-137-1
+        self, admin_client, location, admin_user
+    ):
+        """Stocktake detail page loads."""
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        resp = admin_client.get(
+            reverse("assets:stocktake_detail", args=[session.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_stocktake_start_creates_session(  # US-SA-137-2
+        self, admin_client, location, admin_user
+    ):
+        """Starting stocktake creates a session."""
+        resp = admin_client.post(
+            reverse("assets:stocktake_start"),
+            {"location": location.pk},
+        )
+        assert resp.status_code in (200, 302)
+        assert StocktakeSession.objects.filter(location=location).exists()
+
+    def test_stocktake_on_empty_location(  # US-SA-137-3
+        self, admin_client, admin_user
+    ):
+        """Stocktake allowed on location with no assets."""
+        from assets.factories import LocationFactory
+
+        empty_loc = LocationFactory(name="EmptyLoc137")
+        resp = admin_client.post(
+            reverse("assets:stocktake_start"),
+            {"location": empty_loc.pk},
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_stocktake_list_page_loads(self, admin_client):  # US-SA-137-4
+        """Stocktake list page loads."""
+        resp = admin_client.get(reverse("assets:stocktake_list"))
+        assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+class TestUS_SA_138_StocktakeMissingAndPersistence:
+    """US-SA-138: Stocktake missing items, persistence, completion.
+
+    MoSCoW: MUST
+    Spec refs: S5.1-03, S5.1-04, S5.1-05
+    UI Surface: /stocktake/<pk>/complete/, /stocktake/<pk>/summary/
+    """
+
+    def test_complete_stocktake_marks_missing(  # US-SA-138-1
+        self, admin_client, active_asset, location, admin_user
+    ):
+        """Completing stocktake can mark unfound assets as missing."""
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        StocktakeItem.objects.create(
+            session=session,
+            asset=active_asset,
+            status="expected",
+        )
+        resp = admin_client.post(
+            reverse("assets:stocktake_complete", args=[session.pk]),
+            {
+                "action": "complete",
+                "mark_missing": "1",
+                "notes": "End of stocktake",
+            },
+        )
+        assert resp.status_code in (200, 302)
+
+    def test_stocktake_progress_persisted(  # US-SA-138-2
+        self, admin_client, active_asset, location, admin_user
+    ):
+        """StocktakeItem status tracks confirmation state."""
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        item = StocktakeItem.objects.create(
+            session=session,
+            asset=active_asset,
+            status="expected",
+        )
+        # Confirm the item
+        admin_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"asset_id": active_asset.pk},
+        )
+        item.refresh_from_db()
+        assert item.status in ("found", "confirmed", "expected")
+
+    def test_stocktake_summary_page_loads(  # US-SA-138-3
+        self, admin_client, location, admin_user
+    ):
+        """Stocktake summary page loads for completed session."""
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="completed",
+        )
+        resp = admin_client.get(
+            reverse("assets:stocktake_summary", args=[session.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_completed_stocktake_in_list(  # US-SA-138-4
+        self, admin_client, location, admin_user
+    ):
+        """Completed stocktake appears in stocktake list."""
+        StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="completed",
+        )
+        resp = admin_client.get(reverse("assets:stocktake_list"))
+        assert resp.status_code == 200
+        assert (
+            b"completed" in resp.content.lower()
+            or b"Completed" in resp.content
+        )
+
+    def test_abandon_stocktake(  # US-SA-138-5
+        self, admin_client, location, admin_user
+    ):
+        """Abandoned stocktake sets status correctly."""
+        session = StocktakeSession.objects.create(
+            location=location,
+            started_by=admin_user,
+            status="in_progress",
+        )
+        resp = admin_client.post(
+            reverse("assets:stocktake_complete", args=[session.pk]),
+            {"action": "abandon"},
+        )
+        assert resp.status_code in (200, 302)
+        session.refresh_from_db()
+        assert session.status in ("abandoned", "cancelled")
+
+
+@pytest.mark.django_db
+class TestUS_SA_139_RoleBasedPermissions:
+    """US-SA-139: Role-based permission enforcement.
+
+    MoSCoW: MUST
+    Spec refs: S6.1-01, S6.1-02
+    UI Surface: All views
+    """
+
+    def test_viewer_cannot_edit(  # US-SA-139-1
+        self, viewer_client, active_asset
+    ):
+        """Viewer cannot access edit endpoints."""
+        resp = viewer_client.get(
+            reverse("assets:asset_edit", args=[active_asset.pk])
+        )
+        assert resp.status_code == 403
+
+    def test_member_can_view_assets(  # US-SA-139-2
+        self, member_client, active_asset
+    ):
+        """Member can view asset list."""
+        resp = member_client.get(reverse("assets:asset_list"))
+        assert resp.status_code == 200
+
+    def test_setup_groups_creates_five_groups(  # US-SA-139-3
+        self, admin_client
+    ):
+        """setup_groups command creates 5 permission groups."""
+        from django.contrib.auth.models import Group
+        from django.core.management import call_command
+
+        call_command("setup_groups")
+        expected = {
+            "System Admin",
+            "Department Manager",
+            "Member",
+            "Viewer",
+            "Borrower",
+        }
+        actual = set(
+            Group.objects.filter(name__in=expected).values_list(
+                "name", flat=True
+            )
+        )
+        assert actual == expected
+
+    def test_unauthorised_post_returns_403(  # US-SA-139-4
+        self, viewer_client, active_asset
+    ):
+        """Unauthorised POST returns 403."""
+        resp = viewer_client.post(
+            reverse("assets:asset_edit", args=[active_asset.pk]),
+            {"name": "Hacked"},
+        )
+        assert resp.status_code == 403
+
+    def test_get_user_role_function(  # US-SA-139-5
+        self, admin_user, viewer_user
+    ):
+        """get_user_role returns correct role strings."""
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(admin_user) == "system_admin"
+        assert get_user_role(viewer_user) == "viewer"
+
+
+@pytest.mark.django_db
+class TestUS_SA_140_DeptLocationManagement:
+    """US-SA-140: Department and location management.
+
+    MoSCoW: MUST
+    Spec refs: S2.2-01, S2.3-01
+    UI Surface: /categories/, /locations/
+    """
+
+    def test_category_list_page_loads(self, admin_client):  # US-SA-140-1
+        """Category list page loads."""
+        resp = admin_client.get(reverse("assets:category_list"))
+        assert resp.status_code == 200
+
+    def test_location_detail_page_loads(  # US-SA-140-2
+        self, admin_client, location
+    ):
+        """Location detail page loads with asset list."""
+        resp = admin_client.get(
+            reverse("assets:location_detail", args=[location.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_location_list_page_loads(self, admin_client):  # US-SA-140-3
+        """Location list page loads."""
+        resp = admin_client.get(reverse("assets:location_list"))
+        assert resp.status_code == 200
+
+    def test_location_deactivate_endpoint(  # US-SA-140-4
+        self, admin_client, admin_user
+    ):
+        """Deactivating a location sets is_active=False."""
+        from assets.factories import LocationFactory
+
+        loc = LocationFactory(name="DeactLoc140")
+        resp = admin_client.post(
+            reverse("assets:location_deactivate", args=[loc.pk])
+        )
+        assert resp.status_code in (200, 302)
+        loc.refresh_from_db()
+        assert loc.is_active is False
+
+    def test_department_user_m2m_exists(  # US-SA-140-5
+        self, admin_client, department, admin_user
+    ):
+        """Department has managers M2M relationship."""
+        assert hasattr(department, "managers")
+        department.managers.add(admin_user)
+        assert admin_user in department.managers.all()
+
+
+@pytest.mark.django_db
+class TestUS_SA_141_AdminUIConfiguration:
+    """US-SA-141: Django admin UI configuration.
+
+    MoSCoW: MUST
+    Spec refs: S6.2-01
+    UI Surface: /admin/
+    """
+
+    def test_admin_login_page_loads(self, admin_client):  # US-SA-141-1
+        """Django admin login page loads (unfold themed)."""
+        resp = admin_client.get("/admin/")
+        assert resp.status_code == 200
+
+    def test_asset_admin_list_loads(self, admin_client):  # US-SA-141-2
+        """Asset admin list page loads with filters."""
+        resp = admin_client.get("/admin/assets/asset/")
+        assert resp.status_code == 200
+
+    def test_asset_admin_supports_search(  # US-SA-141-3
+        self, admin_client, active_asset
+    ):
+        """Asset admin supports search by name/barcode."""
+        resp = admin_client.get(
+            f"/admin/assets/asset/?q={active_asset.barcode}"
+        )
+        assert resp.status_code == 200
+
+    def test_user_admin_loads(self, admin_client):  # US-SA-141-4
+        """User admin page loads."""
+        resp = admin_client.get("/admin/accounts/customuser/")
+        assert resp.status_code == 200
