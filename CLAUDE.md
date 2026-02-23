@@ -184,6 +184,21 @@ Reference implementation: `TestApprovalFormTemplateIntegration` in `src/accounts
 
 Exception: security boundary tests that deliberately probe arbitrary view input may hardcode payloads, but must comment why.
 
+### Affordance exposure testing (REQUIRED)
+
+Testing that a POST to a URL works only proves the endpoint exists. It does not prove a user can find it. For every user-facing feature, also test that the upstream page exposes the relevant button, link, or form. Example: after testing that `POST /assets/<pk>/checkout/` works, also test that `GET /assets/<pk>/` renders a link to `/assets/<pk>/checkout/`. This catches the recurring pattern of functionality fully implemented in views/services but never wired into any template (the kit checkout service is the canonical example).
+
+Pattern:
+```python
+# Not just "does the action work?"
+resp = admin_client.post(reverse("assets:asset_checkout", args=[asset.pk]), data)
+assert resp.status_code == 302
+
+# Also "is there an affordance on the referring page?"
+detail_resp = admin_client.get(reverse("assets:asset_detail", args=[asset.pk]))
+assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp.content
+```
+
 ## Dependencies
 
 - Dependencies are managed with `pip-tools`: edit `requirements.in`, then compile with `pip-compile requirements.in` to regenerate `requirements.txt`.
