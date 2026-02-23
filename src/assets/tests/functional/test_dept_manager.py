@@ -7,7 +7,6 @@ Read: specs/props/sections/s10b-dept-manager-stories.md
 """
 
 import json
-from html.parser import HTMLParser
 from io import BytesIO
 
 import pytest
@@ -15,54 +14,7 @@ import pytest
 from django.urls import reverse
 
 from assets.models import Asset, AssetImage, Tag, Transaction
-
-
-class _FormFieldCollector(HTMLParser):
-    """Collect form field names and values from HTML."""
-
-    def __init__(self):
-        super().__init__()
-        self.fields = {}
-        self._current_select = None
-        self._current_options = []
-        self._in_textarea = None
-        self._textarea_content = []
-
-    def handle_starttag(self, tag, attrs):
-        attrs_dict = dict(attrs)
-        if tag == "input":
-            name = attrs_dict.get("name")
-            if name:
-                self.fields[name] = attrs_dict.get("value", "")
-        elif tag == "select":
-            self._current_select = attrs_dict.get("name")
-            self._current_options = []
-        elif tag == "option" and self._current_select:
-            val = attrs_dict.get("value", "")
-            if val:
-                self._current_options.append(val)
-            if "selected" in attrs_dict:
-                self.fields[self._current_select] = val
-        elif tag == "textarea":
-            self._in_textarea = attrs_dict.get("name")
-            self._textarea_content = []
-
-    def handle_data(self, data):
-        if self._in_textarea is not None:
-            self._textarea_content.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == "select" and self._current_select:
-            if (
-                self._current_select not in self.fields
-                and self._current_options
-            ):
-                self.fields[self._current_select] = self._current_options[0]
-            self._current_select = None
-        elif tag == "textarea" and self._in_textarea:
-            self.fields[self._in_textarea] = "".join(self._textarea_content)
-            self._in_textarea = None
-
+from assets.tests.functional.helpers import FormFieldCollector
 
 # ---------------------------------------------------------------------------
 # §10B.1 Quick Capture & Drafts
@@ -2811,7 +2763,7 @@ class TestUS_DM_009_ManageTags:
         assert get_resp.status_code == 200
 
         # Parse form fields from HTML
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         fields = parser.fields
 
@@ -2887,7 +2839,7 @@ class TestUS_DM_008_ManageImages:
         get_resp = dept_manager_client.get(edit_url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         fields = parser.fields
 
@@ -2928,7 +2880,7 @@ class TestUS_DM_008_ManageImages:
         get_resp = dept_manager_client.get(edit_url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         fields = parser.fields
 

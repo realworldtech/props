@@ -77,7 +77,11 @@ def active_asset(db, category, location, admin_user):
 @pytest.fixture
 def draft_asset(db, category, admin_user):
     """A draft asset with a barcode but no location (typical quick-capture
-    state)."""
+    state).
+
+    Overrides root conftest draft_asset — uses admin_user as creator
+    (root version uses regular user).
+    """
     return AssetFactory(
         name="Quick Capture Feb 22 14:32",
         status="draft",

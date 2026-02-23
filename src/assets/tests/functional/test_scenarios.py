@@ -6,9 +6,6 @@ described in the spec. Failures identify gaps in implementation.
 Read: specs/props/sections/s11-usage-scenarios.md
 """
 
-import html
-import html.parser
-
 import pytest
 
 from django.contrib.auth.models import Group
@@ -23,6 +20,7 @@ from assets.factories import (
     UserFactory,
 )
 from assets.models import Asset, HoldList, HoldListStatus, NFCTag, Transaction
+from assets.tests.functional.helpers import FormFieldCollector
 
 # ---------------------------------------------------------------------------
 # §11.3 Onboarding a Large Donation of Assets
@@ -3110,18 +3108,6 @@ class TestScenario_11_3_BulkEditFormRoundTrip:
         rendered HTML, POST a bulk-activate with category + location,
         assert that drafts are updated (Issue #5 round-trip pattern)."""
 
-        class _FormFieldCollector(html.parser.HTMLParser):
-            def __init__(self):
-                super().__init__()
-                self.fields = {}  # name -> value
-
-            def handle_starttag(self, tag, attrs):
-                if tag in ("input", "select", "textarea"):
-                    attrs_d = dict(attrs)
-                    name = attrs_d.get("name")
-                    if name:
-                        self.fields[name] = attrs_d.get("value", "")
-
         drafts = [
             AssetFactory(
                 name=f"BulkEditRound {i}",
@@ -3136,7 +3122,7 @@ class TestScenario_11_3_BulkEditFormRoundTrip:
         assert get_resp.status_code == 200
 
         # Parse the HTML to verify the page renders without error.
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
 
         # POST the activate action directly (the drafts_queue page does

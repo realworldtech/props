@@ -7,7 +7,6 @@ Read: specs/props/sections/s10a-system-admin-stories.md
 """
 
 import datetime
-from html.parser import HTMLParser
 from unittest.mock import patch
 
 import pytest
@@ -35,6 +34,7 @@ from assets.models import (
     Transaction,
     VirtualBarcode,
 )
+from assets.tests.functional.helpers import FormFieldCollector
 
 # ---------------------------------------------------------------------------
 # §10A.1 Quick Capture & Drafts
@@ -3280,58 +3280,6 @@ class TestUS_SA_030_AssignNFCTag:
 
 
 # ---------------------------------------------------------------------------
-# Form field extraction helper (Issue #5 round-trip pattern)
-# ---------------------------------------------------------------------------
-
-
-class _FormFieldCollector(HTMLParser):
-    """Collect form field names and values from HTML."""
-
-    def __init__(self):
-        super().__init__()
-        self.fields = {}
-        self._current_select = None
-        self._current_options = []
-        self._in_textarea = None
-        self._textarea_content = []
-
-    def handle_starttag(self, tag, attrs):
-        attrs_dict = dict(attrs)
-        if tag == "input":
-            name = attrs_dict.get("name")
-            if name:
-                self.fields[name] = attrs_dict.get("value", "")
-        elif tag == "select":
-            self._current_select = attrs_dict.get("name")
-            self._current_options = []
-        elif tag == "option" and self._current_select:
-            val = attrs_dict.get("value", "")
-            if val:
-                self._current_options.append(val)
-            if "selected" in attrs_dict:
-                self.fields[self._current_select] = val
-        elif tag == "textarea":
-            self._in_textarea = attrs_dict.get("name")
-            self._textarea_content = []
-
-    def handle_data(self, data):
-        if self._in_textarea is not None:
-            self._textarea_content.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == "select" and self._current_select:
-            if (
-                self._current_select not in self.fields
-                and self._current_options
-            ):
-                self.fields[self._current_select] = self._current_options[0]
-            self._current_select = None
-        elif tag == "textarea" and self._in_textarea:
-            self.fields[self._in_textarea] = "".join(self._textarea_content)
-            self._in_textarea = None
-
-
-# ---------------------------------------------------------------------------
 # §10A.5 Tags
 # ---------------------------------------------------------------------------
 
@@ -3354,7 +3302,7 @@ class TestUS_SA_009_ManageTagsOnAnyAsset:
         get_resp = admin_client.get(url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
 
         assert (
@@ -3399,7 +3347,7 @@ class TestUS_SA_039_CreateStocktakeSession:
         get_resp = admin_client.get(url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
 
         # POST without a location value
@@ -3433,7 +3381,7 @@ class TestUS_SA_040_ConfirmAssetsDuringStocktake:
         get_resp = admin_client.get(start_url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
 
         payload = dict(parser.fields)
@@ -3501,7 +3449,7 @@ class TestUS_SA_041_HandleStocktakeDiscrepancies:
         # Start stocktake
         start_url = reverse("assets:stocktake_start")
         get_resp = admin_client.get(start_url)
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         payload = dict(parser.fields)
         payload["location"] = str(location.pk)
@@ -3548,7 +3496,7 @@ class TestUS_SA_041_HandleStocktakeDiscrepancies:
         # Start stocktake at location B (asset not expected here)
         start_url = reverse("assets:stocktake_start")
         get_resp = admin_client.get(start_url)
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         payload = dict(parser.fields)
         payload["location"] = str(location_b.pk)
@@ -3592,7 +3540,7 @@ class TestUS_SA_043_CancelStocktakeSession:
         # Start stocktake
         start_url = reverse("assets:stocktake_start")
         get_resp = admin_client.get(start_url)
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         payload = dict(parser.fields)
         payload["location"] = str(location.pk)
@@ -3621,7 +3569,7 @@ class TestUS_SA_043_CancelStocktakeSession:
         # Start stocktake at asset's location
         start_url = reverse("assets:stocktake_start")
         get_resp = admin_client.get(start_url)
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
         payload = dict(parser.fields)
         payload["location"] = str(location.pk)
@@ -3674,7 +3622,7 @@ class TestUS_SA_060_HierarchicalLocations:
         get_resp = admin_client.get(url)
         assert get_resp.status_code == 200
 
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(get_resp.content.decode())
 
         payload = dict(parser.fields)
@@ -4214,7 +4162,7 @@ class TestUS_SA_144_RegistrationStates:
         mail.outbox.clear()
         url = reverse("accounts:register")
         resp = client.get(url)
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(resp.content.decode())
         payload = dict(parser.fields)
         payload.update(
@@ -4528,7 +4476,7 @@ class TestUS_SA_079_CreateManageProjects:
         resp = admin_client.get(url)
         assert resp.status_code == 200
         # Create a project via form
-        parser = _FormFieldCollector()
+        parser = FormFieldCollector()
         parser.feed(resp.content.decode())
         payload = dict(parser.fields)
         payload["name"] = "My Show"
