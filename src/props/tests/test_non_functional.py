@@ -258,6 +258,6 @@ class TestAndroidFormSubmission:
                     f'Non-submit button missing type="button": '
                     f"{btn_attrs[:80]}"
                 )
-        assert submit_count == 1, (
-            f"Expected exactly 1 submit button, found {submit_count}"
-        )
+        assert (
+            submit_count == 1
+        ), f"Expected exactly 1 submit button, found {submit_count}"
