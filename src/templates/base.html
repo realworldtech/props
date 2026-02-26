@@ -295,29 +295,42 @@
         }
         var btn = form.querySelector('button[type="submit"]');
         if (btn && !btn.dataset.submitted) {
+            // Mark as submitted synchronously — prevents double clicks
             btn.dataset.submitted = '1';
-            var spinner = document.createElement('span');
-            spinner.className = 'inline-flex items-center gap-1';
-            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('class', 'animate-spin h-5 w-5 inline');
-            svg.setAttribute('viewBox', '0 0 24 24');
-            var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('class', 'opacity-25');
-            circle.setAttribute('cx', '12'); circle.setAttribute('cy', '12');
-            circle.setAttribute('r', '10'); circle.setAttribute('stroke', 'currentColor');
-            circle.setAttribute('stroke-width', '4'); circle.setAttribute('fill', 'none');
-            var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('class', 'opacity-75');
-            path.setAttribute('fill', 'currentColor');
-            path.setAttribute('d', 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z');
-            svg.appendChild(circle); svg.appendChild(path);
-            spinner.appendChild(svg);
-            spinner.appendChild(document.createTextNode(' Processing...'));
-            btn.textContent = '';
-            btn.appendChild(spinner);
-            // Defer disable so it doesn't cancel the in-flight submission
-            // (some Android Chrome versions re-check submitter state)
-            setTimeout(function() { btn.disabled = true; }, 0);
+            // Defer ALL DOM mutations to requestAnimationFrame so they
+            // execute after the browser has committed the form navigation.
+            // Android Chrome re-checks submitter state after the handler
+            // returns; synchronous DOM changes (textContent, appendChild)
+            // and setTimeout(0) with btn.disabled both fire too early on
+            // Android when the virtual keyboard is dismissing, causing
+            // Chrome to cancel the in-flight POST.
+            //
+            // We also avoid btn.disabled entirely — use pointer-events
+            // and aria-disabled instead, because Android Chrome uses the
+            // disabled property to decide whether to honour the submitter.
+            requestAnimationFrame(function() {
+                var spinner = document.createElement('span');
+                spinner.className = 'inline-flex items-center gap-1';
+                var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('class', 'animate-spin h-5 w-5 inline');
+                svg.setAttribute('viewBox', '0 0 24 24');
+                var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('class', 'opacity-25');
+                circle.setAttribute('cx', '12'); circle.setAttribute('cy', '12');
+                circle.setAttribute('r', '10'); circle.setAttribute('stroke', 'currentColor');
+                circle.setAttribute('stroke-width', '4'); circle.setAttribute('fill', 'none');
+                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('class', 'opacity-75');
+                path.setAttribute('fill', 'currentColor');
+                path.setAttribute('d', 'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z');
+                svg.appendChild(circle); svg.appendChild(path);
+                spinner.appendChild(svg);
+                spinner.appendChild(document.createTextNode(' Processing...'));
+                btn.textContent = '';
+                btn.appendChild(spinner);
+                btn.style.pointerEvents = 'none';
+                btn.setAttribute('aria-disabled', 'true');
+            });
         }
     });
     </script>
