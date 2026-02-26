@@ -2550,14 +2550,6 @@ class TestScenario_11_18_SearchAndHoldList:
         resp = client_logged_in.get(url, {"view": "grid"})
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #33a: Hold list add_item endpoint does not accept asset"
-            " name as search input (S2.16.4). The holdlist_add_item view"
-            " only accepts an asset PK ('asset_id') — not a name string."
-        ),
-    )
     def test_hold_list_add_accepts_name_search(
         self, dept_manager_client, hold_list, category, location, admin_user
     ):
@@ -2585,14 +2577,6 @@ class TestScenario_11_18_SearchAndHoldList:
             asset=target
         ).exists(), "Hold list add must accept asset name as search input"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #33b: Hold list add_item endpoint does not accept"
-            " barcode string as input (S2.16.4). The holdlist_add_item"
-            " view only accepts an asset PK ('asset_id')."
-        ),
-    )
     def test_hold_list_add_accepts_barcode_scan(
         self, dept_manager_client, hold_list, category, location, admin_user
     ):

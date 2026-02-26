@@ -61,12 +61,41 @@
     {% endif %}
 
     {% if not hold_list.is_locked %}
-    <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4">
+    <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4" x-data="assetAutocomplete()">
         {% csrf_token %}
+        <input type="hidden" name="asset_id" x-model="selectedId">
         <div class="flex flex-wrap gap-3 items-end">
-            <div>
+            <div class="relative">
                 <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Search or scan asset</label>
-                <input type="text" name="asset_id" placeholder="Search by name or barcode..." required class="form-input rounded-lg px-3 py-1.5 w-48">
+                <input type="text" name="search" placeholder="Search by name or barcode..." required
+                    class="form-input rounded-lg px-3 py-1.5 w-64"
+                    x-model="query" @input.debounce.200ms="fetchResults"
+                    @keydown.arrow-down.prevent="highlightNext"
+                    @keydown.arrow-up.prevent="highlightPrev"
+                    @keydown.enter.prevent="selectHighlighted"
+                    @keydown.escape="showResults = false"
+                    @focus="if (results.length) showResults = true"
+                    autocomplete="off">
+                <div x-show="showResults && results.length > 0" x-cloak
+                    @click.outside="showResults = false"
+                    class="absolute z-50 mt-1 w-full bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    <template x-for="(item, idx) in results" :key="item.id">
+                        <button type="button"
+                            @click="selectItem(item)"
+                            @mouseenter="highlighted = idx"
+                            :class="highlighted === idx ? 'bg-brand-500/20' : ''"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-brand-500/10 transition-colors">
+                            <span x-text="item.name" class="text-stage-900 dark:text-cream"></span>
+                            <span x-text="item.barcode" class="ml-2 text-xs text-stage-400 dark:text-cream/40"></span>
+                            <template x-if="item.category">
+                                <span class="ml-1 text-xs text-stage-400 dark:text-cream/30" x-text="'[' + item.category + ']'"></span>
+                            </template>
+                            <template x-if="item.location">
+                                <span class="ml-1 text-xs text-stage-400 dark:text-cream/30" x-text="'@ ' + item.location"></span>
+                            </template>
+                        </button>
+                    </template>
+                </div>
             </div>
             <div>
                 <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Qty</label>
@@ -81,6 +110,45 @@
             </button>
         </div>
     </form>
+    <script>
+    function assetAutocomplete() {
+        return {
+            query: '',
+            selectedId: '',
+            results: [],
+            showResults: false,
+            highlighted: -1,
+            async fetchResults() {
+                this.selectedId = '';
+                if (this.query.length < 1) {
+                    this.results = [];
+                    this.showResults = false;
+                    return;
+                }
+                const resp = await fetch('{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query));
+                this.results = await resp.json();
+                this.highlighted = -1;
+                this.showResults = this.results.length > 0;
+            },
+            selectItem(item) {
+                this.query = item.name;
+                this.selectedId = item.id;
+                this.showResults = false;
+            },
+            highlightNext() {
+                if (this.highlighted < this.results.length - 1) this.highlighted++;
+            },
+            highlightPrev() {
+                if (this.highlighted > 0) this.highlighted--;
+            },
+            selectHighlighted() {
+                if (this.highlighted >= 0 && this.highlighted < this.results.length) {
+                    this.selectItem(this.results[this.highlighted]);
+                }
+            }
+        }
+    }
+    </script>
     {% endif %}
 
     <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">

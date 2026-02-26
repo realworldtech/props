@@ -3530,6 +3530,43 @@ def location_search(request):
 
 
 @login_required
+def asset_search(request):
+    """Search assets by name, barcode, description, tag, or category.
+
+    Returns JSON list for autocomplete. Mirrors the broad text search
+    used on the asset list page so users can find assets with natural
+    queries like "blue dress", "microphone", or a barcode string.
+    """
+    q = request.GET.get("q", "").strip()
+    if len(q) < 1:
+        return JsonResponse([], safe=False)
+    qs = (
+        Asset.objects.filter(
+            Q(name__icontains=q)
+            | Q(barcode__icontains=q)
+            | Q(description__icontains=q)
+            | Q(tags__name__icontains=q)
+            | Q(category__name__icontains=q)
+        )
+        .distinct()
+        .select_related("category", "current_location")[:20]
+    )
+    results = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "barcode": a.barcode,
+            "category": a.category.name if a.category else "",
+            "location": (
+                a.current_location.name if a.current_location else ""
+            ),
+        }
+        for a in qs
+    ]
+    return JsonResponse(results, safe=False)
+
+
+@login_required
 def department_list_json(request):
     """Return all departments as JSON for modal select population."""
     depts = Department.objects.filter(is_active=True).values("id", "name")
@@ -5224,6 +5261,101 @@ def holdlist_edit(request, pk):
     )
 
 
+def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
+    """Resolve an Asset from various input types.
+
+    Tries in order:
+    1. Explicit asset_id (numeric PK)
+    2. Barcode field (exact barcode match)
+    3. Search field — exact barcode, NFC tag, or name search
+    Returns (asset, error_message) tuple.
+    """
+    from assets.models import NFCTag
+
+    # 1. Explicit PK
+    if asset_id:
+        try:
+            return Asset.objects.get(pk=asset_id), None
+        except (Asset.DoesNotExist, ValueError):
+            return None, f"No asset found with ID '{asset_id}'."
+
+    # 2. Barcode field
+    if barcode:
+        try:
+            return Asset.objects.get(barcode=barcode), None
+        except Asset.DoesNotExist:
+            pass
+        # Try serial barcode
+        from assets.models import AssetSerial
+
+        try:
+            serial = AssetSerial.objects.select_related("asset").get(
+                barcode__iexact=barcode
+            )
+            return serial.asset, None
+        except AssetSerial.DoesNotExist:
+            return None, (f"No asset found with barcode '{barcode}'.")
+
+    # 3. Search field — try barcode, NFC, then name
+    if search:
+        search = search.strip()
+        if not search:
+            return None, "Please enter a search term."
+
+        # 3a. Exact barcode match
+        try:
+            return Asset.objects.get(barcode=search), None
+        except Asset.DoesNotExist:
+            pass
+
+        # 3b. Serial barcode match
+        from assets.models import AssetSerial
+
+        try:
+            serial = AssetSerial.objects.select_related("asset").get(
+                barcode__iexact=search
+            )
+            return serial.asset, None
+        except AssetSerial.DoesNotExist:
+            pass
+
+        # 3c. NFC tag match
+        nfc_asset = NFCTag.get_asset_by_tag(search)
+        if nfc_asset:
+            return nfc_asset, None
+
+        # 3d. Exact name match
+        try:
+            return Asset.objects.get(name=search), None
+        except Asset.MultipleObjectsReturned:
+            return (
+                Asset.objects.filter(name=search).first(),
+                None,
+            )
+        except Asset.DoesNotExist:
+            pass
+
+        # 3e. Broad text match (name, description, tags, category)
+        matches = Asset.objects.filter(
+            Q(name__icontains=search)
+            | Q(description__icontains=search)
+            | Q(tags__name__icontains=search)
+            | Q(category__name__icontains=search)
+        ).distinct()
+        count = matches.count()
+        if count == 1:
+            return matches.first(), None
+        elif count > 1:
+            return None, (
+                f"Multiple assets match '{search}'. "
+                f"Please be more specific or use the "
+                f"autocomplete suggestions."
+            )
+        return None, f"No asset found matching '{search}'."
+
+    return None, "Please provide an asset to add."
+
+
 @login_required
 def holdlist_add_item(request, pk):
     """Add an item to a hold list."""
@@ -5232,10 +5364,18 @@ def holdlist_add_item(request, pk):
     hold_list = get_object_or_404(HoldList, pk=pk)
     if request.method == "POST":
         asset_id = request.POST.get("asset_id")
-        if asset_id:
+        search = request.POST.get("search")
+        barcode = request.POST.get("barcode")
+
+        asset, error = _resolve_asset_from_input(
+            asset_id=asset_id, search=search, barcode=barcode
+        )
+
+        if error:
+            messages.error(request, error)
+        elif asset:
             from assets.services.holdlists import add_item
 
-            asset = get_object_or_404(Asset, pk=asset_id)
             qty = int(request.POST.get("quantity", 1))
             notes = request.POST.get("notes", "")
             override_overlap = request.POST.get("override_overlap")
