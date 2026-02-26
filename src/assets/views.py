@@ -5300,7 +5300,7 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
     3. Search field — exact barcode, NFC tag, or name search
     Returns (asset, error_message) tuple.
     """
-    from assets.models import NFCTag
+    from assets.models import AssetSerial, NFCTag
 
     # 1. Explicit PK
     if asset_id:
@@ -5316,8 +5316,6 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         except Asset.DoesNotExist:
             pass
         # Try serial barcode
-        from assets.models import AssetSerial
-
         try:
             serial = AssetSerial.objects.select_related("asset").get(
                 barcode__iexact=barcode
@@ -5339,8 +5337,6 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             pass
 
         # 3b. Serial barcode match
-        from assets.models import AssetSerial
-
         try:
             serial = AssetSerial.objects.select_related("asset").get(
                 barcode__iexact=search
@@ -5358,9 +5354,10 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         try:
             return Asset.objects.get(name=search), None
         except Asset.MultipleObjectsReturned:
-            return (
-                Asset.objects.filter(name=search).first(),
-                None,
+            return None, (
+                f"Multiple assets named '{search}'. "
+                f"Please use the autocomplete to select "
+                f"the correct one."
             )
         except Asset.DoesNotExist:
             pass
@@ -5406,7 +5403,18 @@ def holdlist_add_item(request, pk):
         elif asset:
             from assets.services.holdlists import add_item
 
-            qty = int(request.POST.get("quantity", 1))
+            raw_qty = request.POST.get("quantity", "1")
+            try:
+                qty = int(raw_qty)
+                if qty < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                messages.error(
+                    request,
+                    f"Invalid quantity '{raw_qty}'. "
+                    f"Please enter a positive number.",
+                )
+                return redirect("assets:holdlist_detail", pk=pk)
             notes = request.POST.get("notes", "")
             override_overlap = request.POST.get("override_overlap")
             try:

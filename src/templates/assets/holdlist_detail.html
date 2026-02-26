@@ -2,6 +2,10 @@
 
 {% block title %}{{ hold_list.name }} - {{ SITE_NAME }}{% endblock %}
 
+{% block extra_head %}
+<style>[x-cloak] { display: none !important; }</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <div class="flex justify-between items-center">
@@ -72,7 +76,7 @@
                     x-model="query" @input.debounce.200ms="fetchResults"
                     @keydown.arrow-down.prevent="highlightNext"
                     @keydown.arrow-up.prevent="highlightPrev"
-                    @keydown.enter.prevent="selectHighlighted"
+                    @keydown.enter.prevent="highlighted >= 0 ? selectHighlighted() : ($el.form && $el.form.submit())"
                     @keydown.escape="showResults = false"
                     @focus="if (results.length) showResults = true"
                     autocomplete="off">
@@ -125,8 +129,14 @@
                     this.showResults = false;
                     return;
                 }
-                const resp = await fetch('{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query));
-                this.results = await resp.json();
+                try {
+                    const resp = await fetch('{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query));
+                    if (!resp.ok) throw new Error(resp.status);
+                    this.results = await resp.json();
+                } catch (e) {
+                    console.error('Asset search failed:', e);
+                    this.results = [];
+                }
                 this.highlighted = -1;
                 this.showResults = this.results.length > 0;
             },
