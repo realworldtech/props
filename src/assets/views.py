@@ -5402,6 +5402,14 @@ def holdlist_add_item(request, pk):
             asset_id=asset_id, search=search, barcode=barcode
         )
 
+        if not error and asset and asset.status != "active":
+            error = (
+                f"'{asset.name}' is "
+                f"{asset.get_status_display()} "
+                f"and cannot be added to a hold list."
+            )
+            asset = None
+
         if error:
             messages.error(request, error)
         elif asset:
