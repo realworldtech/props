@@ -305,6 +305,67 @@ class TestBulkCheckinToHome:
         assert result["checked_in"] == 0
         assert "Not Out" in result["skipped"]
 
+    def test_serialised_assets_checked_in_per_serial(
+        self, user, second_user, category, location
+    ):
+        """Serialised assets are checked in at the serial level —
+        each checked-out AssetSerial gets its own transaction and
+        is returned to the asset's home_location."""
+        from assets.models import AssetSerial, Transaction
+        from assets.services.bulk import bulk_checkin_to_home
+
+        home = Location.objects.create(name="Serial Home")
+        elsewhere = Location.objects.create(name="Elsewhere")
+        asset = AssetFactory(
+            name="Wireless Mic",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home,
+            checked_out_to=second_user,
+            is_serialised=True,
+            created_by=user,
+        )
+        s1 = AssetSerialFactory(
+            asset=asset,
+            serial_number="S001",
+            barcode=f"{asset.barcode}-S001",
+            status="active",
+            current_location=elsewhere,
+            checked_out_to=second_user,
+        )
+        s2 = AssetSerialFactory(
+            asset=asset,
+            serial_number="S002",
+            barcode=f"{asset.barcode}-S002",
+            status="active",
+            current_location=elsewhere,
+            checked_out_to=second_user,
+        )
+
+        result = bulk_checkin_to_home([asset.pk], user)
+        assert result["checked_in"] == 1
+        assert result["skipped"] == []
+
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        assert s1.checked_out_to is None
+        assert s1.current_location == home
+        assert s2.checked_out_to is None
+        assert s2.current_location == home
+
+        asset.refresh_from_db()
+        assert asset.checked_out_to is None
+        assert asset.current_location == home
+
+        # Verify per-serial transactions were created
+        serial_txns = Transaction.objects.filter(
+            asset=asset,
+            action="checkin",
+            serial__isnull=False,
+        )
+        assert serial_txns.count() == 2
+
 
 # ============================================================
 # BATCH F: SHOULD-IMPLEMENT MEDIUM EFFORT (V25)

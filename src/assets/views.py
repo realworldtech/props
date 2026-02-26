@@ -3146,13 +3146,14 @@ def location_checkout(request, pk):
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
-    # Fetch all assets once, then partition using is_checked_out
-    # to correctly handle non-serialised assets tracked via
-    # transaction quantities (not just checked_out_to).
+    # Fetch all assets once with annotations to avoid N+1 queries
+    # on is_checked_out (serialised/non-serialised).
     all_assets = list(
-        Asset.objects.filter(
+        Asset.objects.with_related()
+        .filter(
             current_location_id__in=all_location_ids,
-        ).select_related("category", "category__department", "checked_out_to")
+        )
+        .select_related("category", "category__department", "checked_out_to")
     )
     eligible_assets = [
         a
@@ -3245,15 +3246,12 @@ def location_checkout(request, pk):
     from django.contrib.auth.models import Group
 
     borrower_group = Group.objects.filter(name="Borrower").first()
-    internal_users = (
-        User.objects.filter(is_active=True)
-        .exclude(
-            groups=borrower_group,
-        )
-        .order_by("first_name", "last_name", "username")
+    internal_users = User.objects.filter(is_active=True).order_by(
+        "first_name", "last_name", "username"
     )
     external_borrowers = User.objects.none()
     if borrower_group:
+        internal_users = internal_users.exclude(groups=borrower_group)
         external_borrowers = User.objects.filter(
             is_active=True, groups=borrower_group
         ).order_by("first_name", "last_name", "username")
@@ -3291,21 +3289,17 @@ def location_checkin(request, pk):
         return redirect("assets:location_detail", pk=pk)
 
     # Assets whose home_location is at this location tree and are
-    # currently checked out — use is_checked_out to correctly
-    # handle non-serialised assets tracked via transactions.
+    # currently checked out — use with_related() annotations to
+    # avoid N+1 on is_checked_out.
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
     all_home_assets = list(
-        Asset.objects.filter(
+        Asset.objects.with_related()
+        .filter(
             home_location_id__in=all_location_ids,
-        ).select_related(
-            "category",
-            "category__department",
-            "checked_out_to",
-            "home_location",
-            "current_location",
         )
+        .select_related("home_location", "current_location")
     )
     checked_out_assets = [a for a in all_home_assets if a.is_checked_out]
 
