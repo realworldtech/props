@@ -134,3 +134,130 @@ class TestAccessibilityAndCodeQuality:
         content = pyproject.read_text()
         assert "[tool.black]" in content
         assert "[tool.isort]" in content
+
+
+@pytest.mark.django_db
+class TestAndroidFormSubmission:
+    """Regression tests for Android Chrome form submission bug.
+
+    Android Chrome re-checks the submitter button's disabled state after
+    the submit handler returns. If btn.disabled is set synchronously (or
+    via setTimeout(0) which fires before form serialisation completes on
+    Android), Chrome cancels the in-flight POST.  Additionally, mutating
+    the button's DOM (textContent, appendChild) during the submit event
+    can trigger re-evaluation of the submitter on Android.
+
+    The fix: defer ALL button mutations (spinner, disable) to a
+    requestAnimationFrame callback so they execute after the browser has
+    committed the navigation.
+    """
+
+    def test_base_template_submit_handler_does_not_disable_button(
+        self, admin_client
+    ):
+        """The global submit handler must never set btn.disabled = true.
+
+        Android Chrome re-checks submitter state after the handler
+        returns.  Setting disabled (even in setTimeout(0)) causes Chrome
+        to cancel the form POST when the virtual keyboard is
+        dismissing.  The handler should use pointer-events/aria-disabled
+        and data-submitted flag instead.
+        """
+        import re
+
+        response = admin_client.get(reverse("assets:quick_capture"))
+        content = response.content.decode()
+        # The submit handler script should NOT contain btn.disabled
+        # (the old broken pattern that cancels Android submissions).
+        # Use regex to catch spacing variants like btn.disabled=true,
+        # btn.disabled =true, etc.
+        assert not re.search(r"btn\.disabled\s*=\s*true", content), (
+            "base.html submit handler must not set btn.disabled — "
+            "this cancels form submissions on Android Chrome"
+        )
+
+    def test_base_template_submit_handler_defers_dom_mutations(
+        self, admin_client
+    ):
+        """All button DOM changes must be inside requestAnimationFrame.
+
+        Synchronous DOM changes (textContent, appendChild) during the
+        submit event can cause Android Chrome to re-evaluate the
+        submitter and cancel the POST.
+        """
+        import re
+
+        response = admin_client.get(reverse("assets:quick_capture"))
+        content = response.content.decode()
+        # Extract the submit event handler script block
+        match = re.search(
+            r"document\.addEventListener\('submit'," r"(.*?)\);\s*</script>",
+            content,
+            re.DOTALL,
+        )
+        assert match, "Submit event handler not found in page"
+        handler_code = match.group(1)
+        assert "requestAnimationFrame" in handler_code, (
+            "base.html submit handler must use requestAnimationFrame "
+            "to defer button mutations"
+        )
+
+    def test_quick_capture_form_submits_with_name(self, admin_client):
+        """Round-trip: GET form, extract fields, POST with name.
+
+        Regression test for the Android bug: entering text in the name
+        field must not prevent form submission.
+        """
+        from assets.tests.functional.helpers import FormFieldCollector
+
+        get_resp = admin_client.get(reverse("assets:quick_capture"))
+        assert get_resp.status_code == 200
+
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+
+        # Populate name — the scenario that fails on Android
+        fields["name"] = "Android Test Asset"
+        # Remove image field (file fields need special handling)
+        fields.pop("image", None)
+
+        post_resp = admin_client.post(reverse("assets:quick_capture"), fields)
+        assert post_resp.status_code == 200
+        from assets.models import Asset
+
+        assert Asset.objects.filter(
+            name="Android Test Asset", status="draft"
+        ).exists()
+
+    def test_quick_capture_submit_button_is_type_submit(self, admin_client):
+        """The Capture Asset button must be type=submit.
+
+        All other buttons in the form must be type=button to avoid
+        confusing Android Chrome's submitter identification.
+        """
+        import re
+
+        response = admin_client.get(reverse("assets:quick_capture"))
+        content = response.content.decode()
+        # Find all buttons inside the form
+        form_match = re.search(
+            r"<form[^>]*method=\"post\"[^>]*>(.*?)</form>",
+            content,
+            re.DOTALL,
+        )
+        assert form_match, "Quick capture form not found"
+        form_html = form_match.group(1)
+        buttons = re.findall(r"<button\b([^>]*)>", form_html, re.DOTALL)
+        submit_count = 0
+        for btn_attrs in buttons:
+            if 'type="submit"' in btn_attrs:
+                submit_count += 1
+            else:
+                assert 'type="button"' in btn_attrs, (
+                    f'Non-submit button missing type="button": '
+                    f"{btn_attrs[:80]}"
+                )
+        assert (
+            submit_count == 1
+        ), f"Expected exactly 1 submit button, found {submit_count}"
