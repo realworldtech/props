@@ -122,6 +122,7 @@
             results: [],
             showResults: false,
             highlighted: -1,
+            _controller: null,
             async fetchResults() {
                 this.selectedId = '';
                 if (this.query.length < 1) {
@@ -129,11 +130,17 @@
                     this.showResults = false;
                     return;
                 }
+                if (this._controller) this._controller.abort();
+                this._controller = new AbortController();
                 try {
-                    const resp = await fetch('{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query));
+                    const resp = await fetch(
+                        '{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query),
+                        { signal: this._controller.signal }
+                    );
                     if (!resp.ok) throw new Error(resp.status);
                     this.results = await resp.json();
                 } catch (e) {
+                    if (e.name === 'AbortError') return;
                     console.error('Asset search failed:', e);
                     this.results = [];
                 }

@@ -5311,6 +5311,7 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
 
     # 2. Barcode field
     if barcode:
+        barcode = barcode.strip()
         try:
             return Asset.objects.get(barcode=barcode), None
         except Asset.DoesNotExist:
@@ -5368,11 +5369,11 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             | Q(description__icontains=search)
             | Q(tags__name__icontains=search)
             | Q(category__name__icontains=search)
-        ).distinct()
-        count = matches.count()
-        if count == 1:
-            return matches.first(), None
-        elif count > 1:
+        ).distinct()[:2]
+        results = list(matches)
+        if len(results) == 1:
+            return results[0], None
+        elif len(results) > 1:
             return None, (
                 f"Multiple assets match '{search}'. "
                 f"Please be more specific or use the "
