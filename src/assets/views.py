@@ -15,7 +15,18 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import (
+    Case,
+    Count,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import (
     HttpResponse,
@@ -3533,9 +3544,14 @@ def location_search(request):
 def asset_search(request):
     """Search assets by name, barcode, description, tag, or category.
 
-    Returns JSON list for autocomplete. Mirrors the broad text search
-    used on the asset list page so users can find assets with natural
-    queries like "blue dress", "microphone", or a barcode string.
+    Returns JSON list for autocomplete, ordered by relevance:
+      1. Exact barcode match
+      2. Name starts with query
+      3. Name contains query
+      4. Category name match
+      5. Description / tag match
+
+    This will be replaced by a composite FTS index in future.
     """
     q = request.GET.get("q", "").strip()
     if len(q) < 1:
@@ -3549,7 +3565,21 @@ def asset_search(request):
             | Q(category__name__icontains=q)
         )
         .distinct()
-        .select_related("category", "current_location")[:20]
+        .annotate(
+            relevance=Case(
+                When(barcode__iexact=q, then=Value(1)),
+                When(name__istartswith=q, then=Value(2)),
+                When(name__icontains=q, then=Value(3)),
+                When(
+                    category__name__icontains=q,
+                    then=Value(4),
+                ),
+                default=Value(5),
+                output_field=IntegerField(),
+            )
+        )
+        .select_related("category", "current_location")
+        .order_by("relevance", "name")[:20]
     )
     results = [
         {
@@ -3558,7 +3588,9 @@ def asset_search(request):
             "barcode": a.barcode,
             "category": a.category.name if a.category else "",
             "location": (
-                a.current_location.name if a.current_location else ""
+                a.current_location.name
+                if a.current_location
+                else ""
             ),
         }
         for a in qs

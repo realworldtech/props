@@ -5499,6 +5499,135 @@ class TestV210AssetSearchByName:
 
 
 # ============================================================
+# Asset search autocomplete endpoint (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestAssetSearchAutocomplete:
+    """asset_search JSON endpoint returns relevance-ordered results."""
+
+    def test_returns_json_list(self, client_logged_in):
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "anything"})
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "application/json"
+
+    def test_empty_query_returns_empty(self, client_logged_in):
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": ""})
+        assert resp.json() == []
+
+    def test_name_match_ranked_above_tag_match(
+        self, client_logged_in, category, location, user
+    ):
+        """An asset whose name contains the query should rank above
+        one matched only via tag or description."""
+        from assets.models import Tag
+
+        # Asset matched by name
+        name_hit = AssetFactory(
+            name="Wireless Microphone",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Asset matched only by tag
+        tag = Tag.objects.create(name="microphone")
+        tag_hit = AssetFactory(
+            name="Audio Cable XLR",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        tag_hit.tags.add(tag)
+
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "microphone"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert name_hit.pk in ids
+        assert tag_hit.pk in ids
+        assert ids.index(name_hit.pk) < ids.index(tag_hit.pk)
+
+    def test_exact_barcode_ranked_first(
+        self, client_logged_in, category, location, user
+    ):
+        """An exact barcode match should appear before name matches."""
+        target = AssetFactory(
+            name="Stage Light Fresnel",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Another asset whose name contains the barcode prefix
+        AssetFactory(
+            name=f"Label {target.barcode[:4]}",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": target.barcode})
+        data = resp.json()
+        assert data[0]["id"] == target.pk
+
+    def test_name_startswith_ranked_above_name_contains(
+        self, client_logged_in, category, location, user
+    ):
+        """An asset whose name starts with the query should rank
+        above one where the query appears mid-name."""
+        starts = AssetFactory(
+            name="Goblet Gold Large",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        contains = AssetFactory(
+            name="Ornate Goblet Silver",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Goblet"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert ids.index(starts.pk) < ids.index(contains.pk)
+
+    def test_category_match_ranked_above_description(
+        self, client_logged_in, location, user, department
+    ):
+        """An asset matched via category name should rank above one
+        matched only via description."""
+        from assets.models import Category
+
+        cat = Category.objects.create(
+            name="Furniture", department=department
+        )
+        cat_hit = AssetFactory(
+            name="Oak Table",
+            category=cat,
+            current_location=location,
+            created_by=user,
+        )
+        desc_hit = AssetFactory(
+            name="Storage Crate",
+            description="Used to store furniture items",
+            category=CategoryFactory(department=department),
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "furniture"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert cat_hit.pk in ids
+        assert desc_hit.pk in ids
+        assert ids.index(cat_hit.pk) < ids.index(desc_hit.pk)
+
+
+# ============================================================
 # V212 (S2.6.1-03): Search by category
 # ============================================================
 
