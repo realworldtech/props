@@ -3588,9 +3588,7 @@ def asset_search(request):
             "barcode": a.barcode,
             "category": a.category.name if a.category else "",
             "location": (
-                a.current_location.name
-                if a.current_location
-                else ""
+                a.current_location.name if a.current_location else ""
             ),
         }
         for a in qs

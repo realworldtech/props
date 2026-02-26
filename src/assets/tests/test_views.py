@@ -5602,9 +5602,7 @@ class TestAssetSearchAutocomplete:
         matched only via description."""
         from assets.models import Category
 
-        cat = Category.objects.create(
-            name="Furniture", department=department
-        )
+        cat = Category.objects.create(name="Furniture", department=department)
         cat_hit = AssetFactory(
             name="Oak Table",
             category=cat,
