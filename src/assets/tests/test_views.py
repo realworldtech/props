@@ -5560,9 +5560,9 @@ class TestAssetSearchAutocomplete:
             current_location=location,
             created_by=user,
         )
-        # Another asset whose name contains the barcode prefix
+        # Another asset whose name contains the full barcode string
         AssetFactory(
-            name=f"Label {target.barcode[:4]}",
+            name=f"Label {target.barcode}",
             category=category,
             current_location=location,
             created_by=user,

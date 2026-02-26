@@ -3557,7 +3557,8 @@ def asset_search(request):
     if len(q) < 1:
         return JsonResponse([], safe=False)
     qs = (
-        Asset.objects.filter(
+        Asset.objects.filter(status="active")
+        .filter(
             Q(name__icontains=q)
             | Q(barcode__icontains=q)
             | Q(description__icontains=q)
@@ -5312,6 +5313,8 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
     # 2. Barcode field
     if barcode:
         barcode = barcode.strip()
+        if not barcode:
+            return None, "Please enter a barcode."
         try:
             return Asset.objects.get(barcode=barcode), None
         except Asset.DoesNotExist:
