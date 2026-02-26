@@ -727,13 +727,6 @@ class TestUS_MB_022_CreateHoldList:
         resp = client_logged_in.get(reverse("assets:holdlist_create"))
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: viewer permission not enforced on holdlist_create"
-            " (US-MB-022, S10C)"
-        ),
-    )
     def test_viewer_cannot_create_hold_list(self, viewer_client):
         resp = viewer_client.get(reverse("assets:holdlist_create"))
         assert resp.status_code in (302, 403)

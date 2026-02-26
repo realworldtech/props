@@ -5100,6 +5100,14 @@ def asset_convert_serialisation(request, pk):
 
 # --- Hold Lists ---
 
+HOLD_LIST_WRITE_ROLES = ("system_admin", "department_manager", "member")
+
+
+def _require_holdlist_write(user):
+    """Raise PermissionDenied if user lacks hold-list write access."""
+    if get_user_role(user) not in HOLD_LIST_WRITE_ROLES:
+        raise PermissionDenied
+
 
 @login_required
 def holdlist_list(request):
@@ -5182,6 +5190,7 @@ def holdlist_detail(request, pk):
 @login_required
 def holdlist_create(request):
     """Create a new hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import Department, HoldListStatus, Project
 
     if request.method == "POST":
@@ -5395,6 +5404,7 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
 @login_required
 def holdlist_add_item(request, pk):
     """Add an item to a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5483,6 +5493,7 @@ def holdlist_add_item(request, pk):
 @login_required
 def holdlist_remove_item(request, pk, item_pk):
     """Remove an item from a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5500,6 +5511,7 @@ def holdlist_remove_item(request, pk, item_pk):
 @login_required
 def holdlist_edit_item(request, pk, item_pk):
     """V459: Edit an existing hold list item's quantity and notes."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5544,6 +5556,7 @@ def holdlist_pick_sheet(request, pk):
 @login_required
 def holdlist_update_pull_status(request, pk, item_pk):
     """Update pull status of a hold list item."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5684,6 +5697,7 @@ def holdlist_delete(request, pk):
 @login_required
 def holdlist_lock(request, pk):
     """Lock a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
     from assets.services.holdlists import lock_hold_list
 
@@ -5697,6 +5711,7 @@ def holdlist_lock(request, pk):
 @login_required
 def holdlist_unlock(request, pk):
     """Unlock a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
     from assets.services.holdlists import unlock_hold_list
 
@@ -5710,6 +5725,7 @@ def holdlist_unlock(request, pk):
 @login_required
 def holdlist_fulfil(request, pk):
     """Fulfil/bulk checkout a hold list's items."""
+    _require_holdlist_write(request.user)
     from django.contrib.auth import get_user_model
 
     from assets.models import HoldList
