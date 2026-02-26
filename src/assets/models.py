@@ -100,6 +100,13 @@ class Location(models.Model):
         related_name="children",
     )
     is_active = models.BooleanField(default=True)
+    is_checkable = models.BooleanField(
+        default=False,
+        help_text=(
+            "If True, this location can be checked out as a unit "
+            "(all assets checked out to a single borrower)."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]

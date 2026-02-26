@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction as db_transaction
 from django.db.models import F, Q
 
-from ..models import Asset, Category, Location, Transaction
+from ..models import Asset, AssetSerial, Category, Location, Transaction
 
 User = get_user_model()
 
@@ -293,6 +293,7 @@ def bulk_checkout(
     performed_by,
     notes: str = "",
     timestamp=None,
+    due_date=None,
 ) -> dict:
     """Check out multiple assets to a single borrower.
 
@@ -304,6 +305,8 @@ def bulk_checkout(
     extra = {}
     if timestamp:
         extra = {"timestamp": timestamp, "is_backdated": True}
+    if due_date:
+        extra["due_date"] = due_date
 
     borrower = User.objects.get(pk=borrower_id)
     assets = list(
@@ -399,3 +402,120 @@ def bulk_checkin(
             )
 
     return {"checked_in": len(eligible), "skipped": skipped}
+
+
+def bulk_checkin_to_home(
+    asset_ids: list[int],
+    performed_by,
+    notes: str = "",
+    timestamp=None,
+) -> dict:
+    """Check in multiple assets, each to its own home_location.
+
+    S2.12.4: Location-level bulk check-in returns assets to their
+    home locations rather than a single target location.
+
+    Handles both non-serialised and serialised assets.  For
+    serialised assets, each checked-out AssetSerial is checked in
+    with its own Transaction row, mirroring the individual
+    asset_checkin workflow.
+
+    Returns a dict with 'checked_in' count and 'skipped' list.
+    """
+    extra = {}
+    if timestamp:
+        extra = {"timestamp": timestamp, "is_backdated": True}
+
+    assets = list(
+        Asset.objects.filter(pk__in=asset_ids).select_related(
+            "current_location", "home_location"
+        )
+    )
+    skipped: list[str] = []
+    eligible: list[Asset] = []
+    serialised_eligible: list[Asset] = []
+    for asset in assets:
+        if not asset.is_checked_out:
+            skipped.append(asset.name)
+        elif not asset.home_location:
+            skipped.append(asset.name)
+        elif asset.is_serialised:
+            serialised_eligible.append(asset)
+        else:
+            eligible.append(asset)
+
+    checked_in = 0
+
+    with db_transaction.atomic():
+        # --- Non-serialised assets: bulk operations ---
+        if eligible:
+            transactions = [
+                Transaction(
+                    asset=asset,
+                    user=performed_by,
+                    action="checkin",
+                    from_location=asset.current_location,
+                    to_location=asset.home_location,
+                    notes=notes,
+                    **extra,
+                )
+                for asset in eligible
+            ]
+            Transaction.objects.bulk_create(transactions)
+            for asset in eligible:
+                asset.checked_out_to = None
+                asset.current_location = asset.home_location
+            Asset.objects.bulk_update(
+                eligible, ["checked_out_to", "current_location"]
+            )
+            checked_in += len(eligible)
+
+        # --- Serialised assets: per-serial transactions ---
+        for asset in serialised_eligible:
+            home = asset.home_location
+            checked_out_serials = list(
+                AssetSerial.objects.filter(
+                    asset=asset,
+                    checked_out_to__isnull=False,
+                    is_archived=False,
+                ).select_related("current_location")
+            )
+            if not checked_out_serials:
+                skipped.append(asset.name)
+                continue
+
+            serial_txns = [
+                Transaction(
+                    asset=asset,
+                    user=performed_by,
+                    action="checkin",
+                    from_location=serial.current_location,
+                    to_location=home,
+                    serial=serial,
+                    notes=notes,
+                    **extra,
+                )
+                for serial in checked_out_serials
+            ]
+            Transaction.objects.bulk_create(serial_txns)
+            for serial in checked_out_serials:
+                serial.checked_out_to = None
+                serial.current_location = home
+            AssetSerial.objects.bulk_update(
+                checked_out_serials,
+                ["checked_out_to", "current_location"],
+            )
+
+            # Clear parent asset if no serials remain checked out
+            still_out = AssetSerial.objects.filter(
+                asset=asset,
+                checked_out_to__isnull=False,
+                is_archived=False,
+            ).exists()
+            if not still_out:
+                asset.checked_out_to = None
+            asset.current_location = home
+            asset.save(update_fields=["checked_out_to", "current_location"])
+            checked_in += 1
+
+    return {"checked_in": checked_in, "skipped": skipped}

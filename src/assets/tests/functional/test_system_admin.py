@@ -9385,29 +9385,32 @@ class TestUS_SA_147_LocationCheckableField:
     UI Surface: Location model / detail page
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: Location.is_checkable field not implemented"
-        " (US-SA-147, S3.1.4)",
-    )
     def test_location_has_is_checkable_field(self):  # US-SA-147-1
         """Location model has is_checkable boolean field."""
         Location._meta.get_field("is_checkable")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: Location.is_checkable field not implemented"
-        " (US-SA-147, S3.1.4)",
-    )
     def test_checkout_button_only_on_checkable_locations(
         self, admin_client, location
     ):  # US-SA-147-2
         """Checkout button only shows on checkable locations."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
         resp = admin_client.get(
             reverse("assets:location_detail", args=[location.pk])
         )
         content = resp.content.decode()
-        assert "Check Out" in content
+        assert "Check Out Location" in content
+
+    def test_checkout_button_hidden_on_non_checkable_locations(
+        self, admin_client, location
+    ):  # US-SA-147-3
+        """Checkout button hidden when is_checkable=False."""
+        assert not location.is_checkable
+        resp = admin_client.get(
+            reverse("assets:location_detail", args=[location.pk])
+        )
+        content = resp.content.decode()
+        assert "Check Out Location" not in content
 
 
 @pytest.mark.django_db
@@ -9419,44 +9422,48 @@ class TestUS_SA_148_LocationCheckout:
     UI Surface: /locations/<pk>/checkout/
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: location_checkout view not implemented"
-        " (US-SA-148, S2.12.4-01)",
-    )
     def test_location_checkout_url_exists(
         self, admin_client, location
     ):  # US-SA-148-1
         """Location checkout URL resolves."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
         url = reverse("assets:location_checkout", args=[location.pk])
         resp = admin_client.get(url)
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: location_checkout view not implemented"
-        " (US-SA-148, S2.12.4-01)",
-    )
     def test_location_checkout_creates_transactions(
-        self, admin_client, location, active_asset
+        self, admin_client, location, active_asset, borrower_user
     ):  # US-SA-148-2
-        """Location checkout creates transactions for assets."""
+        """Location checkout creates transactions (round-trip)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
         url = reverse("assets:location_checkout", args=[location.pk])
-        resp = admin_client.post(url, {"assets": [active_asset.pk]})
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        resp = admin_client.post(url, fields)
         assert resp.status_code in (200, 302)
+        active_asset.refresh_from_db()
+        assert active_asset.checked_out_to == borrower_user
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: location_checkout view not implemented"
-        " (US-SA-148, S2.12.4-01)",
-    )
     def test_already_checked_out_assets_excluded(
-        self, admin_client, location, active_asset
+        self, admin_client, location, active_asset, borrower_user
     ):  # US-SA-148-3
-        """Already checked-out assets excluded from location checkout."""
+        """Already checked-out assets excluded from location
+        checkout."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        active_asset.checked_out_to = borrower_user
+        active_asset.save(update_fields=["checked_out_to"])
+
         url = reverse("assets:location_checkout", args=[location.pk])
         resp = admin_client.get(url)
         assert resp.status_code == 200
+        content = resp.content.decode()
+        assert active_asset.name not in content or "skipped" in content.lower()
 
 
 @pytest.mark.django_db
@@ -9468,31 +9475,172 @@ class TestUS_SA_149_LocationCheckin:
     UI Surface: /locations/<pk>/checkin/
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: location_checkin view not implemented"
-        " (US-SA-149, S2.12.4-08)",
-    )
     def test_location_checkin_url_exists(
         self, admin_client, location
     ):  # US-SA-149-1
         """Location checkin URL resolves."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
         url = reverse("assets:location_checkin", args=[location.pk])
         resp = admin_client.get(url)
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GAP: location_checkin view not implemented"
-        " (US-SA-149, S2.12.4-08)",
-    )
     def test_location_checkin_creates_transactions(
-        self, admin_client, location, active_asset
+        self, admin_client, location, active_asset, borrower_user
     ):  # US-SA-149-2
-        """Location checkin creates return transactions."""
+        """Location checkin creates return transactions
+        (round-trip)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        active_asset.checked_out_to = borrower_user
+        active_asset.home_location = location
+        active_asset.save(update_fields=["checked_out_to", "home_location"])
         url = reverse("assets:location_checkin", args=[location.pk])
-        resp = admin_client.post(url, {"assets": [active_asset.pk]})
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        resp = admin_client.post(url, fields)
         assert resp.status_code in (200, 302)
+        active_asset.refresh_from_db()
+        assert active_asset.checked_out_to is None
+
+
+@pytest.mark.django_db
+class TestUS_SA_148_LocationCheckoutRegressions:
+    """Regression tests for Copilot-identified bugs in location checkout.
+
+    Bug 1: borrower.get_display_name was not called (missing parens).
+    Bug 2: due_date was applied via .update() on a sliced queryset.
+    Bug 3: eligible_assets used checked_out_to__isnull instead of
+            is_checked_out, missing non-serialised assets.
+    """
+
+    def test_checkout_success_message_contains_borrower_name(
+        self, admin_client, location, active_asset, borrower_user
+    ):
+        """Success message must contain borrower display name, not
+        a method repr (regression: missing parentheses)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        resp = admin_client.post(url, fields, follow=True)
+        content = resp.content.decode()
+        assert borrower_user.get_display_name() in content
+        # Must NOT contain method repr
+        assert "bound method" not in content
+
+    def test_checkout_due_date_propagates_to_transactions(
+        self, admin_client, location, active_asset, borrower_user
+    ):
+        """Due date must be set on transactions at creation time
+        (regression: sliced queryset .update() error)."""
+        from assets.models import Transaction
+
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        fields["due_date"] = "2026-04-01T12:00"
+        resp = admin_client.post(url, fields)
+        assert resp.status_code == 302
+        txn = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).latest("timestamp")
+        assert txn.due_date is not None
+
+
+@pytest.mark.django_db
+class TestUS_SA_149_LocationCheckinRegressions:
+    """Regression tests for Copilot-identified bugs in location check-in.
+
+    Bug 1: All assets were checked in to one location instead of each
+            asset's home_location.
+    Bug 2: checked_out_assets used checked_out_to__isnull instead of
+            is_checked_out.
+    """
+
+    def test_checkin_returns_assets_to_their_home_locations(
+        self,
+        admin_client,
+        admin_user,
+        category,
+        borrower_user,
+    ):
+        """Each asset returns to its own home_location, not a shared
+        location (regression: bulk_checkin sent all to one place)."""
+        from assets.factories import AssetFactory, LocationFactory
+
+        parent = LocationFactory(name="Parent Loc", is_checkable=True)
+        home_a = LocationFactory(name="Home A", parent=parent)
+        home_b = LocationFactory(name="Home B", parent=parent)
+        elsewhere = LocationFactory(name="Elsewhere")
+
+        asset_a = AssetFactory(
+            name="Asset Home A",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_a,
+            checked_out_to=borrower_user,
+            created_by=admin_user,
+        )
+        asset_b = AssetFactory(
+            name="Asset Home B",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_b,
+            checked_out_to=borrower_user,
+            created_by=admin_user,
+        )
+
+        url = reverse("assets:location_checkin", args=[parent.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        resp = admin_client.post(url, fields)
+        assert resp.status_code == 302
+
+        asset_a.refresh_from_db()
+        asset_b.refresh_from_db()
+        assert asset_a.current_location == home_a
+        assert asset_b.current_location == home_b
+        assert asset_a.checked_out_to is None
+        assert asset_b.checked_out_to is None
+
+    def test_checkin_success_message_mentions_home_locations(
+        self,
+        admin_client,
+        location,
+        active_asset,
+        borrower_user,
+    ):
+        """Success message should say 'home locations', not a
+        specific single location name."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        active_asset.checked_out_to = borrower_user
+        active_asset.home_location = location
+        active_asset.save(update_fields=["checked_out_to", "home_location"])
+        url = reverse("assets:location_checkin", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        resp = admin_client.post(url, fields, follow=True)
+        content = resp.content.decode()
+        assert "home locations" in content.lower()
 
 
 @pytest.mark.django_db
