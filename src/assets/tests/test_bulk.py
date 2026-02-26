@@ -190,6 +190,122 @@ class TestBulkCheckoutCheckinViews:
         assert asset.current_location == new_loc
 
 
+class TestBulkCheckoutDueDate:
+    """Regression: bulk_checkout must set due_date at creation time.
+
+    Previously due_date was set via QuerySet.update() on a sliced
+    queryset, which Django disallows.  Now due_date is a parameter
+    to bulk_checkout and set on each Transaction at creation.
+    """
+
+    def test_due_date_set_on_transactions(self, asset, second_user, user):
+        from django.utils import timezone
+
+        from assets.models import Transaction
+        from assets.services.bulk import bulk_checkout
+
+        due = timezone.now() + timezone.timedelta(days=7)
+        result = bulk_checkout(
+            [asset.pk],
+            second_user.pk,
+            user,
+            due_date=due,
+        )
+        assert result["checked_out"] == 1
+        txn = Transaction.objects.filter(
+            asset=asset, action="checkout"
+        ).latest("timestamp")
+        assert txn.due_date is not None
+        assert txn.due_date == due
+
+    def test_no_due_date_leaves_null(self, asset, second_user, user):
+        from assets.models import Transaction
+        from assets.services.bulk import bulk_checkout
+
+        bulk_checkout([asset.pk], second_user.pk, user)
+        txn = Transaction.objects.filter(
+            asset=asset, action="checkout"
+        ).latest("timestamp")
+        assert txn.due_date is None
+
+
+class TestBulkCheckinToHome:
+    """Regression: bulk location check-in must return each asset to
+    its own home_location, not a single shared location.
+    """
+
+    def test_assets_return_to_their_own_home_locations(
+        self, user, second_user, category
+    ):
+        from assets.services.bulk import bulk_checkin_to_home
+
+        home_a = Location.objects.create(name="Home A")
+        home_b = Location.objects.create(name="Home B")
+        elsewhere = Location.objects.create(name="Elsewhere")
+
+        asset_a = AssetFactory(
+            name="Asset A",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_a,
+            checked_out_to=second_user,
+            created_by=user,
+        )
+        asset_b = AssetFactory(
+            name="Asset B",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_b,
+            checked_out_to=second_user,
+            created_by=user,
+        )
+
+        result = bulk_checkin_to_home([asset_a.pk, asset_b.pk], user)
+        assert result["checked_in"] == 2
+
+        asset_a.refresh_from_db()
+        asset_b.refresh_from_db()
+        assert asset_a.current_location == home_a
+        assert asset_b.current_location == home_b
+        assert asset_a.checked_out_to is None
+        assert asset_b.checked_out_to is None
+
+    def test_skips_assets_without_home_location(
+        self, user, second_user, category, location
+    ):
+        from assets.services.bulk import bulk_checkin_to_home
+
+        asset = AssetFactory(
+            name="No Home",
+            status="active",
+            category=category,
+            current_location=location,
+            home_location=None,
+            checked_out_to=second_user,
+            created_by=user,
+        )
+        result = bulk_checkin_to_home([asset.pk], user)
+        assert result["checked_in"] == 0
+        assert "No Home" in result["skipped"]
+
+    def test_skips_assets_not_checked_out(self, user, category, location):
+        from assets.services.bulk import bulk_checkin_to_home
+
+        asset = AssetFactory(
+            name="Not Out",
+            status="active",
+            category=category,
+            current_location=location,
+            home_location=location,
+            created_by=user,
+        )
+        result = bulk_checkin_to_home([asset.pk], user)
+        assert result["checked_in"] == 0
+        assert "Not Out" in result["skipped"]
+
+
 # ============================================================
 # BATCH F: SHOULD-IMPLEMENT MEDIUM EFFORT (V25)
 # ============================================================

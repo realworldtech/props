@@ -3146,19 +3146,20 @@ def location_checkout(request, pk):
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
-    eligible_assets = list(
+    # Fetch all assets once, then partition using is_checked_out
+    # to correctly handle non-serialised assets tracked via
+    # transaction quantities (not just checked_out_to).
+    all_assets = list(
         Asset.objects.filter(
             current_location_id__in=all_location_ids,
-            status__in=["active", "draft"],
-            checked_out_to__isnull=True,
-        ).select_related("category", "category__department")
+        ).select_related("category", "category__department", "checked_out_to")
     )
-    already_out = list(
-        Asset.objects.filter(
-            current_location_id__in=all_location_ids,
-            checked_out_to__isnull=False,
-        ).select_related("category", "checked_out_to")
-    )
+    eligible_assets = [
+        a
+        for a in all_assets
+        if a.status in ("active", "draft") and not a.is_checked_out
+    ]
+    already_out = [a for a in all_assets if a.is_checked_out]
 
     from django.contrib.auth import get_user_model
 
@@ -3220,23 +3221,14 @@ def location_checkout(request, pk):
             performed_by=request.user,
             notes=location_checkout_notes,
             timestamp=extra_kwargs.get("timestamp"),
+            due_date=due_date,
         )
-
-        # Set due_date on created transactions if provided
-        if due_date and result["checked_out"] > 0:
-            Transaction.objects.filter(
-                asset_id__in=asset_ids,
-                action="checkout",
-                borrower=borrower,
-            ).order_by("-timestamp")[: result["checked_out"]].update(
-                due_date=due_date
-            )
 
         messages.success(
             request,
             f"{result['checked_out']} asset(s) checked out "
             f"from '{location.name}' to "
-            f"{borrower.get_display_name}.",
+            f"{borrower.get_display_name()}.",
         )
         if result["skipped"]:
             messages.warning(
@@ -3299,21 +3291,23 @@ def location_checkin(request, pk):
         return redirect("assets:location_detail", pk=pk)
 
     # Assets whose home_location is at this location tree and are
-    # currently checked out
+    # currently checked out — use is_checked_out to correctly
+    # handle non-serialised assets tracked via transactions.
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
-    checked_out_assets = list(
+    all_home_assets = list(
         Asset.objects.filter(
             home_location_id__in=all_location_ids,
-            checked_out_to__isnull=False,
         ).select_related(
             "category",
             "category__department",
             "checked_out_to",
             "home_location",
+            "current_location",
         )
     )
+    checked_out_assets = [a for a in all_home_assets if a.is_checked_out]
 
     if request.method == "POST":
         notes = request.POST.get("notes", "")
@@ -3346,12 +3340,11 @@ def location_checkin(request, pk):
         if notes:
             location_checkin_notes = f"{notes}\n{location_checkin_notes}"
 
-        from .services.bulk import bulk_checkin
+        from .services.bulk import bulk_checkin_to_home
 
         asset_ids = [a.pk for a in checked_out_assets]
-        result = bulk_checkin(
+        result = bulk_checkin_to_home(
             asset_ids=asset_ids,
-            location_id=location.pk,
             performed_by=request.user,
             notes=location_checkin_notes,
             timestamp=extra_kwargs.get("timestamp"),
@@ -3360,7 +3353,7 @@ def location_checkin(request, pk):
         messages.success(
             request,
             f"{result['checked_in']} asset(s) checked in to "
-            f"'{location.name}'.",
+            f"their home locations.",
         )
         if result["skipped"]:
             messages.warning(

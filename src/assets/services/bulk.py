@@ -293,6 +293,7 @@ def bulk_checkout(
     performed_by,
     notes: str = "",
     timestamp=None,
+    due_date=None,
 ) -> dict:
     """Check out multiple assets to a single borrower.
 
@@ -304,6 +305,8 @@ def bulk_checkout(
     extra = {}
     if timestamp:
         extra = {"timestamp": timestamp, "is_backdated": True}
+    if due_date:
+        extra["due_date"] = due_date
 
     borrower = User.objects.get(pk=borrower_id)
     assets = list(
@@ -397,5 +400,62 @@ def bulk_checkin(
                 checked_out_to=None,
                 current_location=location,
             )
+
+    return {"checked_in": len(eligible), "skipped": skipped}
+
+
+def bulk_checkin_to_home(
+    asset_ids: list[int],
+    performed_by,
+    notes: str = "",
+    timestamp=None,
+) -> dict:
+    """Check in multiple assets, each to its own home_location.
+
+    S2.12.4: Location-level bulk check-in returns assets to their
+    home locations rather than a single target location.
+
+    Returns a dict with 'checked_in' count and 'skipped' list.
+    """
+    extra = {}
+    if timestamp:
+        extra = {"timestamp": timestamp, "is_backdated": True}
+
+    assets = list(
+        Asset.objects.filter(pk__in=asset_ids).select_related(
+            "current_location", "home_location"
+        )
+    )
+    skipped: list[str] = []
+    eligible: list[Asset] = []
+    for asset in assets:
+        if not asset.is_checked_out:
+            skipped.append(asset.name)
+        elif not asset.home_location:
+            skipped.append(asset.name)
+        else:
+            eligible.append(asset)
+
+    if eligible:
+        transactions = [
+            Transaction(
+                asset=asset,
+                user=performed_by,
+                action="checkin",
+                from_location=asset.current_location,
+                to_location=asset.home_location,
+                notes=notes,
+                **extra,
+            )
+            for asset in eligible
+        ]
+        with db_transaction.atomic():
+            Transaction.objects.bulk_create(transactions)
+            # Update each asset to its own home_location
+            for asset in eligible:
+                Asset.objects.filter(pk=asset.pk).update(
+                    checked_out_to=None,
+                    current_location=asset.home_location,
+                )
 
     return {"checked_in": len(eligible), "skipped": skipped}

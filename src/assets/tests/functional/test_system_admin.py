@@ -9507,6 +9507,143 @@ class TestUS_SA_149_LocationCheckin:
 
 
 @pytest.mark.django_db
+class TestUS_SA_148_LocationCheckoutRegressions:
+    """Regression tests for Copilot-identified bugs in location checkout.
+
+    Bug 1: borrower.get_display_name was not called (missing parens).
+    Bug 2: due_date was applied via .update() on a sliced queryset.
+    Bug 3: eligible_assets used checked_out_to__isnull instead of
+            is_checked_out, missing non-serialised assets.
+    """
+
+    def test_checkout_success_message_contains_borrower_name(
+        self, admin_client, location, active_asset, borrower_user
+    ):
+        """Success message must contain borrower display name, not
+        a method repr (regression: missing parentheses)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        resp = admin_client.post(url, fields, follow=True)
+        content = resp.content.decode()
+        assert borrower_user.get_display_name() in content
+        # Must NOT contain method repr
+        assert "bound method" not in content
+
+    def test_checkout_due_date_propagates_to_transactions(
+        self, admin_client, location, active_asset, borrower_user
+    ):
+        """Due date must be set on transactions at creation time
+        (regression: sliced queryset .update() error)."""
+        from assets.models import Transaction
+
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        fields["due_date"] = "2026-04-01T12:00"
+        resp = admin_client.post(url, fields)
+        assert resp.status_code == 302
+        txn = Transaction.objects.filter(
+            asset=active_asset, action="checkout"
+        ).latest("timestamp")
+        assert txn.due_date is not None
+
+
+@pytest.mark.django_db
+class TestUS_SA_149_LocationCheckinRegressions:
+    """Regression tests for Copilot-identified bugs in location check-in.
+
+    Bug 1: All assets were checked in to one location instead of each
+            asset's home_location.
+    Bug 2: checked_out_assets used checked_out_to__isnull instead of
+            is_checked_out.
+    """
+
+    def test_checkin_returns_assets_to_their_home_locations(
+        self,
+        admin_client,
+        admin_user,
+        category,
+        borrower_user,
+    ):
+        """Each asset returns to its own home_location, not a shared
+        location (regression: bulk_checkin sent all to one place)."""
+        from assets.factories import AssetFactory, LocationFactory
+
+        parent = LocationFactory(name="Parent Loc", is_checkable=True)
+        home_a = LocationFactory(name="Home A", parent=parent)
+        home_b = LocationFactory(name="Home B", parent=parent)
+        elsewhere = LocationFactory(name="Elsewhere")
+
+        asset_a = AssetFactory(
+            name="Asset Home A",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_a,
+            checked_out_to=borrower_user,
+            created_by=admin_user,
+        )
+        asset_b = AssetFactory(
+            name="Asset Home B",
+            status="active",
+            category=category,
+            current_location=elsewhere,
+            home_location=home_b,
+            checked_out_to=borrower_user,
+            created_by=admin_user,
+        )
+
+        url = reverse("assets:location_checkin", args=[parent.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        resp = admin_client.post(url, fields)
+        assert resp.status_code == 302
+
+        asset_a.refresh_from_db()
+        asset_b.refresh_from_db()
+        assert asset_a.current_location == home_a
+        assert asset_b.current_location == home_b
+        assert asset_a.checked_out_to is None
+        assert asset_b.checked_out_to is None
+
+    def test_checkin_success_message_mentions_home_locations(
+        self,
+        admin_client,
+        location,
+        active_asset,
+        borrower_user,
+    ):
+        """Success message should say 'home locations', not a
+        specific single location name."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        active_asset.checked_out_to = borrower_user
+        active_asset.home_location = location
+        active_asset.save(update_fields=["checked_out_to", "home_location"])
+        url = reverse("assets:location_checkin", args=[location.pk])
+        get_resp = admin_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        resp = admin_client.post(url, fields, follow=True)
+        content = resp.content.decode()
+        assert "home locations" in content.lower()
+
+
+@pytest.mark.django_db
 class TestUS_SA_150_HelpIndex:
     """US-SA-150: Help system index page.
 
