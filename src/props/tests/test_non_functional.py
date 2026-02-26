@@ -163,11 +163,15 @@ class TestAndroidFormSubmission:
         dismissing.  The handler should use pointer-events/aria-disabled
         and data-submitted flag instead.
         """
+        import re
+
         response = admin_client.get(reverse("assets:quick_capture"))
         content = response.content.decode()
         # The submit handler script should NOT contain btn.disabled
-        # (the old broken pattern that cancels Android submissions)
-        assert "btn.disabled = true" not in content, (
+        # (the old broken pattern that cancels Android submissions).
+        # Use regex to catch spacing variants like btn.disabled=true,
+        # btn.disabled =true, etc.
+        assert not re.search(r"btn\.disabled\s*=\s*true", content), (
             "base.html submit handler must not set btn.disabled — "
             "this cancels form submissions on Android Chrome"
         )
@@ -254,3 +258,6 @@ class TestAndroidFormSubmission:
                     f'Non-submit button missing type="button": '
                     f"{btn_attrs[:80]}"
                 )
+        assert submit_count == 1, (
+            f"Expected exactly 1 submit button, found {submit_count}"
+        )

@@ -294,7 +294,11 @@
             return;
         }
         var btn = form.querySelector('button[type="submit"]');
-        if (btn && !btn.dataset.submitted) {
+        if (btn && btn.dataset.submitted) {
+            e.preventDefault();
+            return;
+        }
+        if (btn) {
             // Mark as submitted synchronously — prevents double clicks
             btn.dataset.submitted = '1';
             // Defer ALL DOM mutations to requestAnimationFrame so they
