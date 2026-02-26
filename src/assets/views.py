@@ -5354,25 +5354,29 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         if nfc_asset:
             return nfc_asset, None
 
-        # 3d. Exact name match
-        try:
-            return Asset.objects.get(name=search), None
-        except Asset.MultipleObjectsReturned:
+        # 3d. Exact name match (active assets only)
+        name_matches = Asset.objects.filter(name=search, status="active")
+        name_count = name_matches.count()
+        if name_count == 1:
+            return name_matches.first(), None
+        elif name_count > 1:
             return None, (
                 f"Multiple assets named '{search}'. "
                 f"Please use the autocomplete to select "
                 f"the correct one."
             )
-        except Asset.DoesNotExist:
-            pass
 
         # 3e. Broad text match (name, description, tags, category)
-        matches = Asset.objects.filter(
-            Q(name__icontains=search)
-            | Q(description__icontains=search)
-            | Q(tags__name__icontains=search)
-            | Q(category__name__icontains=search)
-        ).distinct()[:2]
+        matches = (
+            Asset.objects.filter(status="active")
+            .filter(
+                Q(name__icontains=search)
+                | Q(description__icontains=search)
+                | Q(tags__name__icontains=search)
+                | Q(category__name__icontains=search)
+            )
+            .distinct()[:2]
+        )
         results = list(matches)
         if len(results) == 1:
             return results[0], None
