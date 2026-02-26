@@ -2848,90 +2848,68 @@ class TestScenario_11_20_SystemSetupAndConfiguration:
 class TestScenario_11_21_LocationCheckout:
     """§11.21 — Location Checkout — Lending a Box of Equipment.
 
-    Covers: is_checkable flag on location (GAP: not yet implemented),
-    checkout skips individually checked-out assets.
+    Covers: is_checkable flag on location, checkout skips
+    individually checked-out assets, confirmation step, permissions.
     Spec refs: S2.12.4
     """
 
-    def test_is_checkable_flag_not_present_on_location_model(self):
-        """GAP: Location model does not have is_checkable field yet
-        (S2.12.4). Marked xfail to document the gap without blocking
-        the test run."""
+    def test_is_checkable_flag_present_on_location_model(self):
+        """Location model has is_checkable boolean field (S2.12.4)."""
         from assets.models import Location
 
-        has_field = any(
-            f.name == "is_checkable" for f in Location._meta.get_fields()
-        )
-        if not has_field:
-            pytest.xfail(
-                "GAP: Location.is_checkable field is missing. "
-                "Required for §11.21 / S2.12.4."
-            )
-        assert has_field
+        field = Location._meta.get_field("is_checkable")
+        assert field is not None
 
     def test_location_checkout_url_exists(self, dept_manager_client, location):
-        """GAP: No dedicated location checkout endpoint exists yet.
-        Marked xfail to document the gap."""
-        from django.urls import NoReverseMatch
-
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-            resp = dept_manager_client.post(url, {})
-            assert (
-                resp.status_code != 404
-            ), "Location checkout URL exists but returns 404"
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP: URL 'assets:location_checkout' does not exist. "
-                "Required for §11.21 / S2.12.4."
-            )
+        """Location checkout URL resolves and responds."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
+        resp = dept_manager_client.get(url)
+        assert (
+            resp.status_code != 404
+        ), "Location checkout URL exists but returns 404"
 
     def test_non_checkable_location_rejects_checkout(
         self, dept_manager_client, location
     ):
-        """A location without is_checkable=True must reject checkout."""
-        from django.urls import NoReverseMatch
-
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-            resp = dept_manager_client.post(url, {})
-            assert resp.status_code in (400, 403, 200, 302)
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP: 'assets:location_checkout' URL not implemented "
-                "(S2.12.4)"
-            )
+        """A location without is_checkable=True must reject
+        checkout with a redirect."""
+        assert not location.is_checkable
+        url = reverse("assets:location_checkout", args=[location.pk])
+        resp = dept_manager_client.get(url)
+        assert resp.status_code == 302
 
     def test_full_scenario_walkthrough(
-        self, admin_client, dept_manager_client, location, borrower_user
+        self,
+        admin_client,
+        dept_manager_client,
+        location,
+        borrower_user,
+        category,
+        admin_user,
     ):
-        """Full location checkout scenario — xfail if not implemented."""
-        from django.urls import NoReverseMatch
-
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP: Location checkout (§11.21 / S2.12.4) not " "implemented."
-            )
-
-        resp = dept_manager_client.post(
-            url,
-            {
-                "borrower": borrower_user.pk,
-                "destination_location": location.pk,
-            },
+        """Full location checkout scenario (round-trip pattern)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        AssetFactory(
+            name="Scenario Asset S21",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
         )
+        url = reverse("assets:location_checkout", args=[location.pk])
+        # GET the form, parse fields, then POST
+        get_resp = dept_manager_client.get(url)
+        assert get_resp.status_code == 200
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        resp = dept_manager_client.post(url, fields)
         assert resp.status_code in (200, 302)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #17a: Location checkout skips-already-checked-out logic"
-            " not implemented (S2.12.4). The location_checkout URL does"
-            " not exist yet."
-        ),
-    )
     def test_location_checkout_skips_already_checked_out_assets(
         self,
         dept_manager_client,
@@ -2941,9 +2919,10 @@ class TestScenario_11_21_LocationCheckout:
         user,
         admin_user,
     ):
-        """Checkout via location URL must exclude assets already checked
-        out to someone else — or show a warning."""
-        from django.urls import NoReverseMatch
+        """Checkout via location URL must exclude assets already
+        checked out to someone else (round-trip pattern)."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
 
         checked_out_asset = AssetFactory(
             name="Already Out Asset S21a",
@@ -2955,7 +2934,7 @@ class TestScenario_11_21_LocationCheckout:
         checked_out_asset.checked_out_to = user
         checked_out_asset.save()
 
-        available_asset = AssetFactory(
+        AssetFactory(
             name="Available Asset S21a",
             status="active",
             category=category,
@@ -2963,42 +2942,40 @@ class TestScenario_11_21_LocationCheckout:
             created_by=admin_user,
         )
 
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP #17: URL 'assets:location_checkout' does not exist."
-            )
-
-        resp = dept_manager_client.post(url, {"borrower": borrower_user.pk})
+        url = reverse("assets:location_checkout", args=[location.pk])
+        # GET the form, parse fields, then POST
+        get_resp = dept_manager_client.get(url)
+        parser = FormFieldCollector()
+        parser.feed(get_resp.content.decode())
+        fields = parser.fields
+        fields["borrower"] = str(borrower_user.pk)
+        resp = dept_manager_client.post(url, fields)
         assert resp.status_code in (200, 302)
-        # Already-checked-out asset should NOT be re-checked-out
         checked_out_asset.refresh_from_db()
         assert (
             checked_out_asset.checked_out_to == user
         ), "Already checked-out asset should not be reassigned"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #17b: Location checkout has no confirmation step"
-            " (S2.12.4). The location_checkout URL does not exist yet."
-        ),
-    )
     def test_location_checkout_requires_confirmation_step(
-        self, dept_manager_client, location
+        self,
+        dept_manager_client,
+        location,
+        category,
+        admin_user,
     ):
-        """GET on location checkout URL must show a confirmation step
-        before executing the batch checkout."""
-        from django.urls import NoReverseMatch
+        """GET on location checkout URL must show a confirmation
+        step before executing the batch checkout."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        AssetFactory(
+            name="Confirm Test Asset",
+            status="active",
+            category=category,
+            current_location=location,
+            created_by=admin_user,
+        )
 
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP #17: URL 'assets:location_checkout' does not exist."
-            )
-
+        url = reverse("assets:location_checkout", args=[location.pk])
         resp = dept_manager_client.get(url)
         assert resp.status_code == 200
         content = resp.content.decode().lower()
@@ -3008,47 +2985,24 @@ class TestScenario_11_21_LocationCheckout:
             or "proceed" in content
         ), "Location checkout GET must show a confirmation step"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=("GAP #17c: No location check-in URL exists (S2.12.4)."),
-    )
     def test_location_checkin_url_exists(self, dept_manager_client, location):
-        """The location_checkin URL must exist and respond (not 404)."""
-        from django.urls import NoReverseMatch
-
-        try:
-            url = reverse("assets:location_checkin", args=[location.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP #17: URL 'assets:location_checkin' does not exist."
-            )
-
+        """The location_checkin URL must exist and respond."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkin", args=[location.pk])
         resp = dept_manager_client.get(url)
         assert resp.status_code in (200, 302, 405)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #17d: Location checkout with no assets shows no"
-            " informational message (S2.12.4). URL not implemented."
-        ),
-    )
     def test_location_checkout_empty_location_shows_informational_message(
         self, dept_manager_client, db
     ):
-        """When a location has no assets, the checkout response must
-        show an informational message — not an error or 500."""
-        from django.urls import NoReverseMatch
+        """When a location has no assets, the checkout response
+        must show an informational message."""
+        empty_loc = LocationFactory(
+            name="Empty Location S21d", is_checkable=True
+        )
 
-        empty_loc = LocationFactory(name="Empty Location S21d")
-
-        try:
-            url = reverse("assets:location_checkout", args=[empty_loc.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP #17: URL 'assets:location_checkout' does not exist."
-            )
-
+        url = reverse("assets:location_checkout", args=[empty_loc.pk])
         resp = dept_manager_client.get(url)
         assert resp.status_code == 200
         content = resp.content.decode().lower()
@@ -3056,33 +3010,21 @@ class TestScenario_11_21_LocationCheckout:
             "no assets" in content
             or "empty" in content
             or "nothing" in content
-        ), "Empty location checkout must show an informational message"
+            or "no eligible" in content
+        ), "Empty location checkout must show informational message"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #17e: Location checkout has no permission check — viewer"
-            " should get 302/403 (S2.12.4). URL not implemented."
-        ),
-    )
     def test_location_checkout_requires_dept_manager_or_admin(
         self, viewer_client, location
     ):
-        """A Viewer must receive 302 or 403 on the location checkout
-        URL — only Department Managers and admins may use it."""
-        from django.urls import NoReverseMatch
-
-        try:
-            url = reverse("assets:location_checkout", args=[location.pk])
-        except NoReverseMatch:
-            pytest.xfail(
-                "GAP #17: URL 'assets:location_checkout' does not exist."
-            )
-
+        """A Viewer must receive 302 or 403 on the location
+        checkout URL."""
+        location.is_checkable = True
+        location.save(update_fields=["is_checkable"])
+        url = reverse("assets:location_checkout", args=[location.pk])
         resp = viewer_client.get(url)
         assert resp.status_code in (302, 403), (
-            f"Viewer should be blocked from location checkout, got"
-            f" {resp.status_code}"
+            f"Viewer should be blocked from location checkout,"
+            f" got {resp.status_code}"
         )
 
 

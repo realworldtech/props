@@ -2500,6 +2500,8 @@ def location_detail(request, pk):
             "condition_choices": Asset.CONDITION_CHOICES,
             "status_choices": Asset.STATUS_CHOICES,
             "v2_printers": _get_v2_printers(),
+            "can_checkout_location": get_user_role(request.user)
+            in ("system_admin", "department_manager"),
         },
     )
 
@@ -3118,6 +3120,267 @@ def location_deactivate(request, pk):
         messages.success(request, f"Location '{location.name}' deactivated.")
         return redirect("assets:location_list")
     return redirect("assets:location_detail", pk=pk)
+
+
+@login_required
+def location_checkout(request, pk):
+    """Check out all eligible assets at a location to a borrower.
+
+    S2.12.4: Location-level bulk checkout. Scope includes the
+    location and all descendant locations. Already-checked-out
+    assets are excluded with a warning.
+    """
+    location = get_object_or_404(Location, pk=pk, is_active=True)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+
+    if not location.is_checkable:
+        messages.error(
+            request,
+            f"'{location.name}' is not marked as checkable.",
+        )
+        return redirect("assets:location_detail", pk=pk)
+
+    # Gather assets at this location and descendants
+    descendant_ids = [loc.pk for loc in location.get_descendants()]
+    all_location_ids = [location.pk] + descendant_ids
+
+    eligible_assets = list(
+        Asset.objects.filter(
+            current_location_id__in=all_location_ids,
+            status__in=["active", "draft"],
+            checked_out_to__isnull=True,
+        ).select_related("category", "category__department")
+    )
+    already_out = list(
+        Asset.objects.filter(
+            current_location_id__in=all_location_ids,
+            checked_out_to__isnull=False,
+        ).select_related("category", "checked_out_to")
+    )
+
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+
+    if request.method == "POST":
+        borrower_id = request.POST.get("borrower")
+        notes = request.POST.get("notes", "")
+        due_date_str = request.POST.get("due_date", "").strip()
+        action_date_str = request.POST.get("action_date", "").strip()
+
+        try:
+            borrower = User.objects.get(pk=borrower_id)
+        except (User.DoesNotExist, ValueError, TypeError):
+            messages.error(request, "Invalid borrower selected.")
+            return redirect("assets:location_checkout", pk=pk)
+
+        if not eligible_assets:
+            messages.info(
+                request,
+                "No eligible assets to check out at this " "location.",
+            )
+            return redirect("assets:location_detail", pk=pk)
+
+        extra_kwargs = {}
+        if action_date_str:
+            from django.utils.dateparse import parse_datetime
+
+            action_date = parse_datetime(action_date_str)
+            if action_date:
+                if timezone.is_naive(action_date):
+                    action_date = timezone.make_aware(action_date)
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:location_checkout", pk=pk)
+                extra_kwargs["timestamp"] = action_date
+
+        due_date = None
+        if due_date_str:
+            from django.utils.dateparse import parse_datetime as pd
+
+            due_date = pd(due_date_str)
+            if due_date and timezone.is_naive(due_date):
+                due_date = timezone.make_aware(due_date)
+
+        location_checkout_notes = f"Location checkout: {location.full_path}"
+        if notes:
+            location_checkout_notes = f"{notes}\n{location_checkout_notes}"
+
+        from .services.bulk import bulk_checkout
+
+        asset_ids = [a.pk for a in eligible_assets]
+        result = bulk_checkout(
+            asset_ids=asset_ids,
+            borrower_id=borrower.pk,
+            performed_by=request.user,
+            notes=location_checkout_notes,
+            timestamp=extra_kwargs.get("timestamp"),
+        )
+
+        # Set due_date on created transactions if provided
+        if due_date and result["checked_out"] > 0:
+            Transaction.objects.filter(
+                asset_id__in=asset_ids,
+                action="checkout",
+                borrower=borrower,
+            ).order_by("-timestamp")[: result["checked_out"]].update(
+                due_date=due_date
+            )
+
+        messages.success(
+            request,
+            f"{result['checked_out']} asset(s) checked out "
+            f"from '{location.name}' to "
+            f"{borrower.get_display_name}.",
+        )
+        if result["skipped"]:
+            messages.warning(
+                request,
+                f"{len(result['skipped'])} asset(s) skipped "
+                f"(already checked out): "
+                f"{', '.join(result['skipped'][:5])}",
+            )
+
+        return redirect("assets:location_detail", pk=pk)
+
+    # GET — show confirmation form
+    # Build borrower lists (same pattern as asset_checkout)
+    from django.contrib.auth.models import Group
+
+    borrower_group = Group.objects.filter(name="Borrower").first()
+    internal_users = (
+        User.objects.filter(is_active=True)
+        .exclude(
+            groups=borrower_group,
+        )
+        .order_by("first_name", "last_name", "username")
+    )
+    external_borrowers = User.objects.none()
+    if borrower_group:
+        external_borrowers = User.objects.filter(
+            is_active=True, groups=borrower_group
+        ).order_by("first_name", "last_name", "username")
+
+    return render(
+        request,
+        "assets/location_checkout.html",
+        {
+            "location": location,
+            "eligible_assets": eligible_assets,
+            "already_out": already_out,
+            "internal_users": internal_users,
+            "external_borrowers": external_borrowers,
+        },
+    )
+
+
+@login_required
+def location_checkin(request, pk):
+    """Check in all checked-out assets whose home_location is at
+    this location (or descendants) back to their home locations.
+
+    S2.12.4: Location-level bulk check-in.
+    """
+    location = get_object_or_404(Location, pk=pk, is_active=True)
+    role = get_user_role(request.user)
+    if role not in ("system_admin", "department_manager"):
+        raise PermissionDenied
+
+    if not location.is_checkable:
+        messages.error(
+            request,
+            f"'{location.name}' is not marked as checkable.",
+        )
+        return redirect("assets:location_detail", pk=pk)
+
+    # Assets whose home_location is at this location tree and are
+    # currently checked out
+    descendant_ids = [loc.pk for loc in location.get_descendants()]
+    all_location_ids = [location.pk] + descendant_ids
+
+    checked_out_assets = list(
+        Asset.objects.filter(
+            home_location_id__in=all_location_ids,
+            checked_out_to__isnull=False,
+        ).select_related(
+            "category",
+            "category__department",
+            "checked_out_to",
+            "home_location",
+        )
+    )
+
+    if request.method == "POST":
+        notes = request.POST.get("notes", "")
+        action_date_str = request.POST.get("action_date", "").strip()
+
+        if not checked_out_assets:
+            messages.info(
+                request,
+                "No checked-out assets to return at this " "location.",
+            )
+            return redirect("assets:location_detail", pk=pk)
+
+        extra_kwargs = {}
+        if action_date_str:
+            from django.utils.dateparse import parse_datetime
+
+            action_date = parse_datetime(action_date_str)
+            if action_date:
+                if timezone.is_naive(action_date):
+                    action_date = timezone.make_aware(action_date)
+                if action_date > timezone.now():
+                    messages.error(
+                        request,
+                        "Date cannot be in the future.",
+                    )
+                    return redirect("assets:location_checkin", pk=pk)
+                extra_kwargs["timestamp"] = action_date
+
+        location_checkin_notes = f"Location check-in: {location.full_path}"
+        if notes:
+            location_checkin_notes = f"{notes}\n{location_checkin_notes}"
+
+        from .services.bulk import bulk_checkin
+
+        asset_ids = [a.pk for a in checked_out_assets]
+        result = bulk_checkin(
+            asset_ids=asset_ids,
+            location_id=location.pk,
+            performed_by=request.user,
+            notes=location_checkin_notes,
+            timestamp=extra_kwargs.get("timestamp"),
+        )
+
+        messages.success(
+            request,
+            f"{result['checked_in']} asset(s) checked in to "
+            f"'{location.name}'.",
+        )
+        if result["skipped"]:
+            messages.warning(
+                request,
+                f"{len(result['skipped'])} asset(s) skipped "
+                f"(not checked out): "
+                f"{', '.join(result['skipped'][:5])}",
+            )
+
+        return redirect("assets:location_detail", pk=pk)
+
+    # GET — show confirmation
+    return render(
+        request,
+        "assets/location_checkin.html",
+        {
+            "location": location,
+            "checked_out_assets": checked_out_assets,
+        },
+    )
 
 
 # --- Category CRUD ---

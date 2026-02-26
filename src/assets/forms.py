@@ -315,7 +315,14 @@ class LocationForm(forms.ModelForm):
 
     class Meta:
         model = Location
-        fields = ["name", "address", "description", "parent", "is_active"]
+        fields = [
+            "name",
+            "address",
+            "description",
+            "parent",
+            "is_active",
+            "is_checkable",
+        ]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -351,3 +358,63 @@ class LocationForm(forms.ModelForm):
             self.fields["parent"].queryset = Location.objects.exclude(
                 pk__in=exclude_ids
             )
+
+
+class LocationCheckoutForm(forms.Form):
+    """Form for checking out all assets at a location."""
+
+    borrower = forms.IntegerField(widget=forms.HiddenInput())
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": _CSS,
+                "rows": 2,
+                "placeholder": "Reason for checkout, event name, etc.",
+            }
+        ),
+    )
+    due_date = forms.DateTimeField(
+        required=False,
+        widget=forms.DateTimeInput(
+            attrs={
+                "class": _CSS,
+                "type": "datetime-local",
+            }
+        ),
+    )
+    action_date = forms.DateTimeField(
+        required=False,
+        widget=forms.DateTimeInput(
+            attrs={
+                "class": _CSS,
+                "type": "datetime-local",
+            }
+        ),
+        help_text="Set a past date if recording a historical action.",
+    )
+
+
+class LocationCheckinForm(forms.Form):
+    """Form for checking in all checked-out assets from a location."""
+
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": _CSS,
+                "rows": 2,
+                "placeholder": "Check-in notes.",
+            }
+        ),
+    )
+    action_date = forms.DateTimeField(
+        required=False,
+        widget=forms.DateTimeInput(
+            attrs={
+                "class": _CSS,
+                "type": "datetime-local",
+            }
+        ),
+        help_text="Set a past date if recording a historical action.",
+    )
