@@ -5325,9 +5325,11 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         if not barcode:
             return None, "Please enter a barcode."
         try:
-            return Asset.objects.get(barcode=barcode), None
+            return Asset.objects.get(barcode__iexact=barcode), None
         except Asset.DoesNotExist:
             pass
+        except Asset.MultipleObjectsReturned:
+            return Asset.objects.filter(barcode=barcode).first(), None
         # Try serial barcode
         try:
             serial = AssetSerial.objects.select_related("asset").get(
@@ -5343,11 +5345,14 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         if not search:
             return None, "Please enter a search term."
 
-        # 3a. Exact barcode match
+        # 3a. Exact barcode match (case-insensitive for scanner
+        # variance)
         try:
-            return Asset.objects.get(barcode=search), None
+            return Asset.objects.get(barcode__iexact=search), None
         except Asset.DoesNotExist:
             pass
+        except Asset.MultipleObjectsReturned:
+            return Asset.objects.filter(barcode=search).first(), None
 
         # 3b. Serial barcode match
         try:
