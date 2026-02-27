@@ -3157,8 +3157,11 @@ def location_checkout(request, pk):
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
-    # Fetch all assets once with annotations to avoid N+1 queries
-    # on is_checked_out (serialised/non-serialised).
+    # NOTE(H2): Intentionally fetches all statuses in one query then
+    # splits in Python — already_out (below) needs the full set
+    # regardless of status, so a single round-trip is preferred over
+    # two filtered queries.  Could add status__in filter if volume of
+    # disposed/retired assets at a location becomes a concern.
     all_assets = list(
         Asset.objects.with_related()
         .filter(
@@ -3254,6 +3257,9 @@ def location_checkout(request, pk):
 
     # GET — show confirmation form
     # Build borrower lists (same pattern as asset_checkout)
+    # TODO(H3): asset_checkout restricts to Borrower/Member/
+    # DeptManager/SysAdmin roles, but this shows ALL active users.
+    # Should use the same role filter for consistency.
     from django.contrib.auth.models import Group
 
     borrower_group = Group.objects.filter(name="Borrower").first()
@@ -5792,6 +5798,9 @@ def holdlist_fulfil(request, pk):
             return redirect("assets:holdlist_fulfil", pk=pk)
 
         fulfilled = 0
+        # FIXME(C1): bare except swallows checkout failures —
+        # if all items fail, user sees "Fulfilled 0 item(s)" with
+        # no explanation.  Count failures and report them.
         for item in items:
             asset = item.asset
             if asset.available_count > 0:
@@ -5809,6 +5818,7 @@ def holdlist_fulfil(request, pk):
                     fulfilled += 1
                 except Exception:
                     pass
+        # FIXME(H1): missing () — renders as <bound method …>
         messages.success(
             request,
             f"Fulfilled {fulfilled} item(s) to {borrower.get_display_name}.",
