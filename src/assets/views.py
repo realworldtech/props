@@ -1601,7 +1601,7 @@ def asset_checkout(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_checkout", pk=pk)
                 # S7.21.4: Reject backdated checkout when already
@@ -1892,7 +1892,7 @@ def asset_checkin(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_checkin", pk=pk)
                 extra_kwargs = {
@@ -2046,7 +2046,7 @@ def asset_transfer(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_transfer", pk=pk)
                 extra_kwargs = {
@@ -3192,7 +3192,7 @@ def location_checkout(request, pk):
         if not eligible_assets:
             messages.info(
                 request,
-                "No eligible assets to check out at this " "location.",
+                "No eligible assets to check out at this location.",
             )
             return redirect("assets:location_detail", pk=pk)
 
@@ -3255,17 +3255,31 @@ def location_checkout(request, pk):
     # GET — show confirmation form
     # Build borrower lists (same pattern as asset_checkout)
     from django.contrib.auth.models import Group
+    from django.db.models import Q
+
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
+    users = (
+        User.objects.filter(
+            Q(is_active=True, groups__name__in=borrower_roles)
+            | Q(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("first_name", "last_name", "username")
+    )
 
     borrower_group = Group.objects.filter(name="Borrower").first()
-    internal_users = User.objects.filter(is_active=True).order_by(
-        "first_name", "last_name", "username"
-    )
-    external_borrowers = User.objects.none()
+    borrower_ids = set()
     if borrower_group:
-        internal_users = internal_users.exclude(groups=borrower_group)
-        external_borrowers = User.objects.filter(
-            is_active=True, groups=borrower_group
-        ).order_by("first_name", "last_name", "username")
+        borrower_ids = set(
+            borrower_group.user_set.values_list("pk", flat=True)
+        )
+    internal_users = [u for u in users if u.pk not in borrower_ids]
+    external_borrowers = [u for u in users if u.pk in borrower_ids]
 
     return render(
         request,
@@ -3321,7 +3335,7 @@ def location_checkin(request, pk):
         if not checked_out_assets:
             messages.info(
                 request,
-                "No checked-out assets to return at this " "location.",
+                "No checked-out assets to return at this location.",
             )
             return redirect("assets:location_detail", pk=pk)
 
@@ -3366,6 +3380,13 @@ def location_checkin(request, pk):
                 f"{len(result['skipped'])} asset(s) skipped "
                 f"(not checked out): "
                 f"{', '.join(result['skipped'][:5])}",
+            )
+        if result.get("no_home"):
+            messages.warning(
+                request,
+                f"{len(result['no_home'])} asset(s) skipped "
+                f"(no home location set): "
+                f"{', '.join(result['no_home'][:5])}",
             )
 
         return redirect("assets:location_detail", pk=pk)
@@ -5238,7 +5259,7 @@ def holdlist_create(request):
             hold_list = create_hold_list(name, request.user, **kwargs)
             messages.success(request, f"Hold list '{name}' created.")
             return redirect("assets:holdlist_detail", pk=hold_list.pk)
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             messages.error(request, str(e))
 
     projects = Project.objects.filter(is_active=True)
@@ -5278,8 +5299,6 @@ def holdlist_edit(request, pk):
             request,
             "This hold list is locked and cannot be edited.",
         )
-        if request.method == "POST":
-            return redirect("assets:holdlist_detail", pk=pk)
         return redirect("assets:holdlist_detail", pk=pk)
 
     if request.method == "POST":
@@ -5299,7 +5318,7 @@ def holdlist_edit(request, pk):
             hold_list.save()
             messages.success(request, "Hold list updated.")
             return redirect("assets:holdlist_detail", pk=pk)
-        except Exception as e:
+        except ValidationError as e:
             messages.error(request, str(e))
 
     projects = Project.objects.filter(is_active=True)
@@ -5448,6 +5467,9 @@ def holdlist_add_item(request, pk):
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    if hold_list.is_locked:
+        messages.error(request, "This hold list is locked.")
+        return redirect("assets:holdlist_detail", pk=pk)
     if request.method == "POST":
         raw_qty = request.POST.get("quantity", "1")
         try:
@@ -5538,6 +5560,9 @@ def holdlist_remove_item(request, pk, item_pk):
     from assets.models import HoldList
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    if hold_list.is_locked:
+        messages.error(request, "This hold list is locked.")
+        return redirect("assets:holdlist_detail", pk=pk)
     if request.method == "POST":
         from assets.services.holdlists import remove_item
 
@@ -5792,6 +5817,7 @@ def holdlist_fulfil(request, pk):
             return redirect("assets:holdlist_fulfil", pk=pk)
 
         fulfilled = 0
+        failed = []
         for item in items:
             asset = item.asset
             if asset.available_count > 0:
@@ -5807,12 +5833,18 @@ def holdlist_fulfil(request, pk):
                     item.pulled_at = timezone.now()
                     item.save()
                     fulfilled += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    failed.append(f"{asset.name}: {e}")
         messages.success(
             request,
-            f"Fulfilled {fulfilled} item(s) to {borrower.get_display_name}.",
+            f"Fulfilled {fulfilled} item(s) to "
+            f"{borrower.get_display_name()}.",
         )
+        if failed:
+            messages.warning(
+                request,
+                f"{len(failed)} item(s) failed: " f"{'; '.join(failed[:5])}",
+            )
         return redirect("assets:holdlist_detail", pk=pk)
 
     return render(

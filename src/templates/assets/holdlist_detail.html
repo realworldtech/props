@@ -85,7 +85,8 @@
                     role="combobox"
                     aria-autocomplete="list"
                     :aria-expanded="showResults && results.length > 0"
-                    aria-controls="search-results-listbox">
+                    aria-controls="search-results-listbox"
+                    :aria-activedescendant="highlighted >= 0 && results[highlighted] ? 'search-option-' + results[highlighted].id : null">
                 <p x-show="searchError" x-cloak class="text-xs text-red-400 mt-1" x-text="searchError"></p>
                 <div x-show="showResults && results.length > 0" x-cloak
                     @click.outside="showResults = false"
@@ -97,6 +98,7 @@
                             @click="selectItem(item)"
                             @mouseenter="highlighted = idx"
                             :class="highlighted === idx ? 'bg-brand-500/20' : ''"
+                            :id="'search-option-' + item.id"
                             role="option"
                             :aria-selected="highlighted === idx"
                             class="w-full text-left px-3 py-2 text-sm hover:bg-brand-500/10 transition-colors">
