@@ -2262,6 +2262,98 @@ class TestHoldListDetailRoleGating:
 
 
 # ============================================================
+# HOLD LIST ADD-ITEM: NON-ACTIVE ASSET REJECTION (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListAddItemNonActiveRejection:
+    """Adding a non-active asset to a hold list must be rejected."""
+
+    def test_disposed_asset_rejected(
+        self, admin_client, admin_user, active_hold_list
+    ):
+        """Disposed asset cannot be added to a hold list."""
+        disposed = AssetFactory(
+            name="Disposed Widget",
+            status="disposed",
+            created_by=admin_user,
+        )
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        resp = admin_client.post(
+            url,
+            {"asset_id": disposed.pk, "quantity": 1},
+            follow=True,
+        )
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any("disposed" in m.lower() for m in msg_texts), (
+            f"Expected error about disposed status. Messages: " f"{msg_texts}"
+        )
+        from assets.models import HoldListItem
+
+        assert not HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=disposed
+        ).exists()
+
+    def test_draft_asset_rejected(
+        self, admin_client, admin_user, active_hold_list
+    ):
+        """Draft asset cannot be added to a hold list."""
+        draft = AssetFactory(
+            name="Draft Widget",
+            status="draft",
+            created_by=admin_user,
+        )
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        resp = admin_client.post(
+            url,
+            {"asset_id": draft.pk, "quantity": 1},
+            follow=True,
+        )
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any("cannot be added" in m.lower() for m in msg_texts), (
+            f"Expected rejection error for draft asset. "
+            f"Messages: {msg_texts}"
+        )
+        from assets.models import HoldListItem
+
+        assert not HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=draft
+        ).exists()
+
+    def test_active_asset_accepted(
+        self, admin_client, admin_user, active_hold_list, asset
+    ):
+        """Active asset can be added (control test)."""
+        asset.status = "active"
+        asset.save()
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        resp = admin_client.post(
+            url,
+            {"asset_id": asset.pk, "quantity": 1},
+            follow=True,
+        )
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any(
+            "added" in m.lower() for m in msg_texts
+        ), f"Expected success message. Messages: {msg_texts}"
+        from assets.models import HoldListItem
+
+        assert HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=asset
+        ).exists()
+
+
+# ============================================================
 # HOLD LIST WRITE PERMISSION ENFORCEMENT (issue #33)
 # ============================================================
 

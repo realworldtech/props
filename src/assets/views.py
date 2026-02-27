@@ -5462,7 +5462,7 @@ def holdlist_add_item(request, pk):
             )
             return redirect("assets:holdlist_detail", pk=pk)
 
-        asset_id = request.POST.get("asset_id")
+        asset_id = request.POST.get("asset_id") or request.POST.get("asset")
         search = request.POST.get("search")
         barcode = request.POST.get("barcode")
 
