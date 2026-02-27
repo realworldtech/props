@@ -14,9 +14,11 @@
             <a href="{% url 'assets:holdlist_pick_sheet' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Pick Sheet PDF
             </a>
+            {% if can_write_holdlist %}
             <a href="{% url 'assets:holdlist_edit' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Edit
             </a>
+            {% endif %}
             <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Back
             </a>
@@ -64,7 +66,7 @@
     </div>
     {% endif %}
 
-    {% if not hold_list.is_locked %}
+    {% if not hold_list.is_locked and can_write_holdlist %}
     <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4" x-data="assetAutocomplete()">
         {% csrf_token %}
         <input type="hidden" name="asset_id" x-model="selectedId">
@@ -223,6 +225,7 @@
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ item.notes|default:"-" }}</td>
+                    {% if can_write_holdlist %}
                     <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
                             {% if item.pull_status != 'pulled' %}
@@ -262,6 +265,9 @@
                             {% endif %}
                         </div>
                     </td>
+                    {% else %}
+                    <td class="px-4 py-3"></td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
                 {% empty %}

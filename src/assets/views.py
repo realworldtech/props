@@ -5106,10 +5106,10 @@ HOLD_LIST_WRITE_ROLES = ("system_admin", "department_manager", "member")
 def _require_holdlist_write(user):
     """Raise PermissionDenied if user lacks hold-list write access.
 
-    This is a role-level gate only (viewer/borrower rejection).
-    Ownership checks are handled per-view where needed (e.g.
-    holdlist_edit, holdlist_delete). Members can collaborate on
-    any hold list by design.
+    This enforces a role-level gate only (viewer/borrower rejection).
+    Views may apply additional ownership or object-level checks as
+    needed. Members can collaborate on hold lists by design, subject
+    to whatever per-view checks are in place.
     """
     if get_user_role(user) not in HOLD_LIST_WRITE_ROLES:
         raise PermissionDenied
@@ -5179,6 +5179,8 @@ def holdlist_detail(request, pk):
             items_by_location[loc_name] = []
         items_by_location[loc_name].append(item)
 
+    can_write = get_user_role(request.user) in HOLD_LIST_WRITE_ROLES
+
     return render(
         request,
         "assets/holdlist_detail.html",
@@ -5189,6 +5191,7 @@ def holdlist_detail(request, pk):
             "effective_start": effective_start,
             "effective_end": effective_end,
             "items_by_location": items_by_location,
+            "can_write_holdlist": can_write,
         },
     )
 

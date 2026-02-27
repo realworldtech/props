@@ -2172,3 +2172,90 @@ class TestV598AdminHoldListFilter:
         assert any(
             "hold" in str(n).lower() for n in filter_names
         ), f"No hold_list filter found in {filter_names}"
+
+
+@pytest.mark.django_db
+class TestHoldListDetailRoleGating:
+    """Viewers/borrowers must not see write-action controls."""
+
+    def test_viewer_cannot_see_add_item_form(
+        self, viewer_client, active_hold_list
+    ):
+        """Viewers should not see the add-item form."""
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url not in content
+
+    def test_viewer_cannot_see_edit_link(
+        self, viewer_client, active_hold_list
+    ):
+        """Viewers should not see the Edit button."""
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        edit_url = reverse("assets:holdlist_edit", args=[active_hold_list.pk])
+        assert edit_url not in content
+
+    def test_viewer_cannot_see_pull_status_buttons(
+        self, viewer_client, active_hold_list, asset
+    ):
+        """Viewers should not see pull status action buttons."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        pull_url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert pull_url not in content
+
+    def test_viewer_cannot_see_remove_button(
+        self, viewer_client, active_hold_list, asset
+    ):
+        """Viewers should not see the Remove button."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        remove_url = reverse(
+            "assets:holdlist_remove_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert remove_url not in content
+
+    def test_admin_can_see_add_item_form(self, admin_client, active_hold_list):
+        """Admins should see the add-item form."""
+        resp = admin_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url in content
+
+    def test_admin_can_see_pull_status_buttons(
+        self, admin_client, active_hold_list, asset
+    ):
+        """Admins should see pull status action buttons."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = admin_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        pull_url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert pull_url in content
