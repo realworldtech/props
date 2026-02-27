@@ -2273,7 +2273,9 @@ class TestScenario_11_15_ConcurrentAccess:
     def test_double_checkout_is_blocked(
         self, client, password, asset, location
     ):
-        group, _ = Group.objects.get_or_create(name="Department Manager")
+        from conftest import _ensure_group_permissions
+
+        group = _ensure_group_permissions("Department Manager")
 
         user_a = UserFactory(
             username="member_a_s15",
@@ -2334,7 +2336,9 @@ class TestScenario_11_15_ConcurrentAccess:
     def test_full_scenario_walkthrough(
         self, client, password, asset, location
     ):
-        group, _ = Group.objects.get_or_create(name="Department Manager")
+        from conftest import _ensure_group_permissions
+
+        group = _ensure_group_permissions("Department Manager")
         user_a = UserFactory(
             username="concurrent_a_s15",
             email="concurrent_a_s15@example.com",

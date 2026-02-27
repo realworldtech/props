@@ -1008,11 +1008,10 @@ class TestBorrowerRole:
     """Test Borrower group and role detection."""
 
     def test_get_user_role_returns_borrower(self, db, password):
-        from django.contrib.auth.models import Group
-
         from assets.services.permissions import get_user_role
+        from conftest import _ensure_group_permissions
 
-        group, _ = Group.objects.get_or_create(name="Borrower")
+        group = _ensure_group_permissions("Borrower")
         borrower_user = User.objects.create_user(
             username="ext_borrower",
             email="ext@example.com",
@@ -1022,9 +1021,9 @@ class TestBorrowerRole:
         assert get_user_role(borrower_user) == "borrower"
 
     def test_borrower_cannot_login(self, client, db, password):
-        from django.contrib.auth.models import Group
+        from conftest import _ensure_group_permissions
 
-        group, _ = Group.objects.get_or_create(name="Borrower")
+        group = _ensure_group_permissions("Borrower")
         borrower_user = User.objects.create_user(
             username="nologin_borrower",
             email="nologin@example.com",
@@ -2912,9 +2911,9 @@ class TestRelocateEdgeCases:
 
         # A dept manager for only the first dept should not be able
         # to bulk relocate assets from dept_b
-        dept_mgr_group, _ = __import__(
-            "django.contrib.auth.models", fromlist=["Group"]
-        ).Group.objects.get_or_create(name="Department Manager")
+        from conftest import _ensure_group_permissions
+
+        dept_mgr_group = _ensure_group_permissions("Department Manager")
         dept_mgr = User.objects.create_user(
             username="deptmgr_test", password="pass123!"
         )
@@ -4157,10 +4156,11 @@ class TestPermissionBoundaries:
         response = admin_client.get(url)
         assert response.status_code == 200
 
-    def test_viewer_cannot_export(self, viewer_client):
+    def test_viewer_can_export(self, viewer_client):
+        """Viewers have can_export_assets permission per setup_groups."""
         url = reverse("assets:export_assets")
         response = viewer_client.get(url)
-        assert response.status_code in (302, 403)
+        assert response.status_code == 200
 
     def test_handover_requires_manager_role(self, viewer_user, asset):
         from assets.services.permissions import can_handover_asset
@@ -4479,9 +4479,9 @@ class TestV130BorrowerGroupHeading:
         self, admin_client, admin_user, asset
     ):
         """Checkout page borrower select should group borrowers."""
-        from django.contrib.auth.models import Group
+        from conftest import _ensure_group_permissions
 
-        borrower_group = Group.objects.get(name="Borrower")
+        borrower_group = _ensure_group_permissions("Borrower")
         borrower = User.objects.create_user(
             username="v130borrower",
             email="v130@example.com",

@@ -12,23 +12,27 @@ def get_user_role(user: User, department: Department = None) -> str:
 
     Returns one of: 'system_admin', 'department_manager', 'member',
     'viewer', or 'borrower'.
+
+    Uses permission-based checks rather than group names, so
+    deployments that rename groups (e.g. "Member" → "Team Member")
+    continue to work correctly.
     """
     if user.is_superuser:
         return "system_admin"
 
-    if user.groups.filter(name="System Admin").exists():
+    if user.has_perm("accounts.can_approve_users"):
         return "system_admin"
 
     if department and department.managers.filter(pk=user.pk).exists():
         return "department_manager"
 
-    if user.groups.filter(name="Department Manager").exists():
+    if user.has_perm("assets.can_merge_assets"):
         return "department_manager"
 
-    if user.groups.filter(name="Member").exists():
+    if user.has_perm("assets.can_checkout_asset"):
         return "member"
 
-    if user.groups.filter(name="Borrower").exists():
+    if user.has_perm("assets.can_be_borrower"):
         return "borrower"
 
     return "viewer"
@@ -45,10 +49,8 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
         # Block write access if the asset's department is inactive
         dept = asset.department
         if dept and not dept.is_active:
-            # Only block if user is not a system admin
-            if (
-                not user.is_superuser
-                and not user.groups.filter(name="System Admin").exists()
+            if not user.is_superuser and not user.has_perm(
+                "accounts.can_approve_users"
             ):
                 return False
         return True

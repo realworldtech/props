@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.test.utils import override_settings
@@ -449,7 +450,7 @@ class TestQueryCounts:
     ):
         """Dashboard should use a fixed number of queries."""
         asset.tags.add(tag)
-        with django_assert_num_queries(20):
+        with django_assert_num_queries(16):
             response = client_logged_in.get(reverse("assets:dashboard"))
         assert response.status_code == 200
 
@@ -461,7 +462,7 @@ class TestQueryCounts:
     ):
         """Asset list should use a fixed number of queries."""
         # +1 for PrintClient query (bulk remote print)
-        with django_assert_num_queries(16):
+        with django_assert_num_queries(15):
             response = client_logged_in.get(reverse("assets:asset_list"))
         assert response.status_code == 200
 
@@ -475,7 +476,8 @@ class TestQueryCounts:
         # V500: +2 per available_count call (multiple in template),
         # V492: +2 for serial queries
         # S2.4.5: +1 for remote print client query
-        with django_assert_num_queries(41):
+        # Permission-based roles use has_perm cache, fewer queries
+        with django_assert_num_queries(25):
             response = client_logged_in.get(
                 reverse("assets:asset_detail", args=[asset.pk])
             )
@@ -846,6 +848,155 @@ class TestSetupGroupsCommand:
         )
 
         assert approve_perm in system_admin.permissions.all()
+
+    def test_setup_groups_assigns_can_be_borrower_to_borrower(self, db):
+        """Borrower group gets can_be_borrower permission."""
+        from django.contrib.auth.models import Group, Permission
+        from django.contrib.contenttypes.models import ContentType
+        from django.core.management import call_command
+
+        from assets.models import Asset
+
+        call_command("setup_groups")
+
+        borrower = Group.objects.get(name="Borrower")
+        asset_ct = ContentType.objects.get_for_model(Asset)
+        borrower_perm = Permission.objects.get(
+            codename="can_be_borrower", content_type=asset_ct
+        )
+
+        assert borrower_perm in borrower.permissions.all()
+
+
+@pytest.mark.django_db
+class TestPermissionBasedRoleResolution:
+    """Issue #53: Role resolution uses permissions, not group names.
+
+    These tests verify that get_user_role() resolves roles based on
+    the permissions a group grants, not the group's name. This allows
+    deployments to rename groups without breaking role resolution.
+    """
+
+    def test_renamed_admin_group_resolves_system_admin(self, db, password):
+        """Group renamed from 'System Admin' to anything else still
+        resolves to system_admin if it has can_approve_users."""
+        from conftest import _ensure_group_permissions
+
+        # Create the canonical group first to get permissions
+        _ensure_group_permissions("System Admin")
+        # Now rename it
+        group = Group.objects.get(name="System Admin")
+        group.name = "Super Admin"
+        group.save()
+
+        u = UserFactory(username="sa_test", password=password)
+        u.groups.add(group)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "system_admin"
+
+    def test_renamed_dept_manager_resolves(self, db, password):
+        """Group with can_merge_assets (without can_approve_users)
+        resolves to department_manager regardless of name."""
+        from conftest import _ensure_group_permissions
+
+        _ensure_group_permissions("Department Manager")
+        group = Group.objects.get(name="Department Manager")
+        group.name = "Team Lead"
+        group.save()
+
+        u = UserFactory(username="dm_test", password=password)
+        u.groups.add(group)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "department_manager"
+
+    def test_renamed_member_resolves(self, db, password):
+        """BEAMS scenario: 'Member' renamed to 'Team Member' with
+        can_checkout_asset resolves to member."""
+        from conftest import _ensure_group_permissions
+
+        _ensure_group_permissions("Member")
+        group = Group.objects.get(name="Member")
+        group.name = "Team Member"
+        group.save()
+
+        u = UserFactory(username="member_test", password=password)
+        u.groups.add(group)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "member"
+
+    def test_renamed_borrower_resolves(self, db, password):
+        """Group with can_be_borrower (without can_checkout_asset)
+        resolves to borrower."""
+        from conftest import _ensure_group_permissions
+
+        _ensure_group_permissions("Borrower")
+        group = Group.objects.get(name="Borrower")
+        group.name = "External Borrower"
+        group.save()
+
+        u = UserFactory(username="borrower_test", password=password)
+        u.groups.add(group)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "borrower"
+
+    def test_no_groups_resolves_viewer(self, db, password):
+        """User with no groups at all resolves to viewer."""
+        u = UserFactory(username="nobody_test", password=password)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "viewer"
+
+    def test_hierarchy_borrower_plus_checkout_is_member(self, db, password):
+        """User with both can_be_borrower and can_checkout_asset
+        resolves to member (higher in hierarchy wins)."""
+        from conftest import _ensure_group_permissions
+
+        borrower_group = _ensure_group_permissions("Borrower")
+        member_group = _ensure_group_permissions("Member")
+
+        u = UserFactory(username="dual_test", password=password)
+        u.groups.add(borrower_group, member_group)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "member"
+
+    def test_department_m2m_still_promotes_to_dept_manager(
+        self, db, password, department
+    ):
+        """A Member user in department.managers M2M resolves to
+        department_manager for that department."""
+        from conftest import _ensure_group_permissions
+
+        member_group = _ensure_group_permissions("Member")
+        u = UserFactory(username="m2m_test", password=password)
+        u.groups.add(member_group)
+        department.managers.add(u)
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u, department) == "department_manager"
+
+    def test_superuser_resolves_system_admin(self, db, password):
+        """Superuser always resolves to system_admin."""
+        u = UserFactory(
+            username="super_test",
+            password=password,
+            is_superuser=True,
+        )
+
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(u) == "system_admin"
 
 
 # ============================================================

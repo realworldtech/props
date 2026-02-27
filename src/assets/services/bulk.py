@@ -173,12 +173,11 @@ def bulk_transfer(asset_ids: list[int], location_id: int, user) -> dict:
 
     # S7.22.4: Per-asset department permission check for
     # department managers only. Only queries managed_departments
-    # if the user is in the Department Manager group (avoids
+    # if the user resolves to department_manager role (avoids
     # extra queries for other roles).
-    if (
-        not user.is_superuser
-        and user.groups.filter(name="Department Manager").exists()
-    ):
+    from .permissions import get_user_role
+
+    if not user.is_superuser and get_user_role(user) == "department_manager":
         managed_dept_ids = set(
             user.managed_departments.values_list("pk", flat=True)
         )
