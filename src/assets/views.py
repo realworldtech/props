@@ -3589,7 +3589,7 @@ def asset_search(request):
             "barcode": a.barcode,
             "category": a.category.name if a.category else "",
             "location": (
-                a.current_location.name if a.current_location else ""
+                str(a.current_location) if a.current_location else ""
             ),
         }
         for a in qs
@@ -5179,7 +5179,12 @@ def holdlist_detail(request, pk):
             items_by_location[loc_name] = []
         items_by_location[loc_name].append(item)
 
-    can_write = get_user_role(request.user) in HOLD_LIST_WRITE_ROLES
+    role = get_user_role(request.user)
+    can_write = role in HOLD_LIST_WRITE_ROLES
+    # Edit requires ownership for members (mirrors holdlist_edit)
+    can_edit = role in ("system_admin", "department_manager") or (
+        can_write and hold_list.created_by == request.user
+    )
 
     return render(
         request,
@@ -5192,6 +5197,7 @@ def holdlist_detail(request, pk):
             "effective_end": effective_end,
             "items_by_location": items_by_location,
             "can_write_holdlist": can_write,
+            "can_edit_holdlist": can_edit,
         },
     )
 

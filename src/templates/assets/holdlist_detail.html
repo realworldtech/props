@@ -14,7 +14,7 @@
             <a href="{% url 'assets:holdlist_pick_sheet' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Pick Sheet PDF
             </a>
-            {% if can_write_holdlist %}
+            {% if can_edit_holdlist %}
             <a href="{% url 'assets:holdlist_edit' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Edit
             </a>
