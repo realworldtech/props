@@ -2,6 +2,14 @@
 
 Finds groups with zero permissions (catches renamed Borrower groups) and
 any group named "Borrower" as a safety net, then adds can_be_borrower.
+
+KNOWN LIMITATION: The zero-permissions heuristic will add can_be_borrower
+to ALL groups that have no permissions assigned, not just Borrower groups.
+This is intentional for the initial deployment (where the only empty group
+is the Borrower group or its renamed variants). Future deployments are
+protected by setup_groups which assigns can_be_borrower explicitly.
+If your deployment has other empty groups that should NOT receive this
+permission, run setup_groups after this migration to correct them.
 """
 
 from django.db import migrations
@@ -21,7 +29,9 @@ def backfill_can_be_borrower(apps, schema_editor):
     except (ContentType.DoesNotExist, Permission.DoesNotExist):
         return
 
-    # Find groups with zero permissions (likely renamed Borrower groups)
+    # Find groups with zero permissions (likely renamed Borrower groups).
+    # NOTE: This intentionally adds can_be_borrower to ALL empty groups.
+    # See module docstring for rationale and limitations.
     empty_groups = Group.objects.filter(permissions__isnull=True)
     for group in empty_groups:
         group.permissions.add(borrower_perm)

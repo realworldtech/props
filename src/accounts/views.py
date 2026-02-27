@@ -264,6 +264,7 @@ def _notify_admins_new_pending_user(user, request):
         .filter(
             models.Q(is_superuser=True)
             | models.Q(groups__permissions__codename="can_approve_users")
+            | models.Q(user_permissions__codename="can_approve_users")
         )
         .exclude(email="")
         .distinct()
@@ -462,13 +463,12 @@ def approve_user_view(request, user_pk):
         ]
     )
 
-    # 2. Add to group
-    group = None
-    try:
-        group = Group.objects.get(name=group_name)
+    # 2. Add to group (reuse _selected_group from dept manager check)
+    group = _selected_group
+    if group:
         pending_user.groups.clear()
         pending_user.groups.add(group)
-    except Group.DoesNotExist:
+    else:
         logger.error(
             "Approval role '%s' not found for user %s",
             group_name,
