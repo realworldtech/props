@@ -7323,9 +7323,7 @@ class TestResolveAssetFromInput:
 
     # --- 3e. Broad text match: description ---
 
-    def test_search_description_single_match(
-        self, category, location, user
-    ):
+    def test_search_description_single_match(self, category, location, user):
         a = AssetFactory(
             name="Plain Widget",
             description="Has a unique-xylophone-marker inside",
@@ -7333,9 +7331,7 @@ class TestResolveAssetFromInput:
             current_location=location,
             created_by=user,
         )
-        result, error = self._resolve(
-            search="unique-xylophone-marker"
-        )
+        result, error = self._resolve(search="unique-xylophone-marker")
         assert result == a
         assert error is None
 
@@ -7395,9 +7391,7 @@ class TestResolveAssetFromInput:
     # --- No match at all ---
 
     def test_search_no_match_returns_error(self):
-        result, error = self._resolve(
-            search="totallynonexistent12345"
-        )
+        result, error = self._resolve(search="totallynonexistent12345")
         assert result is None
         assert "No asset found matching" in error
 
