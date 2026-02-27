@@ -2259,3 +2259,123 @@ class TestHoldListDetailRoleGating:
             args=[active_hold_list.pk, item.pk],
         )
         assert pull_url in content
+
+
+# ============================================================
+# HOLD LIST WRITE PERMISSION ENFORCEMENT (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListWritePermissionEnforcement:
+    """Verify that viewers and borrowers are blocked at the view level
+    (not just hidden in templates) from all hold-list write endpoints.
+
+    Each test POSTs directly to the endpoint to confirm the server
+    rejects the request with 403, regardless of UI visibility.
+    """
+
+    @pytest.fixture
+    def borrower_client(self, client, db, password):
+        from django.contrib.auth.models import Group
+
+        group, _ = Group.objects.get_or_create(name="Borrower")
+        u = UserFactory(
+            username="borrower_hl",
+            email="borrower_hl@example.com",
+            password=password,
+        )
+        u.groups.add(group)
+        client.login(username=u.username, password=password)
+        return client
+
+    @pytest.fixture(params=["viewer", "borrower"])
+    def denied_client(self, request, viewer_client, borrower_client):
+        """Parametrize over both denied roles."""
+        if request.param == "viewer":
+            return viewer_client
+        return borrower_client
+
+    # --- holdlist_create ---
+
+    def test_create_blocked(self, denied_client, department):
+        url = reverse("assets:holdlist_create")
+        resp = denied_client.post(
+            url, {"name": "Blocked", "department": department.pk}
+        )
+        assert resp.status_code == 403
+
+    # --- holdlist_add_item ---
+
+    def test_add_item_blocked(self, denied_client, active_hold_list, asset):
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url, {"asset": asset.pk})
+        assert resp.status_code == 403
+
+    # --- holdlist_remove_item ---
+
+    def test_remove_item_blocked(self, denied_client, active_hold_list, asset):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_remove_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_edit_item ---
+
+    def test_edit_item_blocked(self, denied_client, active_hold_list, asset):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_edit_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url, {"quantity": 5})
+        assert resp.status_code == 403
+
+    # --- holdlist_update_pull_status ---
+
+    def test_update_pull_status_blocked(
+        self, denied_client, active_hold_list, asset
+    ):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url, {"status": "pulled"})
+        assert resp.status_code == 403
+
+    # --- holdlist_lock ---
+
+    def test_lock_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_lock",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_unlock ---
+
+    def test_unlock_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_unlock",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_fulfil ---
+
+    def test_fulfil_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_fulfil",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
