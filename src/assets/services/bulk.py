@@ -420,7 +420,8 @@ def bulk_checkin_to_home(
     with its own Transaction row, mirroring the individual
     asset_checkin workflow.
 
-    Returns a dict with 'checked_in' count and 'skipped' list.
+    Returns a dict with 'checked_in' count, 'skipped' list (not
+    checked out), and 'no_home' list (no home location set).
     """
     extra = {}
     if timestamp:

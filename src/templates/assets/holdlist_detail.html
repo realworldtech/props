@@ -78,7 +78,7 @@
                     x-model="query" @input.debounce.200ms="fetchResults"
                     @keydown.arrow-down.prevent="highlightNext"
                     @keydown.arrow-up.prevent="highlightPrev"
-                    @keydown.enter.prevent="highlighted >= 0 ? selectHighlighted() : ($el.form && $el.form.submit())"
+                    @keydown.enter.prevent="highlighted >= 0 ? selectHighlighted() : ($el.form && $el.form.requestSubmit())"
                     @keydown.escape="showResults = false"
                     @focus="if (results.length) showResults = true"
                     autocomplete="off"
@@ -152,7 +152,7 @@
                         '{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query),
                         { signal: this._controller.signal }
                     );
-                    if (!resp.ok) throw new Error(resp.status);
+                    if (!resp.ok) throw new Error(resp.statusText || resp.status);
                     this.results = await resp.json();
                 } catch (e) {
                     if (e.name === 'AbortError') return;
@@ -179,9 +179,6 @@
                     this.selectItem(this.results[this.highlighted]);
                 }
             },
-            destroy() {
-                if (this._controller) this._controller.abort();
-            }
         }
     }
     </script>

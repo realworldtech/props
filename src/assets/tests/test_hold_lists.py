@@ -2262,6 +2262,41 @@ class TestHoldListDetailRoleGating:
 
 
 # ============================================================
+# HOLD LIST ADD-ITEM: AFFORDANCE EXPOSURE (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListAddItemAffordance:
+    """Verify the holdlist detail page exposes the asset_search URL
+    for the autocomplete, per CLAUDE.md affordance exposure testing."""
+
+    def test_detail_page_exposes_asset_search_url(
+        self, admin_client, active_hold_list
+    ):
+        """The holdlist detail page must render the asset_search
+        endpoint URL so the autocomplete JS can call it."""
+        url = reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        search_url = reverse("assets:asset_search")
+        assert search_url.encode() in resp.content
+
+    def test_detail_page_exposes_add_item_form(
+        self, admin_client, active_hold_list
+    ):
+        """The holdlist detail page must render the add-item form
+        action URL."""
+        url = reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url.encode() in resp.content
+
+
+# ============================================================
 # HOLD LIST ADD-ITEM: NON-ACTIVE ASSET REJECTION (issue #33)
 # ============================================================
 

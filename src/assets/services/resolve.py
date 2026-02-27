@@ -63,6 +63,13 @@ def resolve_asset_from_input(asset_id=None, search=None, barcode=None):
                 None,
                 f"No asset found with barcode " f"'{_truncate(barcode)}'.",
             )
+        except AssetSerial.MultipleObjectsReturned:
+            serial = (
+                AssetSerial.objects.select_related("asset")
+                .filter(barcode__iexact=barcode)
+                .first()
+            )
+            return serial.asset, None
 
     # 3. Search field — try barcode, NFC, then name
     if search:
@@ -94,6 +101,13 @@ def resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             return serial.asset, None
         except AssetSerial.DoesNotExist:
             pass
+        except AssetSerial.MultipleObjectsReturned:
+            serial = (
+                AssetSerial.objects.select_related("asset")
+                .filter(barcode__iexact=search)
+                .first()
+            )
+            return serial.asset, None
 
         # 3c. NFC tag match
         nfc_asset = NFCTag.get_asset_by_tag(search)

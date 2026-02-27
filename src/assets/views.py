@@ -3255,7 +3255,6 @@ def location_checkout(request, pk):
     # GET — show confirmation form
     # Build borrower lists (same pattern as asset_checkout)
     from django.contrib.auth.models import Group
-    from django.db.models import Q
 
     borrower_roles = [
         "Borrower",
@@ -5318,7 +5317,7 @@ def holdlist_edit(request, pk):
             hold_list.save()
             messages.success(request, "Hold list updated.")
             return redirect("assets:holdlist_detail", pk=pk)
-        except ValidationError as e:
+        except (ValueError, ValidationError) as e:
             messages.error(request, str(e))
 
     projects = Project.objects.filter(is_active=True)
@@ -5334,19 +5333,6 @@ def holdlist_edit(request, pk):
             "statuses": statuses,
             "editing": True,
         },
-    )
-
-
-def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
-    """Resolve an Asset from various input types.
-
-    Thin wrapper around the service-layer function for backward
-    compatibility with tests that import from views.
-    """
-    from assets.services.resolve import resolve_asset_from_input
-
-    return resolve_asset_from_input(
-        asset_id=asset_id, search=search, barcode=barcode
     )
 
 
