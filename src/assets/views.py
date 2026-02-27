@@ -5318,12 +5318,16 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
     """
     from assets.models import AssetSerial, NFCTag
 
+    def _truncate(value, max_len=100):
+        s = str(value)
+        return s if len(s) <= max_len else s[:max_len] + "..."
+
     # 1. Explicit PK
     if asset_id:
         try:
             return Asset.objects.get(pk=asset_id), None
         except (Asset.DoesNotExist, ValueError):
-            return None, f"No asset found with ID '{asset_id}'."
+            return None, f"No asset found with ID '{_truncate(asset_id)}'."
 
     # 2. Barcode field
     if barcode:
@@ -5350,7 +5354,7 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             )
             return serial.asset, None
         except AssetSerial.DoesNotExist:
-            return None, (f"No asset found with barcode '{barcode}'.")
+            return None, f"No asset found with barcode '{_truncate(barcode)}'."
 
     # 3. Search field — try barcode, NFC, then name
     if search:
@@ -5396,7 +5400,7 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             return name_hits[0], None
         elif len(name_hits) > 1:
             return None, (
-                f"Multiple assets named '{search}'. "
+                f"Multiple assets named '{_truncate(search)}'. "
                 f"Please use the autocomplete to select "
                 f"the correct one."
             )
@@ -5417,11 +5421,11 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             return results[0], None
         elif len(results) > 1:
             return None, (
-                f"Multiple assets match '{search}'. "
+                f"Multiple assets match '{_truncate(search)}'. "
                 f"Please be more specific or use the "
                 f"autocomplete suggestions."
             )
-        return None, f"No asset found matching '{search}'."
+        return None, f"No asset found matching '{_truncate(search)}'."
 
     return None, "Please provide an asset to add."
 
@@ -5442,7 +5446,7 @@ def holdlist_add_item(request, pk):
         except (ValueError, TypeError):
             messages.error(
                 request,
-                f"Invalid quantity '{raw_qty}'. "
+                f"Invalid quantity '{raw_qty[:20]}'. "
                 f"Please enter a positive number.",
             )
             return redirect("assets:holdlist_detail", pk=pk)
