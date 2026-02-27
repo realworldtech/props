@@ -79,15 +79,24 @@
                     @keydown.enter.prevent="highlighted >= 0 ? selectHighlighted() : ($el.form && $el.form.submit())"
                     @keydown.escape="showResults = false"
                     @focus="if (results.length) showResults = true"
-                    autocomplete="off">
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    :aria-expanded="showResults && results.length > 0"
+                    aria-controls="search-results-listbox">
+                <p x-show="searchError" x-cloak class="text-xs text-red-400 mt-1" x-text="searchError"></p>
                 <div x-show="showResults && results.length > 0" x-cloak
                     @click.outside="showResults = false"
+                    id="search-results-listbox"
+                    role="listbox"
                     class="absolute z-50 mt-1 w-full bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     <template x-for="(item, idx) in results" :key="item.id">
                         <button type="button"
                             @click="selectItem(item)"
                             @mouseenter="highlighted = idx"
                             :class="highlighted === idx ? 'bg-brand-500/20' : ''"
+                            role="option"
+                            :aria-selected="highlighted === idx"
                             class="w-full text-left px-3 py-2 text-sm hover:bg-brand-500/10 transition-colors">
                             <span x-text="item.name" class="text-stage-900 dark:text-cream"></span>
                             <span x-text="item.barcode" class="ml-2 text-xs text-stage-400 dark:text-cream/40"></span>
@@ -122,9 +131,11 @@
             results: [],
             showResults: false,
             highlighted: -1,
+            searchError: '',
             _controller: null,
             async fetchResults() {
                 this.selectedId = '';
+                this.searchError = '';
                 if (this.query.length < 1) {
                     this.results = [];
                     this.showResults = false;
@@ -143,6 +154,7 @@
                     if (e.name === 'AbortError') return;
                     console.error('Asset search failed:', e);
                     this.results = [];
+                    this.searchError = 'Search unavailable. You can still type a name or barcode and submit.';
                 }
                 this.highlighted = -1;
                 this.showResults = this.results.length > 0;

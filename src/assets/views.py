@@ -5409,6 +5409,19 @@ def holdlist_add_item(request, pk):
 
     hold_list = get_object_or_404(HoldList, pk=pk)
     if request.method == "POST":
+        raw_qty = request.POST.get("quantity", "1")
+        try:
+            qty = int(raw_qty)
+            if qty < 1:
+                raise ValueError
+        except (ValueError, TypeError):
+            messages.error(
+                request,
+                f"Invalid quantity '{raw_qty}'. "
+                f"Please enter a positive number.",
+            )
+            return redirect("assets:holdlist_detail", pk=pk)
+
         asset_id = request.POST.get("asset_id")
         search = request.POST.get("search")
         barcode = request.POST.get("barcode")
@@ -5430,18 +5443,6 @@ def holdlist_add_item(request, pk):
         elif asset:
             from assets.services.holdlists import add_item
 
-            raw_qty = request.POST.get("quantity", "1")
-            try:
-                qty = int(raw_qty)
-                if qty < 1:
-                    raise ValueError
-            except (ValueError, TypeError):
-                messages.error(
-                    request,
-                    f"Invalid quantity '{raw_qty}'. "
-                    f"Please enter a positive number.",
-                )
-                return redirect("assets:holdlist_detail", pk=pk)
             notes = request.POST.get("notes", "")
             override_overlap = request.POST.get("override_overlap")
             try:
