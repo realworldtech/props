@@ -7208,18 +7208,18 @@ class TestAssetSearchBarcodeRelevance:
 
 
 # ============================================================
-# _resolve_asset_from_input unit tests (issue #33)
+# resolve_asset_from_input unit tests (issue #33)
 # ============================================================
 
 
 @pytest.mark.django_db
 class TestResolveAssetFromInput:
-    """Unit tests for the _resolve_asset_from_input helper."""
+    """Unit tests for the resolve_asset_from_input service."""
 
     def _resolve(self, **kwargs):
-        from assets.views import _resolve_asset_from_input
+        from assets.services.resolve import resolve_asset_from_input
 
-        return _resolve_asset_from_input(**kwargs)
+        return resolve_asset_from_input(**kwargs)
 
     # --- 1. Explicit PK ---
 

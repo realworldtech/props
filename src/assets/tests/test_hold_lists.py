@@ -2268,7 +2268,29 @@ class TestHoldListDetailRoleGating:
 
 @pytest.mark.django_db
 class TestHoldListAddItemNonActiveRejection:
-    """Adding a non-active asset to a hold list must be rejected."""
+    """Adding a non-active asset to a hold list must be rejected.
+
+    Uses round-trip pattern (Issue #5): GET the detail page to parse
+    form field names, then POST with extracted fields.
+    """
+
+    def _get_add_item_form_fields(self, client, hold_list_pk):
+        """GET holdlist detail and parse the add-item form fields."""
+        from assets.tests.functional.helpers import FormFieldCollector
+
+        detail_url = reverse("assets:holdlist_detail", args=[hold_list_pk])
+        resp = client.get(detail_url)
+        assert resp.status_code == 200
+        parser = FormFieldCollector()
+        parser.feed(resp.content.decode())
+        # The add-item form should have asset_id and quantity fields
+        assert (
+            "asset_id" in parser.fields
+        ), f"Expected 'asset_id' in form fields: {parser.fields}"
+        assert (
+            "quantity" in parser.fields
+        ), f"Expected 'quantity' in form fields: {parser.fields}"
+        return parser.fields
 
     def test_disposed_asset_rejected(
         self, admin_client, admin_user, active_hold_list
@@ -2279,15 +2301,16 @@ class TestHoldListAddItemNonActiveRejection:
             status="disposed",
             created_by=admin_user,
         )
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
         url = reverse(
             "assets:holdlist_add_item",
             args=[active_hold_list.pk],
         )
-        resp = admin_client.post(
-            url,
-            {"asset_id": disposed.pk, "quantity": 1},
-            follow=True,
-        )
+        fields["asset_id"] = disposed.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
         msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
         assert any("disposed" in m.lower() for m in msg_texts), (
             f"Expected error about disposed status. Messages: " f"{msg_texts}"
@@ -2307,15 +2330,16 @@ class TestHoldListAddItemNonActiveRejection:
             status="draft",
             created_by=admin_user,
         )
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
         url = reverse(
             "assets:holdlist_add_item",
             args=[active_hold_list.pk],
         )
-        resp = admin_client.post(
-            url,
-            {"asset_id": draft.pk, "quantity": 1},
-            follow=True,
-        )
+        fields["asset_id"] = draft.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
         msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
         assert any("cannot be added" in m.lower() for m in msg_texts), (
             f"Expected rejection error for draft asset. "
@@ -2333,15 +2357,16 @@ class TestHoldListAddItemNonActiveRejection:
         """Active asset can be added (control test)."""
         asset.status = "active"
         asset.save()
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
         url = reverse(
             "assets:holdlist_add_item",
             args=[active_hold_list.pk],
         )
-        resp = admin_client.post(
-            url,
-            {"asset_id": asset.pk, "quantity": 1},
-            follow=True,
-        )
+        fields["asset_id"] = asset.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
         msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
         assert any(
             "added" in m.lower() for m in msg_texts
@@ -2365,6 +2390,10 @@ class TestHoldListWritePermissionEnforcement:
 
     Each test POSTs directly to the endpoint to confirm the server
     rejects the request with 403, regardless of UI visibility.
+
+    Security boundary tests: hardcoded payloads deliberately probe the
+    view's authorization gate, bypassing the template->view contract.
+    Round-trip pattern not applicable per CLAUDE.md Issue #5 exception.
     """
 
     @pytest.fixture
@@ -2471,3 +2500,106 @@ class TestHoldListWritePermissionEnforcement:
         )
         resp = denied_client.post(url)
         assert resp.status_code == 403
+
+
+# ============================================================
+# HOLD LIST LOCK/UNLOCK OWNERSHIP ENFORCEMENT (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListLockUnlockOwnership:
+    """Members can only lock/unlock their own hold lists.
+
+    Admins and department managers can lock/unlock any hold list.
+    Security boundary tests: hardcoded payloads deliberately probe
+    the view's ownership gate. Round-trip pattern not applicable
+    per CLAUDE.md Issue #5 exception.
+    """
+
+    def test_member_can_lock_own_hold_list(
+        self, member_client, member_user, active_hold_status, department
+    ):
+        """A member can lock a hold list they created."""
+        hl = HoldList.objects.create(
+            name="Member's List",
+            status=active_hold_status,
+            department=department,
+            created_by=member_user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 302
+
+    def test_member_cannot_lock_others_hold_list(
+        self, member_client, user, active_hold_status, department
+    ):
+        """A member cannot lock a hold list created by someone else."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 403
+
+    def test_member_can_unlock_own_hold_list(
+        self, member_client, member_user, active_hold_status, department
+    ):
+        """A member can unlock a hold list they created."""
+        hl = HoldList.objects.create(
+            name="Member's List",
+            status=active_hold_status,
+            department=department,
+            created_by=member_user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 302
+
+    def test_member_cannot_unlock_others_hold_list(
+        self, member_client, user, active_hold_status, department
+    ):
+        """A member cannot unlock a hold list created by someone else."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 403
+
+    def test_admin_can_lock_any_hold_list(
+        self, admin_client, user, active_hold_status, department
+    ):
+        """An admin can lock any hold list."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = admin_client.post(url)
+        assert resp.status_code == 302
+
+    def test_admin_can_unlock_any_hold_list(
+        self, admin_client, user, active_hold_status, department
+    ):
+        """An admin can unlock any hold list."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = admin_client.post(url)
+        assert resp.status_code == 302

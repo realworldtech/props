@@ -288,7 +288,7 @@ class TestBulkCheckinToHome:
         )
         result = bulk_checkin_to_home([asset.pk], user)
         assert result["checked_in"] == 0
-        assert "No Home" in result["skipped"]
+        assert "No Home" in result["no_home"]
 
     def test_skips_assets_not_checked_out(self, user, category, location):
         from assets.services.bulk import bulk_checkin_to_home
