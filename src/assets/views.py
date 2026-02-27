@@ -5104,7 +5104,13 @@ HOLD_LIST_WRITE_ROLES = ("system_admin", "department_manager", "member")
 
 
 def _require_holdlist_write(user):
-    """Raise PermissionDenied if user lacks hold-list write access."""
+    """Raise PermissionDenied if user lacks hold-list write access.
+
+    This is a role-level gate only (viewer/borrower rejection).
+    Ownership checks are handled per-view where needed (e.g.
+    holdlist_edit, holdlist_delete). Members can collaborate on
+    any hold list by design.
+    """
     if get_user_role(user) not in HOLD_LIST_WRITE_ROLES:
         raise PermissionDenied
 
@@ -5329,7 +5335,14 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         except Asset.DoesNotExist:
             pass
         except Asset.MultipleObjectsReturned:
-            return Asset.objects.filter(barcode=barcode).first(), None
+            # Prefer active asset when case-variant barcodes exist
+            hit = (
+                Asset.objects.filter(
+                    barcode__iexact=barcode, status="active"
+                ).first()
+                or Asset.objects.filter(barcode__iexact=barcode).first()
+            )
+            return hit, None
         # Try serial barcode
         try:
             serial = AssetSerial.objects.select_related("asset").get(
@@ -5352,7 +5365,14 @@ def _resolve_asset_from_input(asset_id=None, search=None, barcode=None):
         except Asset.DoesNotExist:
             pass
         except Asset.MultipleObjectsReturned:
-            return Asset.objects.filter(barcode=search).first(), None
+            # Prefer active asset when case-variant barcodes exist
+            hit = (
+                Asset.objects.filter(
+                    barcode__iexact=search, status="active"
+                ).first()
+                or Asset.objects.filter(barcode__iexact=search).first()
+            )
+            return hit, None
 
         # 3b. Serial barcode match
         try:
