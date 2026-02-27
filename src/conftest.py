@@ -486,24 +486,12 @@ def _seed_holdlist_statuses(db):
 
 
 @pytest.fixture
-def hl_active_status(db):
-    """Non-terminal hold list status for VV tests."""
-    from assets.models import HoldListStatus
-
-    status, _ = HoldListStatus.objects.get_or_create(
-        name="Draft",
-        defaults={"is_default": True, "is_terminal": False, "sort_order": 10},
-    )
-    return status
+def hl_active_status(hold_list_status):
+    """Alias for hold_list_status (Draft, is_default=True)."""
+    return hold_list_status
 
 
 @pytest.fixture
-def hl_terminal_status(db):
-    """Terminal hold list status for VV tests."""
-    from assets.models import HoldListStatus
-
-    status, _ = HoldListStatus.objects.get_or_create(
-        name="Fulfilled",
-        defaults={"is_default": False, "is_terminal": True, "sort_order": 40},
-    )
-    return status
+def hl_terminal_status(terminal_hold_status):
+    """Alias for terminal_hold_status (Fulfilled, is_terminal=True)."""
+    return terminal_hold_status

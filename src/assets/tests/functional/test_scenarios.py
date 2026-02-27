@@ -2554,20 +2554,12 @@ class TestScenario_11_18_SearchAndHoldList:
         resp = client_logged_in.get(url, {"view": "grid"})
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #33a: Hold list add_item endpoint does not accept asset"
-            " name as search input (S2.16.4). The holdlist_add_item view"
-            " only accepts an asset PK ('asset_id') — not a name string."
-        ),
-    )
     def test_hold_list_add_accepts_name_search(
         self, dept_manager_client, hold_list, category, location, admin_user
     ):
         """S2.16.4: POST to hold list add with asset name (not PK) must
         find and add the matching asset."""
-        from assets.models import HoldListItem
+        from assets.tests.functional.helpers import FormFieldCollector
 
         target = AssetFactory(
             name="Unique Fairy Wings S33a",
@@ -2576,32 +2568,32 @@ class TestScenario_11_18_SearchAndHoldList:
             current_location=location,
             created_by=admin_user,
         )
+        # Round-trip: GET detail page, parse form fields
+        detail_url = reverse("assets:holdlist_detail", args=[hold_list.pk])
+        detail_resp = dept_manager_client.get(detail_url)
+        assert detail_resp.status_code == 200
+        parser = FormFieldCollector()
+        parser.feed(detail_resp.content.decode())
+        fields = parser.fields
+        fields["search"] = "Unique Fairy Wings S33a"
+        fields["quantity"] = 1
+        # Clear asset_id so the view falls through to search
+        fields["asset_id"] = ""
+
         url = reverse("assets:holdlist_add_item", args=[hold_list.pk])
-        resp = dept_manager_client.post(
-            url,
-            {
-                "search": "Unique Fairy Wings S33a",
-                "quantity": 1,
-            },
-        )
+        resp = dept_manager_client.post(url, fields)
         assert resp.status_code in (200, 302)
         assert hold_list.items.filter(
             asset=target
         ).exists(), "Hold list add must accept asset name as search input"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #33b: Hold list add_item endpoint does not accept"
-            " barcode string as input (S2.16.4). The holdlist_add_item"
-            " view only accepts an asset PK ('asset_id')."
-        ),
-    )
     def test_hold_list_add_accepts_barcode_scan(
         self, dept_manager_client, hold_list, category, location, admin_user
     ):
         """S2.16.4: POST to hold list add with asset barcode string must
         find and add the matching asset."""
+        from assets.tests.functional.helpers import FormFieldCollector
+
         target = AssetFactory(
             name="Barcode Asset S33b",
             status="active",
@@ -2609,14 +2601,20 @@ class TestScenario_11_18_SearchAndHoldList:
             current_location=location,
             created_by=admin_user,
         )
+        # Round-trip: GET detail page, parse form fields
+        detail_url = reverse("assets:holdlist_detail", args=[hold_list.pk])
+        detail_resp = dept_manager_client.get(detail_url)
+        assert detail_resp.status_code == 200
+        parser = FormFieldCollector()
+        parser.feed(detail_resp.content.decode())
+        fields = parser.fields
+        fields["barcode"] = target.barcode
+        fields["quantity"] = 1
+        # Clear asset_id so the view falls through to barcode
+        fields["asset_id"] = ""
+
         url = reverse("assets:holdlist_add_item", args=[hold_list.pk])
-        resp = dept_manager_client.post(
-            url,
-            {
-                "barcode": target.barcode,
-                "quantity": 1,
-            },
-        )
+        resp = dept_manager_client.post(url, fields)
         assert resp.status_code in (200, 302)
         assert hold_list.items.filter(
             asset=target

@@ -5499,6 +5499,133 @@ class TestV210AssetSearchByName:
 
 
 # ============================================================
+# Asset search autocomplete endpoint (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestAssetSearchAutocomplete:
+    """asset_search JSON endpoint returns relevance-ordered results."""
+
+    def test_returns_json_list(self, client_logged_in):
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "anything"})
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "application/json"
+
+    def test_empty_query_returns_empty(self, client_logged_in):
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": ""})
+        assert resp.json() == []
+
+    def test_name_match_ranked_above_tag_match(
+        self, client_logged_in, category, location, user
+    ):
+        """An asset whose name contains the query should rank above
+        one matched only via tag or description."""
+        from assets.models import Tag
+
+        # Asset matched by name
+        name_hit = AssetFactory(
+            name="Wireless Microphone",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Asset matched only by tag
+        tag = Tag.objects.create(name="microphone")
+        tag_hit = AssetFactory(
+            name="Audio Cable XLR",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        tag_hit.tags.add(tag)
+
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "microphone"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert name_hit.pk in ids
+        assert tag_hit.pk in ids
+        assert ids.index(name_hit.pk) < ids.index(tag_hit.pk)
+
+    def test_exact_barcode_ranked_first(
+        self, client_logged_in, category, location, user
+    ):
+        """An exact barcode match should appear before name matches."""
+        target = AssetFactory(
+            name="Stage Light Fresnel",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Another asset whose name contains the full barcode string
+        AssetFactory(
+            name=f"Label {target.barcode}",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": target.barcode})
+        data = resp.json()
+        assert data[0]["id"] == target.pk
+
+    def test_name_startswith_ranked_above_name_contains(
+        self, client_logged_in, category, location, user
+    ):
+        """An asset whose name starts with the query should rank
+        above one where the query appears mid-name."""
+        starts = AssetFactory(
+            name="Goblet Gold Large",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        contains = AssetFactory(
+            name="Ornate Goblet Silver",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Goblet"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert ids.index(starts.pk) < ids.index(contains.pk)
+
+    def test_category_match_ranked_above_description(
+        self, client_logged_in, location, user, department
+    ):
+        """An asset matched via category name should rank above one
+        matched only via description."""
+        from assets.models import Category
+
+        cat = Category.objects.create(name="Furniture", department=department)
+        cat_hit = AssetFactory(
+            name="Oak Table",
+            category=cat,
+            current_location=location,
+            created_by=user,
+        )
+        desc_hit = AssetFactory(
+            name="Storage Crate",
+            description="Used to store furniture items",
+            category=CategoryFactory(department=department),
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "furniture"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert cat_hit.pk in ids
+        assert desc_hit.pk in ids
+        assert ids.index(cat_hit.pk) < ids.index(desc_hit.pk)
+
+
+# ============================================================
 # V212 (S2.6.1-03): Search by category
 # ============================================================
 
@@ -7041,3 +7168,252 @@ class TestV744CategoryDepartmentReassignment:
         assert response.status_code == 200
         content = response.content.decode()
         assert "V744 Asset2" in content
+
+
+# ============================================================
+# Asset search autocomplete: partial barcode ranking (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestAssetSearchBarcodeRelevance:
+    """Partial barcode matches should rank above name/tag/category."""
+
+    def test_partial_barcode_ranked_above_name_contains(
+        self, client_logged_in, category, location, user
+    ):
+        """An asset matched by partial barcode should rank above one
+        matched only by name containing the same substring."""
+        barcode_hit = AssetFactory(
+            name="Stage Light",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Use the unique hex portion so it doesn't match other barcodes
+        substring = barcode_hit.barcode.split("-")[1][:6]
+        name_hit = AssetFactory(
+            name=f"Item {substring} Widget",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": substring})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert barcode_hit.pk in ids
+        assert name_hit.pk in ids
+        assert ids.index(barcode_hit.pk) < ids.index(name_hit.pk)
+
+
+# ============================================================
+# resolve_asset_from_input unit tests (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestResolveAssetFromInput:
+    """Unit tests for the resolve_asset_from_input service."""
+
+    def _resolve(self, **kwargs):
+        from assets.services.resolve import resolve_asset_from_input
+
+        return resolve_asset_from_input(**kwargs)
+
+    # --- 1. Explicit PK ---
+
+    def test_asset_id_resolves_by_pk(self, asset):
+        result, error = self._resolve(asset_id=str(asset.pk))
+        assert result == asset
+        assert error is None
+
+    def test_asset_id_invalid_returns_error(self):
+        result, error = self._resolve(asset_id="99999")
+        assert result is None
+        assert "No asset found with ID" in error
+
+    def test_asset_id_non_numeric_returns_error(self):
+        result, error = self._resolve(asset_id="not-a-number")
+        assert result is None
+        assert "No asset found with ID" in error
+
+    # --- 2. Barcode field ---
+
+    def test_barcode_exact_match(self, asset):
+        result, error = self._resolve(barcode=asset.barcode)
+        assert result == asset
+        assert error is None
+
+    def test_barcode_case_insensitive(self, asset):
+        result, error = self._resolve(barcode=asset.barcode.lower())
+        assert result == asset
+        assert error is None
+
+    def test_barcode_not_found_returns_error(self):
+        result, error = self._resolve(barcode="NONEXISTENT-999")
+        assert result is None
+        assert "No asset found with barcode" in error
+
+    def test_barcode_whitespace_only_returns_error(self):
+        result, error = self._resolve(barcode="   ")
+        assert result is None
+        assert "Please enter a barcode" in error
+
+    def test_barcode_serial_match(self):
+        serial = AssetSerialFactory()
+        result, error = self._resolve(barcode=serial.barcode)
+        assert result == serial.asset
+        assert error is None
+
+    # --- 3. Search field: exact barcode ---
+
+    def test_search_exact_barcode(self, asset):
+        result, error = self._resolve(search=asset.barcode)
+        assert result == asset
+        assert error is None
+
+    # --- 3b. Search field: serial barcode ---
+
+    def test_search_serial_barcode(self):
+        serial = AssetSerialFactory()
+        result, error = self._resolve(search=serial.barcode)
+        assert result == serial.asset
+        assert error is None
+
+    # --- 3c. Search field: NFC tag ---
+
+    def test_search_nfc_tag(self):
+        nfc = NFCTagFactory()
+        result, error = self._resolve(search=nfc.tag_id)
+        assert result == nfc.asset
+        assert error is None
+
+    # --- 3d. Search field: exact name ---
+
+    def test_search_exact_name_single(self, category, location, user):
+        a = AssetFactory(
+            name="Unique Goblet",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        result, error = self._resolve(search="Unique Goblet")
+        assert result == a
+        assert error is None
+
+    def test_search_exact_name_multiple_returns_error(
+        self, category, location, user
+    ):
+        AssetFactory(
+            name="Duplicate Name",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        AssetFactory(
+            name="Duplicate Name",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        result, error = self._resolve(search="Duplicate Name")
+        assert result is None
+        assert "Multiple assets named" in error
+
+    # --- 3e. Broad text match: description ---
+
+    def test_search_description_single_match(self, category, location, user):
+        a = AssetFactory(
+            name="Plain Widget",
+            description="Has a unique-xylophone-marker inside",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        result, error = self._resolve(search="unique-xylophone-marker")
+        assert result == a
+        assert error is None
+
+    # --- 3e. Broad text match: tag ---
+
+    def test_search_tag_single_match(self, category, location, user):
+        a = AssetFactory(
+            name="Plain Widget",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        tag = Tag.objects.create(name="zebra-stripe-unique")
+        a.tags.add(tag)
+        result, error = self._resolve(search="zebra-stripe-unique")
+        assert result == a
+        assert error is None
+
+    # --- 3e. Broad text match: category ---
+
+    def test_search_category_single_match(self, location, user):
+        dept = DepartmentFactory()
+        cat = Category.objects.create(
+            name="Xylophone-Unique-Cat", department=dept
+        )
+        a = AssetFactory(
+            name="Plain Widget",
+            category=cat,
+            current_location=location,
+            created_by=user,
+        )
+        result, error = self._resolve(search="Xylophone-Unique-Cat")
+        assert result == a
+        assert error is None
+
+    # --- 3e. Multiple broad matches ---
+
+    def test_search_broad_multiple_returns_error(
+        self, category, location, user
+    ):
+        AssetFactory(
+            name="Alpha Ambiguous",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        AssetFactory(
+            name="Beta Ambiguous",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        result, error = self._resolve(search="Ambiguous")
+        assert result is None
+        assert "Multiple assets match" in error
+
+    # --- No match at all ---
+
+    def test_search_no_match_returns_error(self):
+        result, error = self._resolve(search="totallynonexistent12345")
+        assert result is None
+        assert "No asset found matching" in error
+
+    # --- Empty / whitespace ---
+
+    def test_search_whitespace_only_returns_error(self):
+        result, error = self._resolve(search="   ")
+        assert result is None
+        assert "Please enter a search term" in error
+
+    # --- No input at all ---
+
+    def test_no_input_returns_error(self):
+        result, error = self._resolve()
+        assert result is None
+        assert "Please provide an asset" in error
+
+    # --- Truncation of long input ---
+
+    def test_long_input_truncated_in_error(self):
+        long_input = "x" * 200
+        result, error = self._resolve(search=long_input)
+        assert result is None
+        assert "..." in error
+        assert len(error) < 300
