@@ -420,7 +420,8 @@ def bulk_checkin_to_home(
     with its own Transaction row, mirroring the individual
     asset_checkin workflow.
 
-    Returns a dict with 'checked_in' count and 'skipped' list.
+    Returns a dict with 'checked_in' count, 'skipped' list (not
+    checked out), and 'no_home' list (no home location set).
     """
     extra = {}
     if timestamp:
@@ -432,13 +433,14 @@ def bulk_checkin_to_home(
         )
     )
     skipped: list[str] = []
+    no_home: list[str] = []
     eligible: list[Asset] = []
     serialised_eligible: list[Asset] = []
     for asset in assets:
         if not asset.is_checked_out:
             skipped.append(asset.name)
         elif not asset.home_location:
-            skipped.append(asset.name)
+            no_home.append(asset.name)
         elif asset.is_serialised:
             serialised_eligible.append(asset)
         else:
@@ -518,4 +520,8 @@ def bulk_checkin_to_home(
             asset.save(update_fields=["checked_out_to", "current_location"])
             checked_in += 1
 
-    return {"checked_in": checked_in, "skipped": skipped}
+    return {
+        "checked_in": checked_in,
+        "skipped": skipped,
+        "no_home": no_home,
+    }

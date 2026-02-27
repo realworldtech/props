@@ -109,17 +109,27 @@
     var searchInput = document.getElementById('borrower-search');
     if (!searchInput) return;
     var select = document.getElementById('borrower');
-    var options = Array.from(select.options);
+    // Deep-clone the server-rendered select to preserve optgroup structure
+    var snapshot = select.cloneNode(true);
 
     searchInput.addEventListener('input', function() {
         var query = searchInput.value.toLowerCase().trim();
-        while (select.options.length > 0) select.remove(0);
-
-        options.forEach(function(opt) {
-            if (!query || opt.value === '' || opt.textContent.toLowerCase().indexOf(query) !== -1) {
-                select.add(opt.cloneNode(true));
-            }
-        });
+        // Restore from snapshot
+        var fresh = snapshot.cloneNode(true);
+        if (query) {
+            Array.from(fresh.querySelectorAll('option')).forEach(function(opt) {
+                if (opt.value !== '' && opt.textContent.toLowerCase().indexOf(query) === -1) {
+                    opt.remove();
+                }
+            });
+            // Remove empty optgroups
+            Array.from(fresh.querySelectorAll('optgroup')).forEach(function(og) {
+                if (og.options.length === 0) og.remove();
+            });
+        }
+        // Replace children while preserving the select element itself
+        while (select.firstChild) select.removeChild(select.firstChild);
+        while (fresh.firstChild) select.appendChild(fresh.firstChild);
     });
 })();
 </script>

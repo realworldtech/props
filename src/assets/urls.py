@@ -215,6 +215,11 @@ urlpatterns = [
         name="location_search",
     ),
     path(
+        "assets/search/",
+        views.asset_search,
+        name="asset_search",
+    ),
+    path(
         "tags/create-inline/",
         views.tag_create_inline,
         name="tag_create_inline",

@@ -15,7 +15,18 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import (
+    Case,
+    Count,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import (
     HttpResponse,
@@ -1590,7 +1601,7 @@ def asset_checkout(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_checkout", pk=pk)
                 # S7.21.4: Reject backdated checkout when already
@@ -1881,7 +1892,7 @@ def asset_checkin(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_checkin", pk=pk)
                 extra_kwargs = {
@@ -2035,7 +2046,7 @@ def asset_transfer(request, pk):
                 if asset.created_at and action_date < asset.created_at:
                     messages.error(
                         request,
-                        "Date cannot be before the asset was " "created.",
+                        "Date cannot be before the asset was created.",
                     )
                     return redirect("assets:asset_transfer", pk=pk)
                 extra_kwargs = {
@@ -3181,7 +3192,7 @@ def location_checkout(request, pk):
         if not eligible_assets:
             messages.info(
                 request,
-                "No eligible assets to check out at this " "location.",
+                "No eligible assets to check out at this location.",
             )
             return redirect("assets:location_detail", pk=pk)
 
@@ -3245,16 +3256,29 @@ def location_checkout(request, pk):
     # Build borrower lists (same pattern as asset_checkout)
     from django.contrib.auth.models import Group
 
-    borrower_group = Group.objects.filter(name="Borrower").first()
-    internal_users = User.objects.filter(is_active=True).order_by(
-        "first_name", "last_name", "username"
+    borrower_roles = [
+        "Borrower",
+        "Member",
+        "Department Manager",
+        "System Admin",
+    ]
+    users = (
+        User.objects.filter(
+            Q(is_active=True, groups__name__in=borrower_roles)
+            | Q(is_superuser=True, is_active=True)
+        )
+        .distinct()
+        .order_by("first_name", "last_name", "username")
     )
-    external_borrowers = User.objects.none()
+
+    borrower_group = Group.objects.filter(name="Borrower").first()
+    borrower_ids = set()
     if borrower_group:
-        internal_users = internal_users.exclude(groups=borrower_group)
-        external_borrowers = User.objects.filter(
-            is_active=True, groups=borrower_group
-        ).order_by("first_name", "last_name", "username")
+        borrower_ids = set(
+            borrower_group.user_set.values_list("pk", flat=True)
+        )
+    internal_users = [u for u in users if u.pk not in borrower_ids]
+    external_borrowers = [u for u in users if u.pk in borrower_ids]
 
     return render(
         request,
@@ -3310,7 +3334,7 @@ def location_checkin(request, pk):
         if not checked_out_assets:
             messages.info(
                 request,
-                "No checked-out assets to return at this " "location.",
+                "No checked-out assets to return at this location.",
             )
             return redirect("assets:location_detail", pk=pk)
 
@@ -3355,6 +3379,13 @@ def location_checkin(request, pk):
                 f"{len(result['skipped'])} asset(s) skipped "
                 f"(not checked out): "
                 f"{', '.join(result['skipped'][:5])}",
+            )
+        if result.get("no_home"):
+            messages.warning(
+                request,
+                f"{len(result['no_home'])} asset(s) skipped "
+                f"(no home location set): "
+                f"{', '.join(result['no_home'][:5])}",
             )
 
         return redirect("assets:location_detail", pk=pk)
@@ -3526,6 +3557,65 @@ def location_search(request):
         qs = qs.filter(name__icontains=q)
     locs = qs[:30]
     results = [{"id": loc.id, "name": str(loc)} for loc in locs]
+    return JsonResponse(results, safe=False)
+
+
+@login_required
+def asset_search(request):
+    """Search assets by name, barcode, description, tag, or category.
+
+    Returns JSON list for autocomplete, ordered by relevance:
+      1. Exact barcode match
+      2. Partial barcode match
+      3. Name starts with query
+      4. Name contains query
+      5. Category name match
+      6. Description / tag match
+
+    This will be replaced by a composite FTS index in future.
+    """
+    q = request.GET.get("q", "").strip()
+    if len(q) < 1:
+        return JsonResponse([], safe=False)
+    qs = (
+        Asset.objects.filter(status="active")
+        .filter(
+            Q(name__icontains=q)
+            | Q(barcode__icontains=q)
+            | Q(description__icontains=q)
+            | Q(tags__name__icontains=q)
+            | Q(category__name__icontains=q)
+        )
+        .distinct()
+        .annotate(
+            relevance=Case(
+                When(barcode__iexact=q, then=Value(1)),
+                When(barcode__icontains=q, then=Value(2)),
+                When(name__istartswith=q, then=Value(3)),
+                When(name__icontains=q, then=Value(4)),
+                When(
+                    category__name__icontains=q,
+                    then=Value(5),
+                ),
+                default=Value(6),
+                output_field=IntegerField(),
+            )
+        )
+        .select_related("category", "current_location")
+        .order_by("relevance", "name")[:20]
+    )
+    results = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "barcode": a.barcode,
+            "category": a.category.name if a.category else "",
+            "location": (
+                str(a.current_location) if a.current_location else ""
+            ),
+        }
+        for a in qs
+    ]
     return JsonResponse(results, safe=False)
 
 
@@ -5032,6 +5122,20 @@ def asset_convert_serialisation(request, pk):
 
 # --- Hold Lists ---
 
+HOLD_LIST_WRITE_ROLES = ("system_admin", "department_manager", "member")
+
+
+def _require_holdlist_write(user):
+    """Raise PermissionDenied if user lacks hold-list write access.
+
+    This enforces a role-level gate only (viewer/borrower rejection).
+    Views may apply additional ownership or object-level checks as
+    needed. Members can collaborate on hold lists by design, subject
+    to whatever per-view checks are in place.
+    """
+    if get_user_role(user) not in HOLD_LIST_WRITE_ROLES:
+        raise PermissionDenied
+
 
 @login_required
 def holdlist_list(request):
@@ -5097,6 +5201,13 @@ def holdlist_detail(request, pk):
             items_by_location[loc_name] = []
         items_by_location[loc_name].append(item)
 
+    role = get_user_role(request.user)
+    can_write = role in HOLD_LIST_WRITE_ROLES
+    # Edit requires ownership for members (mirrors holdlist_edit)
+    can_edit = role in ("system_admin", "department_manager") or (
+        can_write and hold_list.created_by == request.user
+    )
+
     return render(
         request,
         "assets/holdlist_detail.html",
@@ -5107,6 +5218,8 @@ def holdlist_detail(request, pk):
             "effective_start": effective_start,
             "effective_end": effective_end,
             "items_by_location": items_by_location,
+            "can_write_holdlist": can_write,
+            "can_edit_holdlist": can_edit,
         },
     )
 
@@ -5114,6 +5227,7 @@ def holdlist_detail(request, pk):
 @login_required
 def holdlist_create(request):
     """Create a new hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import Department, HoldListStatus, Project
 
     if request.method == "POST":
@@ -5144,7 +5258,7 @@ def holdlist_create(request):
             hold_list = create_hold_list(name, request.user, **kwargs)
             messages.success(request, f"Hold list '{name}' created.")
             return redirect("assets:holdlist_detail", pk=hold_list.pk)
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             messages.error(request, str(e))
 
     projects = Project.objects.filter(is_active=True)
@@ -5184,8 +5298,6 @@ def holdlist_edit(request, pk):
             request,
             "This hold list is locked and cannot be edited.",
         )
-        if request.method == "POST":
-            return redirect("assets:holdlist_detail", pk=pk)
         return redirect("assets:holdlist_detail", pk=pk)
 
     if request.method == "POST":
@@ -5205,7 +5317,7 @@ def holdlist_edit(request, pk):
             hold_list.save()
             messages.success(request, "Hold list updated.")
             return redirect("assets:holdlist_detail", pk=pk)
-        except Exception as e:
+        except (ValueError, ValidationError) as e:
             messages.error(request, str(e))
 
     projects = Project.objects.filter(is_active=True)
@@ -5227,16 +5339,50 @@ def holdlist_edit(request, pk):
 @login_required
 def holdlist_add_item(request, pk):
     """Add an item to a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    if hold_list.is_locked:
+        messages.error(request, "This hold list is locked.")
+        return redirect("assets:holdlist_detail", pk=pk)
     if request.method == "POST":
-        asset_id = request.POST.get("asset_id")
-        if asset_id:
+        raw_qty = request.POST.get("quantity", "1")
+        try:
+            qty = int(raw_qty)
+            if qty < 1:
+                raise ValueError
+        except (ValueError, TypeError):
+            messages.error(
+                request,
+                f"Invalid quantity '{raw_qty[:20]}'. "
+                f"Please enter a positive number.",
+            )
+            return redirect("assets:holdlist_detail", pk=pk)
+
+        asset_id = request.POST.get("asset_id") or request.POST.get("asset")
+        search = request.POST.get("search")
+        barcode = request.POST.get("barcode")
+
+        from assets.services.resolve import resolve_asset_from_input
+
+        asset, error = resolve_asset_from_input(
+            asset_id=asset_id, search=search, barcode=barcode
+        )
+
+        if not error and asset and asset.status != "active":
+            error = (
+                f"'{asset.name}' is "
+                f"{asset.get_status_display()} "
+                f"and cannot be added to a hold list."
+            )
+            asset = None
+
+        if error:
+            messages.error(request, error)
+        elif asset:
             from assets.services.holdlists import add_item
 
-            asset = get_object_or_404(Asset, pk=asset_id)
-            qty = int(request.POST.get("quantity", 1))
             notes = request.POST.get("notes", "")
             override_overlap = request.POST.get("override_overlap")
             try:
@@ -5288,9 +5434,13 @@ def holdlist_add_item(request, pk):
 @login_required
 def holdlist_remove_item(request, pk, item_pk):
     """Remove an item from a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    if hold_list.is_locked:
+        messages.error(request, "This hold list is locked.")
+        return redirect("assets:holdlist_detail", pk=pk)
     if request.method == "POST":
         from assets.services.holdlists import remove_item
 
@@ -5305,6 +5455,7 @@ def holdlist_remove_item(request, pk, item_pk):
 @login_required
 def holdlist_edit_item(request, pk, item_pk):
     """V459: Edit an existing hold list item's quantity and notes."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5349,6 +5500,7 @@ def holdlist_pick_sheet(request, pk):
 @login_required
 def holdlist_update_pull_status(request, pk, item_pk):
     """Update pull status of a hold list item."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList, HoldListItem
 
     hold_list = get_object_or_404(HoldList, pk=pk)
@@ -5489,10 +5641,17 @@ def holdlist_delete(request, pk):
 @login_required
 def holdlist_lock(request, pk):
     """Lock a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
     from assets.services.holdlists import lock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    role = get_user_role(request.user)
+    if hold_list.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
     if request.method == "POST":
         lock_hold_list(hold_list, request.user)
         messages.success(request, "Hold list locked.")
@@ -5502,10 +5661,17 @@ def holdlist_lock(request, pk):
 @login_required
 def holdlist_unlock(request, pk):
     """Unlock a hold list."""
+    _require_holdlist_write(request.user)
     from assets.models import HoldList
     from assets.services.holdlists import unlock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
+    role = get_user_role(request.user)
+    if hold_list.created_by != request.user and role not in (
+        "system_admin",
+        "department_manager",
+    ):
+        raise PermissionDenied
     if request.method == "POST":
         unlock_hold_list(hold_list, request.user)
         messages.success(request, "Hold list unlocked.")
@@ -5515,6 +5681,7 @@ def holdlist_unlock(request, pk):
 @login_required
 def holdlist_fulfil(request, pk):
     """Fulfil/bulk checkout a hold list's items."""
+    _require_holdlist_write(request.user)
     from django.contrib.auth import get_user_model
 
     from assets.models import HoldList
@@ -5540,6 +5707,7 @@ def holdlist_fulfil(request, pk):
             return redirect("assets:holdlist_fulfil", pk=pk)
 
         fulfilled = 0
+        failed = []
         for item in items:
             asset = item.asset
             if asset.available_count > 0:
@@ -5555,12 +5723,18 @@ def holdlist_fulfil(request, pk):
                     item.pulled_at = timezone.now()
                     item.save()
                     fulfilled += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    failed.append(f"{asset.name}: {e}")
         messages.success(
             request,
-            f"Fulfilled {fulfilled} item(s) to {borrower.get_display_name}.",
+            f"Fulfilled {fulfilled} item(s) to "
+            f"{borrower.get_display_name()}.",
         )
+        if failed:
+            messages.warning(
+                request,
+                f"{len(failed)} item(s) failed: " f"{'; '.join(failed[:5])}",
+            )
         return redirect("assets:holdlist_detail", pk=pk)
 
     return render(

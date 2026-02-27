@@ -2172,3 +2172,469 @@ class TestV598AdminHoldListFilter:
         assert any(
             "hold" in str(n).lower() for n in filter_names
         ), f"No hold_list filter found in {filter_names}"
+
+
+@pytest.mark.django_db
+class TestHoldListDetailRoleGating:
+    """Viewers/borrowers must not see write-action controls."""
+
+    def test_viewer_cannot_see_add_item_form(
+        self, viewer_client, active_hold_list
+    ):
+        """Viewers should not see the add-item form."""
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url not in content
+
+    def test_viewer_cannot_see_edit_link(
+        self, viewer_client, active_hold_list
+    ):
+        """Viewers should not see the Edit button."""
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        edit_url = reverse("assets:holdlist_edit", args=[active_hold_list.pk])
+        assert edit_url not in content
+
+    def test_viewer_cannot_see_pull_status_buttons(
+        self, viewer_client, active_hold_list, asset
+    ):
+        """Viewers should not see pull status action buttons."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        pull_url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert pull_url not in content
+
+    def test_viewer_cannot_see_remove_button(
+        self, viewer_client, active_hold_list, asset
+    ):
+        """Viewers should not see the Remove button."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = viewer_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        remove_url = reverse(
+            "assets:holdlist_remove_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert remove_url not in content
+
+    def test_admin_can_see_add_item_form(self, admin_client, active_hold_list):
+        """Admins should see the add-item form."""
+        resp = admin_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url in content
+
+    def test_admin_can_see_pull_status_buttons(
+        self, admin_client, active_hold_list, asset
+    ):
+        """Admins should see pull status action buttons."""
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        resp = admin_client.get(
+            reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        )
+        content = resp.content.decode()
+        pull_url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        assert pull_url in content
+
+
+# ============================================================
+# HOLD LIST ADD-ITEM: AFFORDANCE EXPOSURE (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListAddItemAffordance:
+    """Verify the holdlist detail page exposes the asset_search URL
+    for the autocomplete, per CLAUDE.md affordance exposure testing."""
+
+    def test_detail_page_exposes_asset_search_url(
+        self, admin_client, active_hold_list
+    ):
+        """The holdlist detail page must render the asset_search
+        endpoint URL so the autocomplete JS can call it."""
+        url = reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        search_url = reverse("assets:asset_search")
+        assert search_url.encode() in resp.content
+
+    def test_detail_page_exposes_add_item_form(
+        self, admin_client, active_hold_list
+    ):
+        """The holdlist detail page must render the add-item form
+        action URL."""
+        url = reverse("assets:holdlist_detail", args=[active_hold_list.pk])
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        add_url = reverse(
+            "assets:holdlist_add_item", args=[active_hold_list.pk]
+        )
+        assert add_url.encode() in resp.content
+
+
+# ============================================================
+# HOLD LIST ADD-ITEM: NON-ACTIVE ASSET REJECTION (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListAddItemNonActiveRejection:
+    """Adding a non-active asset to a hold list must be rejected.
+
+    Uses round-trip pattern (Issue #5): GET the detail page to parse
+    form field names, then POST with extracted fields.
+    """
+
+    def _get_add_item_form_fields(self, client, hold_list_pk):
+        """GET holdlist detail and parse the add-item form fields."""
+        from assets.tests.functional.helpers import FormFieldCollector
+
+        detail_url = reverse("assets:holdlist_detail", args=[hold_list_pk])
+        resp = client.get(detail_url)
+        assert resp.status_code == 200
+        parser = FormFieldCollector()
+        parser.feed(resp.content.decode())
+        # The add-item form should have asset_id and quantity fields
+        assert (
+            "asset_id" in parser.fields
+        ), f"Expected 'asset_id' in form fields: {parser.fields}"
+        assert (
+            "quantity" in parser.fields
+        ), f"Expected 'quantity' in form fields: {parser.fields}"
+        return parser.fields
+
+    def test_disposed_asset_rejected(
+        self, admin_client, admin_user, active_hold_list
+    ):
+        """Disposed asset cannot be added to a hold list."""
+        disposed = AssetFactory(
+            name="Disposed Widget",
+            status="disposed",
+            created_by=admin_user,
+        )
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        fields["asset_id"] = disposed.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any("disposed" in m.lower() for m in msg_texts), (
+            f"Expected error about disposed status. Messages: " f"{msg_texts}"
+        )
+        from assets.models import HoldListItem
+
+        assert not HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=disposed
+        ).exists()
+
+    def test_draft_asset_rejected(
+        self, admin_client, admin_user, active_hold_list
+    ):
+        """Draft asset cannot be added to a hold list."""
+        draft = AssetFactory(
+            name="Draft Widget",
+            status="draft",
+            created_by=admin_user,
+        )
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        fields["asset_id"] = draft.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any("cannot be added" in m.lower() for m in msg_texts), (
+            f"Expected rejection error for draft asset. "
+            f"Messages: {msg_texts}"
+        )
+        from assets.models import HoldListItem
+
+        assert not HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=draft
+        ).exists()
+
+    def test_active_asset_accepted(
+        self, admin_client, admin_user, active_hold_list, asset
+    ):
+        """Active asset can be added (control test)."""
+        asset.status = "active"
+        asset.save()
+        fields = self._get_add_item_form_fields(
+            admin_client, active_hold_list.pk
+        )
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        fields["asset_id"] = asset.pk
+        fields["quantity"] = 1
+        resp = admin_client.post(url, fields, follow=True)
+        msg_texts = [str(m) for m in list(resp.context.get("messages", []))]
+        assert any(
+            "added" in m.lower() for m in msg_texts
+        ), f"Expected success message. Messages: {msg_texts}"
+        from assets.models import HoldListItem
+
+        assert HoldListItem.objects.filter(
+            hold_list=active_hold_list, asset=asset
+        ).exists()
+
+
+# ============================================================
+# HOLD LIST WRITE PERMISSION ENFORCEMENT (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListWritePermissionEnforcement:
+    """Verify that viewers and borrowers are blocked at the view level
+    (not just hidden in templates) from all hold-list write endpoints.
+
+    Each test POSTs directly to the endpoint to confirm the server
+    rejects the request with 403, regardless of UI visibility.
+
+    Security boundary tests: hardcoded payloads deliberately probe the
+    view's authorization gate, bypassing the template->view contract.
+    Round-trip pattern not applicable per CLAUDE.md Issue #5 exception.
+    """
+
+    @pytest.fixture
+    def borrower_client(self, client, db, password):
+        from django.contrib.auth.models import Group
+
+        group, _ = Group.objects.get_or_create(name="Borrower")
+        u = UserFactory(
+            username="borrower_hl",
+            email="borrower_hl@example.com",
+            password=password,
+        )
+        u.groups.add(group)
+        client.login(username=u.username, password=password)
+        return client
+
+    @pytest.fixture(params=["viewer", "borrower"])
+    def denied_client(self, request, viewer_client, borrower_client):
+        """Parametrize over both denied roles."""
+        if request.param == "viewer":
+            return viewer_client
+        return borrower_client
+
+    # --- holdlist_create ---
+
+    def test_create_blocked(self, denied_client, department):
+        url = reverse("assets:holdlist_create")
+        resp = denied_client.post(
+            url, {"name": "Blocked", "department": department.pk}
+        )
+        assert resp.status_code == 403
+
+    # --- holdlist_add_item ---
+
+    def test_add_item_blocked(self, denied_client, active_hold_list, asset):
+        url = reverse(
+            "assets:holdlist_add_item",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url, {"asset": asset.pk})
+        assert resp.status_code == 403
+
+    # --- holdlist_remove_item ---
+
+    def test_remove_item_blocked(self, denied_client, active_hold_list, asset):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_remove_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_edit_item ---
+
+    def test_edit_item_blocked(self, denied_client, active_hold_list, asset):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_edit_item",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url, {"quantity": 5})
+        assert resp.status_code == 403
+
+    # --- holdlist_update_pull_status ---
+
+    def test_update_pull_status_blocked(
+        self, denied_client, active_hold_list, asset
+    ):
+        item = HoldListItemFactory(hold_list=active_hold_list, asset=asset)
+        url = reverse(
+            "assets:holdlist_update_pull_status",
+            args=[active_hold_list.pk, item.pk],
+        )
+        resp = denied_client.post(url, {"status": "pulled"})
+        assert resp.status_code == 403
+
+    # --- holdlist_lock ---
+
+    def test_lock_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_lock",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_unlock ---
+
+    def test_unlock_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_unlock",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+    # --- holdlist_fulfil ---
+
+    def test_fulfil_blocked(self, denied_client, active_hold_list):
+        url = reverse(
+            "assets:holdlist_fulfil",
+            args=[active_hold_list.pk],
+        )
+        resp = denied_client.post(url)
+        assert resp.status_code == 403
+
+
+# ============================================================
+# HOLD LIST LOCK/UNLOCK OWNERSHIP ENFORCEMENT (issue #33)
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestHoldListLockUnlockOwnership:
+    """Members can only lock/unlock their own hold lists.
+
+    Admins and department managers can lock/unlock any hold list.
+    Security boundary tests: hardcoded payloads deliberately probe
+    the view's ownership gate. Round-trip pattern not applicable
+    per CLAUDE.md Issue #5 exception.
+    """
+
+    def test_member_can_lock_own_hold_list(
+        self, member_client, member_user, active_hold_status, department
+    ):
+        """A member can lock a hold list they created."""
+        hl = HoldList.objects.create(
+            name="Member's List",
+            status=active_hold_status,
+            department=department,
+            created_by=member_user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 302
+
+    def test_member_cannot_lock_others_hold_list(
+        self, member_client, user, active_hold_status, department
+    ):
+        """A member cannot lock a hold list created by someone else."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 403
+
+    def test_member_can_unlock_own_hold_list(
+        self, member_client, member_user, active_hold_status, department
+    ):
+        """A member can unlock a hold list they created."""
+        hl = HoldList.objects.create(
+            name="Member's List",
+            status=active_hold_status,
+            department=department,
+            created_by=member_user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 302
+
+    def test_member_cannot_unlock_others_hold_list(
+        self, member_client, user, active_hold_status, department
+    ):
+        """A member cannot unlock a hold list created by someone else."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = member_client.post(url)
+        assert resp.status_code == 403
+
+    def test_admin_can_lock_any_hold_list(
+        self, admin_client, user, active_hold_status, department
+    ):
+        """An admin can lock any hold list."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+        )
+        url = reverse("assets:holdlist_lock", args=[hl.pk])
+        resp = admin_client.post(url)
+        assert resp.status_code == 302
+
+    def test_admin_can_unlock_any_hold_list(
+        self, admin_client, user, active_hold_status, department
+    ):
+        """An admin can unlock any hold list."""
+        hl = HoldList.objects.create(
+            name="Other's List",
+            status=active_hold_status,
+            department=department,
+            created_by=user,
+            is_locked=True,
+        )
+        url = reverse("assets:holdlist_unlock", args=[hl.pk])
+        resp = admin_client.post(url)
+        assert resp.status_code == 302
