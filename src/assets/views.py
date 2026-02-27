@@ -3546,10 +3546,11 @@ def asset_search(request):
 
     Returns JSON list for autocomplete, ordered by relevance:
       1. Exact barcode match
-      2. Name starts with query
-      3. Name contains query
-      4. Category name match
-      5. Description / tag match
+      2. Partial barcode match
+      3. Name starts with query
+      4. Name contains query
+      5. Category name match
+      6. Description / tag match
 
     This will be replaced by a composite FTS index in future.
     """
@@ -3569,13 +3570,14 @@ def asset_search(request):
         .annotate(
             relevance=Case(
                 When(barcode__iexact=q, then=Value(1)),
-                When(name__istartswith=q, then=Value(2)),
-                When(name__icontains=q, then=Value(3)),
+                When(barcode__icontains=q, then=Value(2)),
+                When(name__istartswith=q, then=Value(3)),
+                When(name__icontains=q, then=Value(4)),
                 When(
                     category__name__icontains=q,
-                    then=Value(4),
+                    then=Value(5),
                 ),
-                default=Value(5),
+                default=Value(6),
                 output_field=IntegerField(),
             )
         )
