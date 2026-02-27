@@ -64,9 +64,11 @@ bin/
 # Claude Code
 .claude/
 CLAUDE.local.md
+.mcp.json
 
 # Git worktrees
 .worktrees/
 
 # Spec pipeline state
 .issue-pipeline/
+.image-cache/
