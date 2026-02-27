@@ -59,7 +59,12 @@ Business logic is extracted into service modules rather than living in views:
 - `merge.py` — Asset deduplication
 - `export.py` — Excel export
 - `bulk.py` — Bulk operations
+- `holdlists.py` — Hold list management
+- `kits.py` — Kit/component assembly
+- `pdf.py` — PDF generation
 - `permissions.py` — Permission checks
+- `print_dispatch.py` — Print dispatch routing
+- `serial.py` — Serial number management
 - `state.py` — Asset state management
 
 ### Key Patterns
@@ -143,7 +148,7 @@ Always prefer these skills over ad-hoc implementation when the spec is available
 
 ### Spec Location
 
-Spec documents are expected at `docs/spec/` in the working tree. If the spec repo is not present, ask the user before proceeding with any implementation work that could conflict with undocumented requirements.
+Spec documents are expected at `specs/` in the working tree. If the spec repo is not present, ask the user before proceeding with any implementation work that could conflict with undocumented requirements.
 
 ## Code Style
 
