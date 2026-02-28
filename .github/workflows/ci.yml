@@ -95,7 +95,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     needs: build
     steps:
       - uses: actions/checkout@v4

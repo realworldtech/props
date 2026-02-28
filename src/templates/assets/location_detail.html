@@ -29,8 +29,8 @@
             {% endif %}
             <a href="{% url 'assets:stocktake_start' %}?location={{ location.pk }}" class="bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2 rounded-lg text-sm transition-colors">Start Stocktake</a>
             {% if location.is_checkable and can_checkout_location %}
-            <a href="{% url 'assets:location_checkout' location.pk %}" class="bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 px-4 py-2 rounded-lg text-sm transition-colors">Check Out Location</a>
-            <a href="{% url 'assets:location_checkin' location.pk %}" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg text-sm transition-colors">Check In Location</a>
+            <a href="{% url 'assets:location_checkout' location.pk %}" class="bg-brand-500/20 hover:bg-brand-500/30 text-brand-700 dark:text-brand-400 px-4 py-2 rounded-lg text-sm transition-colors">Check Out Location</a>
+            <a href="{% url 'assets:location_checkin' location.pk %}" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-400 px-4 py-2 rounded-lg text-sm transition-colors">Check In Location</a>
             {% endif %}
             {% if v2_printers %}
             <div class="relative" x-data="{ open: false }">
@@ -179,7 +179,7 @@
                             <td class="py-2.5 px-4">
                                 <div class="w-10 h-10 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center text-stage-500 dark:text-cream/30 overflow-hidden">
                                     {% if asset.primary_image %}
-                                    <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover" alt="" loading="lazy">
+                                    <img src="{{ asset.primary_image.thumbnail_url }}" class="w-full h-full object-cover" alt="" loading="lazy">
                                     {% else %}
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                                     {% endif %}
@@ -215,7 +215,7 @@
                     <div class="flex items-start gap-3">
                         <div class="w-12 h-12 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center text-stage-500 dark:text-cream/30 overflow-hidden flex-shrink-0">
                             {% if asset.primary_image %}
-                            <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" class="w-full h-full object-cover" alt="" loading="lazy">
+                            <img src="{{ asset.primary_image.thumbnail_url }}" class="w-full h-full object-cover" alt="" loading="lazy">
                             {% else %}
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                             {% endif %}

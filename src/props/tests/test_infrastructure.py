@@ -152,10 +152,15 @@ class TestInfrastructureConfiguration:
     """V575, V592, V594, V606, V614, V619: Infrastructure settings."""
 
     def test_whitenoise_in_storages(self):
-        """V575: Static files served via WhiteNoise."""
-        from django.conf import settings
+        """V575: Static files served via WhiteNoise.
 
-        assert any("whitenoise" in m.lower() for m in settings.MIDDLEWARE)
+        Note: conftest.py removes WhiteNoise from runtime MIDDLEWARE to
+        avoid race conditions with parallel test workers, so we check
+        the settings module source directly.
+        """
+        import props.settings as ps
+
+        assert any("whitenoise" in m.lower() for m in ps.MIDDLEWARE)
 
     def test_tailwind_css_configured(self, client_logged_in):
         """V592: Tailwind CSS 4.x."""

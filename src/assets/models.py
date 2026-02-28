@@ -746,6 +746,19 @@ class AssetImage(models.Model):
             ),
         ]
 
+    @property
+    def thumbnail_url(self):
+        """Return the best available thumbnail URL.
+
+        Prefers the generated thumbnail; falls back to the full image.
+        Returns an empty string when no image is set.
+        """
+        if self.thumbnail:
+            return self.thumbnail.url
+        if self.image:
+            return self.image.url
+        return ""
+
     def __str__(self):
         return f"Image for {self.asset.name}"
 

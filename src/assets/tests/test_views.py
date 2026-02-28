@@ -5626,6 +5626,169 @@ class TestAssetSearchAutocomplete:
 
 
 # ============================================================
+# Word-based search: multi-word queries match individual words
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestWordBasedSearch:
+    """Word-based search matches each word independently across fields."""
+
+    def test_multi_word_matches_across_name(
+        self, client_logged_in, category, location, user
+    ):
+        """'blue bonnet' matches 'White Bonnet blue trim'."""
+        asset = AssetFactory(
+            name="White Bonnet blue trim",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "blue bonnet"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_single_word_matches(
+        self, client_logged_in, category, location, user
+    ):
+        """'bonnet' matches 'Brown bonnet'."""
+        asset = AssetFactory(
+            name="Brown bonnet",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "bonnet"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_non_matching_word_excludes(
+        self, client_logged_in, category, location, user
+    ):
+        """'blue bonnet xyz' does NOT match 'Blue headpiece'."""
+        asset = AssetFactory(
+            name="Blue headpiece",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "blue bonnet xyz"})
+        assert asset.pk not in [a.pk for a in resp.context["page_obj"]]
+
+    def test_word_match_across_name_and_description(
+        self, client_logged_in, category, location, user
+    ):
+        """Words can match across different fields."""
+        asset = AssetFactory(
+            name="Red Cape",
+            description="with blue lining",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "cape blue"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_autocomplete_word_search(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search JSON endpoint uses word-based search."""
+        asset = AssetFactory(
+            name="White Bonnet blue trim",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "blue bonnet"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert asset.pk in ids
+
+    def test_autocomplete_returns_thumbnail_url(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search JSON response includes thumbnail_url field."""
+        AssetFactory(
+            name="Test Asset Thumb",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Test Asset Thumb"})
+        data = resp.json()
+        assert len(data) >= 1
+        assert "thumbnail_url" in data[0]
+
+    def test_autocomplete_default_limit(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search returns at most 20 results by default."""
+        for i in range(25):
+            AssetFactory(
+                name=f"Widget {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Widget"})
+        data = resp.json()
+        assert len(data) == 20
+
+    def test_autocomplete_custom_limit(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search respects a custom limit parameter."""
+        for i in range(10):
+            AssetFactory(
+                name=f"Gadget {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Gadget", "limit": "5"})
+        data = resp.json()
+        assert len(data) == 5
+
+    def test_autocomplete_limit_clamped_to_50(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search clamps limit to a maximum of 50."""
+        for i in range(55):
+            AssetFactory(
+                name=f"Doohickey {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Doohickey", "limit": "100"})
+        data = resp.json()
+        assert len(data) == 50
+
+    def test_autocomplete_invalid_limit_defaults_to_20(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search falls back to 20 when limit is not an integer."""
+        for i in range(25):
+            AssetFactory(
+                name=f"Thingamajig {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Thingamajig", "limit": "abc"})
+        data = resp.json()
+        assert len(data) == 20
+
+
+# ============================================================
 # V212 (S2.6.1-03): Search by category
 # ============================================================
 
@@ -7508,3 +7671,186 @@ class TestResolveAssetFromInput:
         assert result is None
         assert "..." in error
         assert len(error) < 300
+
+
+# ============================================================
+# PR #61 REGRESSION: Export with word-based search
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestExportWithWordSearch:
+    """Export view uses build_asset_text_query for multi-word search."""
+
+    def test_export_multi_word_search_finds_matching_asset(
+        self, admin_client, category, location, user
+    ):
+        """Multi-word search in export finds asset matching all words."""
+        AssetFactory(
+            name="Blue Bonnet Hat",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Red Hat",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": "blue bonnet"})
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]
+        # Parse the exported workbook to verify correct filtering
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Assets"]
+        # Collect asset names from the first data column (skip header)
+        names = [
+            row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
+        ]
+        assert "Blue Bonnet Hat" in names
+        assert "Red Hat" not in names
+
+    def test_export_multi_word_search_excludes_partial_match(
+        self, admin_client, category, location, user
+    ):
+        """Multi-word search excludes assets matching only one word."""
+        AssetFactory(
+            name="Red Bonnet",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": "blue bonnet"})
+        assert resp.status_code == 200
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Assets"]
+        names = [
+            row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
+        ]
+        assert "Red Bonnet" not in names
+
+
+# ============================================================
+# PR #61 REGRESSION: Query truncation to 200 characters
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestQueryTruncation:
+    """Views truncate query strings to 200 chars without error."""
+
+    def test_asset_list_truncates_long_query(
+        self, admin_client, category, location, user
+    ):
+        """asset_list handles >200 char query gracefully."""
+        AssetFactory(
+            name="UniqueTargetName",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        # Query starts with a matching term, padded beyond 200 chars
+        long_q = "UniqueTargetName " + "x" * 200
+        url = reverse("assets:asset_list")
+        resp = admin_client.get(url, {"q": long_q})
+        assert resp.status_code == 200
+
+    def test_asset_search_truncates_long_query(self, client_logged_in):
+        """asset_search JSON endpoint handles >200 char query."""
+        long_q = "a" * 250
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": long_q})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_export_truncates_long_query(self, admin_client, asset):
+        """export_assets handles >200 char query without error."""
+        long_q = "a" * 250
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": long_q})
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]
+
+
+# ============================================================
+# PR #61 REGRESSION: Dashboard quick search affordance
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestDashboardSearchAffordance:
+    """Dashboard renders the search input and asset_search URL."""
+
+    def test_dashboard_renders_search_input(self, admin_client, asset):
+        """Dashboard page contains a search input element."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'type="text"' in content
+        assert "Quick search" in content
+
+    def test_dashboard_renders_asset_search_url(self, admin_client, asset):
+        """Dashboard page references the asset_search endpoint."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        content = resp.content.decode()
+        search_url = reverse("assets:asset_search")
+        assert search_url in content
+
+    def test_dashboard_renders_asset_list_search_link(
+        self, admin_client, asset
+    ):
+        """Dashboard 'View all results' links to asset_list with q."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        content = resp.content.decode()
+        list_url = reverse("assets:asset_list")
+        assert list_url in content
+
+
+# ============================================================
+# PR #61 REGRESSION: asset_search with empty query
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestAssetSearchEmptyQuery:
+    """asset_search endpoint returns empty list for empty queries."""
+
+    def test_empty_string_returns_empty_json(self, client_logged_in):
+        """Empty query string returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": ""})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_whitespace_only_returns_empty_json(self, client_logged_in):
+        """Whitespace-only query returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "   "})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_missing_q_param_returns_empty_json(self, client_logged_in):
+        """No q parameter at all returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url)
+        assert resp.status_code == 200
+        assert resp.json() == []

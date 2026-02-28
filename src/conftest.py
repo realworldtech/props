@@ -14,6 +14,14 @@ settings.STORAGES["staticfiles"] = {
     "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
 }
 
+# Disable WhiteNoise in tests — with parallel workers it races on
+# scantree() vs collectstatic, causing FileNotFoundError on hashed files.
+settings.MIDDLEWARE = [
+    m
+    for m in settings.MIDDLEWARE
+    if m != "whitenoise.middleware.WhiteNoiseMiddleware"
+]
+
 # Run Celery tasks synchronously in tests
 settings.CELERY_TASK_ALWAYS_EAGER = True
 settings.CELERY_TASK_EAGER_PROPAGATES = True

@@ -69,6 +69,7 @@ from .services.permissions import (
     can_handover_asset,
     get_user_role,
 )
+from .services.search import build_asset_text_query
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
@@ -309,18 +310,16 @@ def asset_list(request):
         queryset = queryset.filter(status=status)
 
     # Text search
-    q = request.GET.get("q", "")
+    q = request.GET.get("q", "").strip()[:200]
     if q:
-        queryset = queryset.filter(
-            Q(name__icontains=q)
-            | Q(description__icontains=q)
-            | Q(barcode__icontains=q)
-            | Q(tags__name__icontains=q)
-            | Q(
-                nfc_tags__tag_id__icontains=q,
-                nfc_tags__removed_at__isnull=True,
-            )
-        ).distinct()
+
+        text_q = build_asset_text_query(q)
+        # Also match NFC tags (full-phrase, not word-split)
+        nfc_q = Q(
+            nfc_tags__tag_id__icontains=q,
+            nfc_tags__removed_at__isnull=True,
+        )
+        queryset = queryset.filter(text_q | nfc_q).distinct()
 
     # Filters
     department = request.GET.get("department")
@@ -3554,18 +3553,27 @@ def asset_search(request):
 
     This will be replaced by a composite FTS index in future.
     """
-    q = request.GET.get("q", "").strip()
+    q = request.GET.get("q", "").strip()[:200]
     if len(q) < 1:
         return JsonResponse([], safe=False)
+
+    try:
+        limit = min(int(request.GET.get("limit", 20)), 50)
+    except (ValueError, TypeError):
+        limit = 20
+
+    text_q = build_asset_text_query(q)
+    # Also match category name (full phrase, not word-split)
+    category_q = Q(category__name__icontains=q)
+
+    primary_image_prefetch = Prefetch(
+        "images",
+        queryset=AssetImage.objects.filter(is_primary=True),
+        to_attr="primary_images",
+    )
     qs = (
         Asset.objects.filter(status="active")
-        .filter(
-            Q(name__icontains=q)
-            | Q(barcode__icontains=q)
-            | Q(description__icontains=q)
-            | Q(tags__name__icontains=q)
-            | Q(category__name__icontains=q)
-        )
+        .filter(text_q | category_q)
         .distinct()
         .annotate(
             relevance=Case(
@@ -3582,20 +3590,25 @@ def asset_search(request):
             )
         )
         .select_related("category", "current_location")
-        .order_by("relevance", "name")[:20]
+        .prefetch_related(primary_image_prefetch)
+        .order_by("relevance", "name")[:limit]
     )
-    results = [
-        {
-            "id": a.id,
-            "name": a.name,
-            "barcode": a.barcode,
-            "category": a.category.name if a.category else "",
-            "location": (
-                str(a.current_location) if a.current_location else ""
-            ),
-        }
-        for a in qs
-    ]
+    results = []
+    for a in qs:
+        primary = a.primary_images[0] if a.primary_images else None
+        thumbnail_url = primary.thumbnail_url if primary else ""
+        results.append(
+            {
+                "id": a.id,
+                "name": a.name,
+                "barcode": a.barcode,
+                "category": a.category.name if a.category else "",
+                "location": (
+                    str(a.current_location) if a.current_location else ""
+                ),
+                "thumbnail_url": thumbnail_url,
+            }
+        )
     return JsonResponse(results, safe=False)
 
 
@@ -4174,14 +4187,10 @@ def export_assets(request):
     if condition:
         queryset = queryset.filter(condition=condition)
 
-    q = request.GET.get("q", "")
+    q = request.GET.get("q", "").strip()[:200]
     if q:
-        queryset = queryset.filter(
-            Q(name__icontains=q)
-            | Q(description__icontains=q)
-            | Q(barcode__icontains=q)
-            | Q(tags__name__icontains=q)
-        ).distinct()
+
+        queryset = queryset.filter(build_asset_text_query(q)).distinct()
 
     buffer = export_assets_xlsx(queryset)
 
@@ -5148,6 +5157,12 @@ def holdlist_detail(request, pk):
     )
     items = hold_list.items.select_related(
         "asset", "asset__current_location", "serial", "pulled_by"
+    ).prefetch_related(
+        Prefetch(
+            "asset__images",
+            queryset=AssetImage.objects.filter(is_primary=True),
+            to_attr="primary_images",
+        )
     )
     from assets.services.holdlists import detect_overlaps, get_effective_dates
 

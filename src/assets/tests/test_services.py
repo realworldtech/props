@@ -242,6 +242,76 @@ class TestMergeService:
         assert asset.transactions.filter(action="audit").exists()
 
 
+class TestBuildAssetTextQuery:
+    """Tests for build_asset_text_query search helper."""
+
+    def test_multi_word_requires_all_words(self, category, location, user):
+        """Multi-word query ANDs all words: both must match."""
+        from assets.services.search import build_asset_text_query
+
+        hit = AssetFactory(
+            name="Blue Bonnet Hat",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        miss = AssetFactory(
+            name="Red Hat",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        q = build_asset_text_query("blue bonnet")
+        results = Asset.objects.filter(q).distinct()
+        assert hit in results
+        assert miss not in results
+
+    def test_max_search_words_truncation(self, category, location, user):
+        """The 21st word in a query is silently ignored."""
+        from assets.services.search import (
+            MAX_SEARCH_WORDS,
+            build_asset_text_query,
+        )
+
+        # Create asset matching 20 words but not the 21st
+        words_20 = [f"w{i}" for i in range(MAX_SEARCH_WORDS)]
+        name = " ".join(words_20[:5])
+        desc = " ".join(words_20[5:])
+        asset = AssetFactory(
+            name=name,
+            description=desc,
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Query with 20 words: should match
+        q_20 = build_asset_text_query(" ".join(words_20))
+        assert (
+            Asset.objects.filter(q_20).distinct().filter(pk=asset.pk).exists()
+        )
+
+        # Query with 21 words where the extra word doesn't match
+        q_21 = build_asset_text_query(" ".join(words_20) + " nonexistentword")
+        # 21st word is ignored, so result should still match
+        assert (
+            Asset.objects.filter(q_21).distinct().filter(pk=asset.pk).exists()
+        )
+
+    def test_empty_query_returns_no_results(self, asset):
+        """Empty string query returns nothing-matching Q."""
+        from assets.services.search import build_asset_text_query
+
+        q = build_asset_text_query("")
+        assert Asset.objects.filter(q).count() == 0
+
+    def test_whitespace_only_returns_no_results(self, asset):
+        """Whitespace-only query returns nothing-matching Q."""
+        from assets.services.search import build_asset_text_query
+
+        q = build_asset_text_query("   ")
+        assert Asset.objects.filter(q).count() == 0
+
+
 class TestExportService:
     def test_export_returns_bytes(self, asset):
         from assets.services.export import export_assets_xlsx
@@ -1160,10 +1230,15 @@ class TestS3StorageConfiguration:
     """
 
     def test_whitenoise_in_middleware(self):
-        """WhiteNoise middleware is present."""
-        from django.conf import settings
+        """WhiteNoise middleware is present in settings module.
 
-        assert any("whitenoise" in m.lower() for m in settings.MIDDLEWARE)
+        Note: conftest.py removes WhiteNoise from runtime MIDDLEWARE to
+        avoid race conditions with parallel test workers, so we check
+        the settings module source directly.
+        """
+        import props.settings as ps
+
+        assert any("whitenoise" in m.lower() for m in ps.MIDDLEWARE)
 
     def test_whitenoise_staticfiles_backend_in_settings_module(self):
         """Staticfiles uses WhiteNoise storage backend in settings.py.
