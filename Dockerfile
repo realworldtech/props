@@ -57,8 +57,8 @@ COPY --from=email-builder /build/src/templates/emails/*.html src/templates/email
 # Overwrite committed CSS with freshly built Tailwind output
 COPY --from=css-builder /build/src/static/css/tailwind.css src/static/css/tailwind.css
 
-# Collect static files
-RUN cd src && python manage.py collectstatic --noinput --clear 2>/dev/null || true
+# Collect static files (uses dev defaults for SECRET_KEY/DATABASE)
+RUN cd src && python manage.py collectstatic --noinput --clear
 
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser && chown -R appuser:appuser /app
