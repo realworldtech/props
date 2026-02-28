@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-and-push:
     name: Build & Push Dev Image
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

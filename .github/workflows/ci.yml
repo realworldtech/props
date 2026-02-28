@@ -11,7 +11,7 @@ concurrency:
 jobs:
   lint:
     name: Lint & Format
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +34,7 @@ jobs:
 
   requirements-check:
     name: Requirements in sync
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
 
   build:
     name: Build Docker Image
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-latest
     needs: [lint, requirements-check]
     steps:
       - uses: actions/checkout@v4
