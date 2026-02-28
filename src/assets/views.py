@@ -2237,6 +2237,13 @@ def category_list(request):
 @login_required
 def location_list(request):
     """List all locations with tree/flat modes, search, and filtering."""
+    SORT_FIELDS = {
+        "name": "name",
+        "-name": "-name",
+        "created_at": "created_at",
+        "-created_at": "-created_at",
+    }
+
     # View mode: tree (default) or flat
     view_mode = request.GET.get(
         "view", request.COOKIES.get("location_view_mode", "tree")
@@ -2246,6 +2253,10 @@ def location_list(request):
 
     q = request.GET.get("q", "")
     department_filter = request.GET.get("department", "")
+    sort = request.GET.get("sort", "name")
+    if sort not in SORT_FIELDS:
+        sort = "name"
+    sort_field = SORT_FIELDS[sort]
 
     # Annotation for asset counts
     base_qs = Location.objects.filter(is_active=True).annotate(
@@ -2276,12 +2287,16 @@ def location_list(request):
         ).distinct()
 
     if view_mode == "tree":
-        locations = base_qs.filter(parent__isnull=True).prefetch_related(
-            Prefetch(
-                "children",
-                queryset=Location.objects.filter(
-                    is_active=True
-                ).prefetch_related("children"),
+        locations = (
+            base_qs.filter(parent__isnull=True)
+            .order_by(sort_field)
+            .prefetch_related(
+                Prefetch(
+                    "children",
+                    queryset=Location.objects.filter(
+                        is_active=True
+                    ).prefetch_related("children"),
+                )
             )
         )
         context = {
@@ -2290,6 +2305,7 @@ def location_list(request):
             "q": q,
             "departments": Department.objects.filter(is_active=True),
             "current_department": department_filter,
+            "current_sort": sort,
         }
         template = "assets/location_list.html"
         if getattr(request, "htmx", False):
@@ -2297,7 +2313,7 @@ def location_list(request):
         response = render(request, template, context)
     else:
         # Flat mode: all locations, paginated
-        locations = base_qs.order_by("name")
+        locations = base_qs.order_by(sort_field)
         paginator = Paginator(locations, 25)
         page_number = request.GET.get("page", 1)
         page_obj = paginator.get_page(page_number)
@@ -2308,6 +2324,7 @@ def location_list(request):
             "q": q,
             "departments": Department.objects.filter(is_active=True),
             "current_department": department_filter,
+            "current_sort": sort,
         }
         template = "assets/location_list.html"
         if getattr(request, "htmx", False):

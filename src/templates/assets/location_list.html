@@ -25,7 +25,7 @@
                     hx-trigger="input changed delay:300ms, search"
                     hx-target="#location-results"
                     hx-push-url="true"
-                    hx-include="[name='q'],[name='department'],[name='view']">
+                    hx-include="[name='q'],[name='department'],[name='view'],[name='sort']">
             </div>
             <button type="submit" class="bg-brand-500 hover:bg-brand-400 text-stage-900 px-6 py-2.5 rounded-lg text-sm font-medium btn-press transition-all">
                 Search
@@ -41,11 +41,11 @@
             </select>
 
             {% if q or current_department %}
-            <a href="{% url 'assets:location_list' %}{% if view_mode == 'flat' %}?view=flat{% endif %}" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Clear filters</a>
+            <a href="{% url 'assets:location_list' %}?view={{ view_mode }}{% if current_sort != 'name' %}&sort={{ current_sort }}{% endif %}" class="text-stage-500 dark:text-cream/40 hover:text-stage-900 dark:hover:text-cream text-sm transition-colors">Clear filters</a>
             {% endif %}
         </div>
 
-        <!-- View controls: tree/flat toggle -->
+        <!-- View controls: tree/flat toggle + sort -->
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <input type="hidden" name="view" id="view-input" value="{{ view_mode }}">
@@ -56,6 +56,12 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 18h18M3 6h18"/></svg>
                 </button>
             </div>
+            <select name="sort" class="form-input rounded-lg px-3 py-2 text-stage-900 dark:text-cream text-sm" onchange="this.form.submit()">
+                <option value="name" {% if current_sort == "name" %}selected{% endif %}>Name A–Z</option>
+                <option value="-name" {% if current_sort == "-name" %}selected{% endif %}>Name Z–A</option>
+                <option value="created_at" {% if current_sort == "created_at" %}selected{% endif %}>Date Added (Oldest)</option>
+                <option value="-created_at" {% if current_sort == "-created_at" %}selected{% endif %}>Date Added (Newest)</option>
+            </select>
         </div>
     </form>
 
