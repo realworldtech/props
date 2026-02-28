@@ -7671,3 +7671,186 @@ class TestResolveAssetFromInput:
         assert result is None
         assert "..." in error
         assert len(error) < 300
+
+
+# ============================================================
+# PR #61 REGRESSION: Export with word-based search
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestExportWithWordSearch:
+    """Export view uses build_asset_text_query for multi-word search."""
+
+    def test_export_multi_word_search_finds_matching_asset(
+        self, admin_client, category, location, user
+    ):
+        """Multi-word search in export finds asset matching all words."""
+        AssetFactory(
+            name="Blue Bonnet Hat",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        AssetFactory(
+            name="Red Hat",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": "blue bonnet"})
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]
+        # Parse the exported workbook to verify correct filtering
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Assets"]
+        # Collect asset names from the first data column (skip header)
+        names = [
+            row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
+        ]
+        assert "Blue Bonnet Hat" in names
+        assert "Red Hat" not in names
+
+    def test_export_multi_word_search_excludes_partial_match(
+        self, admin_client, category, location, user
+    ):
+        """Multi-word search excludes assets matching only one word."""
+        AssetFactory(
+            name="Red Bonnet",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": "blue bonnet"})
+        assert resp.status_code == 200
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Assets"]
+        names = [
+            row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
+        ]
+        assert "Red Bonnet" not in names
+
+
+# ============================================================
+# PR #61 REGRESSION: Query truncation to 200 characters
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestQueryTruncation:
+    """Views truncate query strings to 200 chars without error."""
+
+    def test_asset_list_truncates_long_query(
+        self, admin_client, category, location, user
+    ):
+        """asset_list handles >200 char query gracefully."""
+        AssetFactory(
+            name="UniqueTargetName",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        # Query starts with a matching term, padded beyond 200 chars
+        long_q = "UniqueTargetName " + "x" * 200
+        url = reverse("assets:asset_list")
+        resp = admin_client.get(url, {"q": long_q})
+        assert resp.status_code == 200
+
+    def test_asset_search_truncates_long_query(self, client_logged_in):
+        """asset_search JSON endpoint handles >200 char query."""
+        long_q = "a" * 250
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": long_q})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_export_truncates_long_query(self, admin_client, asset):
+        """export_assets handles >200 char query without error."""
+        long_q = "a" * 250
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": long_q})
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp["Content-Type"]
+
+
+# ============================================================
+# PR #61 REGRESSION: Dashboard quick search affordance
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestDashboardSearchAffordance:
+    """Dashboard renders the search input and asset_search URL."""
+
+    def test_dashboard_renders_search_input(self, admin_client, asset):
+        """Dashboard page contains a search input element."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        assert 'type="text"' in content
+        assert "Quick search" in content
+
+    def test_dashboard_renders_asset_search_url(self, admin_client, asset):
+        """Dashboard page references the asset_search endpoint."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        content = resp.content.decode()
+        search_url = reverse("assets:asset_search")
+        assert search_url in content
+
+    def test_dashboard_renders_asset_list_search_link(
+        self, admin_client, asset
+    ):
+        """Dashboard 'View all results' links to asset_list with q."""
+        url = reverse("assets:dashboard")
+        resp = admin_client.get(url)
+        content = resp.content.decode()
+        list_url = reverse("assets:asset_list")
+        assert list_url in content
+
+
+# ============================================================
+# PR #61 REGRESSION: asset_search with empty query
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestAssetSearchEmptyQuery:
+    """asset_search endpoint returns empty list for empty queries."""
+
+    def test_empty_string_returns_empty_json(self, client_logged_in):
+        """Empty query string returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": ""})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_whitespace_only_returns_empty_json(self, client_logged_in):
+        """Whitespace-only query returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "   "})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_missing_q_param_returns_empty_json(self, client_logged_in):
+        """No q parameter at all returns empty JSON array."""
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url)
+        assert resp.status_code == 200
+        assert resp.json() == []

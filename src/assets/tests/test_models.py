@@ -271,6 +271,50 @@ class TestAssetImage:
         assert i2.is_primary
 
 
+class TestAssetImageThumbnailUrl:
+    """Unit tests for AssetImage.thumbnail_url property."""
+
+    def test_returns_thumbnail_url_when_thumbnail_set(self, asset):
+        """When thumbnail field is populated, thumbnail_url returns it."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        img_file = SimpleUploadedFile(
+            "test.jpg",
+            b"\xff\xd8\xff\xe0" + b"\x00" * 100,
+            content_type="image/jpeg",
+        )
+        thumb_file = SimpleUploadedFile(
+            "thumb.jpg",
+            b"\xff\xd8\xff\xe0" + b"\x00" * 100,
+            content_type="image/jpeg",
+        )
+        image = AssetImage.objects.create(
+            asset=asset, image=img_file, thumbnail=thumb_file
+        )
+        assert image.thumbnail_url == image.thumbnail.url
+        assert "thumb" in image.thumbnail_url
+
+    def test_falls_back_to_image_url_when_no_thumbnail(self, asset):
+        """When thumbnail is absent, thumbnail_url falls back to
+        the full image URL."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        img_file = SimpleUploadedFile(
+            "test.jpg",
+            b"\xff\xd8\xff\xe0" + b"\x00" * 100,
+            content_type="image/jpeg",
+        )
+        image = AssetImage.objects.create(asset=asset, image=img_file)
+        assert not image.thumbnail
+        assert image.thumbnail_url == image.image.url
+
+    def test_returns_empty_string_when_neither_set(self, asset):
+        """When both thumbnail and image are empty,
+        thumbnail_url returns empty string."""
+        image = AssetImage(asset=asset)
+        assert image.thumbnail_url == ""
+
+
 class TestNFCTag:
     def test_str(self, asset, user):
         nfc = NFCTag.objects.create(
