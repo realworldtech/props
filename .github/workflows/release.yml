@@ -11,7 +11,7 @@ permissions:
 jobs:
   version:
     name: Calculate & Tag Version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     outputs:
       version: ${{ steps.calc.outputs.version }}
       tag: ${{ steps.calc.outputs.tag }}
@@ -45,7 +45,7 @@ jobs:
 
   build:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     needs: version
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +78,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +101,7 @@ jobs:
 
   publish:
     name: Publish to GHCR
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     needs: [version, test]
     steps:
       - name: Download image artifact
