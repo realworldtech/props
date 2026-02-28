@@ -54,6 +54,14 @@
                 {{ form.is_active }}
                 <label for="{{ form.is_active.id_for_label }}" class="text-sm font-medium text-stage-600 dark:text-cream/70">Active</label>
             </div>
+
+            <div class="flex items-center gap-3">
+                {{ form.is_checkable }}
+                <div>
+                    <label for="{{ form.is_checkable.id_for_label }}" class="text-sm font-medium text-stage-600 dark:text-cream/70">Checkable</label>
+                    <p class="text-xs text-stage-500 dark:text-cream/40 mt-0.5">Enable check-out/check-in for this location as a unit. Intended for portable containers (boxes, cases, flight cases).</p>
+                </div>
+            </div>
         </div>
 
         <div class="flex gap-3">

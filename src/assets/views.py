@@ -2351,12 +2351,23 @@ def location_detail(request, pk):
     descendant_ids = [loc.pk for loc in location.get_descendants()]
     all_location_ids = [location.pk] + descendant_ids
 
+    # Prefetch primary image to avoid N+1 queries
+    primary_image_prefetch = Prefetch(
+        "images",
+        queryset=AssetImage.objects.filter(is_primary=True),
+        to_attr="primary_images",
+    )
+
     # Base querysets for three tabs
-    present_qs = Asset.objects.filter(
-        current_location_id__in=all_location_ids,
-        status="active",
-        checked_out_to__isnull=True,
-    ).select_related("category", "category__department", "checked_out_to")
+    present_qs = (
+        Asset.objects.filter(
+            current_location_id__in=all_location_ids,
+            status="active",
+            checked_out_to__isnull=True,
+        )
+        .select_related("category", "category__department", "checked_out_to")
+        .prefetch_related(primary_image_prefetch)
+    )
 
     # Subquery: due_date from most recent checkout transaction
     latest_checkout_due = (
@@ -2370,13 +2381,18 @@ def location_detail(request, pk):
             checked_out_to__isnull=False,
         )
         .select_related("category", "category__department", "checked_out_to")
+        .prefetch_related(primary_image_prefetch)
         .annotate(checkout_due_date=Subquery(latest_checkout_due))
     )
 
-    draft_qs = Asset.objects.filter(
-        current_location_id__in=all_location_ids,
-        status="draft",
-    ).select_related("category", "category__department", "checked_out_to")
+    draft_qs = (
+        Asset.objects.filter(
+            current_location_id__in=all_location_ids,
+            status="draft",
+        )
+        .select_related("category", "category__department", "checked_out_to")
+        .prefetch_related(primary_image_prefetch)
+    )
 
     # Tab counts
     present_count = present_qs.count()
