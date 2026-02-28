@@ -32,6 +32,13 @@ release-pr:
 		\
 		Do not add any other sections. Do not wrap in markdown code fences. \
 		Here are the commits:"); \
+	YEAR_MONTH=$$(date -u +%Y.%m); \
+	LATEST_PATCH=$$(git tag -l "v$$YEAR_MONTH.*" --sort=-v:refname | head -1 | sed "s/v$$YEAR_MONTH\.//"); \
+	if [ -z "$$LATEST_PATCH" ]; then \
+		NEXT_VERSION="$$YEAR_MONTH.0"; \
+	else \
+		NEXT_VERSION="$$YEAR_MONTH.$$((LATEST_PATCH + 1))"; \
+	fi; \
 	gh pr create --base main --head develop \
-		--title "Release $$(date -u +%Y.%m)" \
+		--title "Release $$NEXT_VERSION" \
 		--body "$$PR_BODY"

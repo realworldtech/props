@@ -60,13 +60,13 @@
     </div>
     <div class="flex gap-2">
         {% if page_obj.has_previous %}
-        <a href="?view=flat&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}"
+        <a href="?view=flat&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}{% if current_sort %}&sort={{ current_sort }}{% endif %}"
            class="px-3 py-1.5 rounded-lg text-sm bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream transition-colors">
             Previous
         </a>
         {% endif %}
         {% if page_obj.has_next %}
-        <a href="?view=flat&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}"
+        <a href="?view=flat&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if current_department %}&department={{ current_department }}{% endif %}{% if current_sort %}&sort={{ current_sort }}{% endif %}"
            class="px-3 py-1.5 rounded-lg text-sm bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream transition-colors">
             Next
         </a>

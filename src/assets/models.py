@@ -107,6 +107,7 @@ class Location(models.Model):
             "(all assets checked out to a single borrower)."
         ),
     )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["name"]

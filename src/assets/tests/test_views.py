@@ -6807,6 +6807,97 @@ class TestLocationListView:
         location_pks = [loc.pk for loc in response.context["locations"]]
         assert loc.pk in location_pks
 
+    def test_sort_by_name_asc_default(self, client_logged_in):
+        """Default sort is name A-Z."""
+        from assets.factories import LocationFactory
+
+        loc_b = LocationFactory(name="Bravo")
+        loc_a = LocationFactory(name="Alpha")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat")
+        pks = [loc.pk for loc in response.context["locations"]]
+        assert pks.index(loc_a.pk) < pks.index(loc_b.pk)
+        assert response.context["current_sort"] == "name"
+
+    def test_sort_by_name_desc(self, client_logged_in):
+        """sort=-name returns Z-A order."""
+        from assets.factories import LocationFactory
+
+        loc_a = LocationFactory(name="Alpha")
+        loc_z = LocationFactory(name="Zulu")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat&sort=-name")
+        pks = [loc.pk for loc in response.context["locations"]]
+        assert pks.index(loc_z.pk) < pks.index(loc_a.pk)
+        assert response.context["current_sort"] == "-name"
+
+    def test_sort_by_created_at_asc(self, client_logged_in):
+        """sort=created_at returns oldest first."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.factories import LocationFactory
+
+        now = timezone.now()
+        old = LocationFactory(name="Old")
+        new = LocationFactory(name="New")
+        # Manually set created_at since auto_now_add
+        Location.objects.filter(pk=old.pk).update(
+            created_at=now - timedelta(days=10)
+        )
+        Location.objects.filter(pk=new.pk).update(created_at=now)
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat&sort=created_at")
+        pks = [loc.pk for loc in response.context["locations"]]
+        assert pks.index(old.pk) < pks.index(new.pk)
+
+    def test_sort_by_created_at_desc(self, client_logged_in):
+        """sort=-created_at returns newest first."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from assets.factories import LocationFactory
+
+        now = timezone.now()
+        old = LocationFactory(name="Old")
+        new = LocationFactory(name="New")
+        Location.objects.filter(pk=old.pk).update(
+            created_at=now - timedelta(days=10)
+        )
+        Location.objects.filter(pk=new.pk).update(created_at=now)
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat&sort=-created_at")
+        pks = [loc.pk for loc in response.context["locations"]]
+        assert pks.index(new.pk) < pks.index(old.pk)
+
+    def test_invalid_sort_falls_back_to_name(self, client_logged_in):
+        """Invalid sort parameter falls back to name asc."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=flat&sort=invalid")
+        assert response.status_code == 200
+        assert response.context["current_sort"] == "name"
+
+    def test_tree_mode_sort_applies_to_root_locations(self, client_logged_in):
+        """Tree mode sort applies to top-level locations."""
+        from assets.factories import LocationFactory
+
+        loc_b = LocationFactory(name="Bravo")
+        loc_a = LocationFactory(name="Alpha")
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url + "?view=tree&sort=-name")
+        pks = [loc.pk for loc in response.context["locations"]]
+        assert pks.index(loc_b.pk) < pks.index(loc_a.pk)
+
+    def test_sort_dropdown_rendered_in_template(self, client_logged_in):
+        """Sort dropdown is present in the location list page."""
+        url = reverse("assets:location_list")
+        response = client_logged_in.get(url)
+        content = response.content.decode()
+        assert 'name="sort"' in content
+        assert "Name A" in content  # "Name A–Z"
+
 
 # ============================================================
 # NAVIGATION & DASHBOARD TESTS (S2.12.6, S2.11.3-05)
