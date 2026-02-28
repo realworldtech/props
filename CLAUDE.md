@@ -41,6 +41,15 @@ docker compose exec web python manage.py createsuperuser
 docker compose exec web python manage.py setup_groups
 ```
 
+## Branching and Release Workflow
+
+- **`main`** — production branch. Only updated via PR from `develop`.
+- **`develop`** — integration branch. All feature work merges here first.
+- **Feature branches** — branch from `develop`, PR back to `develop`.
+- **Release flow**: `feature-branch → develop (PR) → main (PR)`. Never PR directly to `main` from a feature branch.
+- **Hotfixes**: branch from `main`, PR to `main`, then cherry-pick or merge back to `develop`.
+- When committing directly to `develop` (e.g. small fixes), no PR is needed for the `develop` commit itself — the PR happens when `develop` merges to `main`.
+
 ## Architecture
 
 ### Django Apps
