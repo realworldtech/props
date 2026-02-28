@@ -5626,6 +5626,169 @@ class TestAssetSearchAutocomplete:
 
 
 # ============================================================
+# Word-based search: multi-word queries match individual words
+# ============================================================
+
+
+@pytest.mark.django_db
+class TestWordBasedSearch:
+    """Word-based search matches each word independently across fields."""
+
+    def test_multi_word_matches_across_name(
+        self, client_logged_in, category, location, user
+    ):
+        """'blue bonnet' matches 'White Bonnet blue trim'."""
+        asset = AssetFactory(
+            name="White Bonnet blue trim",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "blue bonnet"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_single_word_matches(
+        self, client_logged_in, category, location, user
+    ):
+        """'bonnet' matches 'Brown bonnet'."""
+        asset = AssetFactory(
+            name="Brown bonnet",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "bonnet"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_non_matching_word_excludes(
+        self, client_logged_in, category, location, user
+    ):
+        """'blue bonnet xyz' does NOT match 'Blue headpiece'."""
+        asset = AssetFactory(
+            name="Blue headpiece",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "blue bonnet xyz"})
+        assert asset.pk not in [a.pk for a in resp.context["page_obj"]]
+
+    def test_word_match_across_name_and_description(
+        self, client_logged_in, category, location, user
+    ):
+        """Words can match across different fields."""
+        asset = AssetFactory(
+            name="Red Cape",
+            description="with blue lining",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        resp = client_logged_in.get(url, {"q": "cape blue"})
+        assert asset.pk in [a.pk for a in resp.context["page_obj"]]
+
+    def test_autocomplete_word_search(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search JSON endpoint uses word-based search."""
+        asset = AssetFactory(
+            name="White Bonnet blue trim",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "blue bonnet"})
+        data = resp.json()
+        ids = [r["id"] for r in data]
+        assert asset.pk in ids
+
+    def test_autocomplete_returns_thumbnail_url(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search JSON response includes thumbnail_url field."""
+        AssetFactory(
+            name="Test Asset Thumb",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Test Asset Thumb"})
+        data = resp.json()
+        assert len(data) >= 1
+        assert "thumbnail_url" in data[0]
+
+    def test_autocomplete_default_limit(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search returns at most 20 results by default."""
+        for i in range(25):
+            AssetFactory(
+                name=f"Widget {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Widget"})
+        data = resp.json()
+        assert len(data) == 20
+
+    def test_autocomplete_custom_limit(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search respects a custom limit parameter."""
+        for i in range(10):
+            AssetFactory(
+                name=f"Gadget {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Gadget", "limit": "5"})
+        data = resp.json()
+        assert len(data) == 5
+
+    def test_autocomplete_limit_clamped_to_50(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search clamps limit to a maximum of 50."""
+        for i in range(55):
+            AssetFactory(
+                name=f"Doohickey {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Doohickey", "limit": "100"})
+        data = resp.json()
+        assert len(data) == 50
+
+    def test_autocomplete_invalid_limit_defaults_to_20(
+        self, client_logged_in, category, location, user
+    ):
+        """asset_search falls back to 20 when limit is not an integer."""
+        for i in range(25):
+            AssetFactory(
+                name=f"Thingamajig {i}",
+                category=category,
+                current_location=location,
+                created_by=user,
+            )
+        url = reverse("assets:asset_search")
+        resp = client_logged_in.get(url, {"q": "Thingamajig", "limit": "abc"})
+        data = resp.json()
+        assert len(data) == 20
+
+
+# ============================================================
 # V212 (S2.6.1-03): Search by category
 # ============================================================
 
