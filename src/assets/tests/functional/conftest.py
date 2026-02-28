@@ -51,7 +51,9 @@ def warehouse(db):
 @pytest.fixture
 def borrower_user(db, password):
     """A user in the 'Borrower' group for checkout target tests."""
-    group, _ = Group.objects.get_or_create(name="Borrower")
+    from conftest import _ensure_group_permissions
+
+    group = _ensure_group_permissions("Borrower")
     u = UserFactory(
         username="borrower",
         email="borrower@example.com",

@@ -3953,7 +3953,9 @@ class TestUS_SA_078_BorrowerAccount:
 
     def test_borrower_created_via_admin(self, admin_client):  # US-SA-078-1
         # Create user then add to Borrower group
-        group, _ = Group.objects.get_or_create(name="Borrower")
+        from conftest import _ensure_group_permissions
+
+        group = _ensure_group_permissions("Borrower")
         from assets.factories import UserFactory
 
         borrower = UserFactory(
@@ -3965,7 +3967,9 @@ class TestUS_SA_078_BorrowerAccount:
         assert borrower.groups.filter(name="Borrower").exists()
 
     def test_borrower_cannot_login(self, client, password):  # US-SA-078-2
-        group, _ = Group.objects.get_or_create(name="Borrower")
+        from conftest import _ensure_group_permissions
+
+        group = _ensure_group_permissions("Borrower")
         from assets.factories import UserFactory
 
         borrower = UserFactory(
@@ -3987,7 +3991,9 @@ class TestUS_SA_078_BorrowerAccount:
     def test_borrower_appears_in_dropdowns(  # US-SA-078-3
         self, admin_client, asset, password
     ):
-        group, _ = Group.objects.get_or_create(name="Borrower")
+        from conftest import _ensure_group_permissions
+
+        group = _ensure_group_permissions("Borrower")
         from assets.factories import UserFactory
 
         borrower = UserFactory(

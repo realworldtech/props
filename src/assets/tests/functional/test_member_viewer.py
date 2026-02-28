@@ -592,11 +592,8 @@ class TestUS_MB_016_ExportAssetsToExcel:
             or "xlsx" in resp.get("Content-Disposition", "")
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=("GAP: viewers cannot export assets" " (US-MB-016, S10C)"),
-    )
     def test_viewer_can_also_export(self, viewer_client):
+        """Viewers have can_export_assets permission per setup_groups."""
         resp = viewer_client.get(reverse("assets:export_assets"))
         assert resp.status_code == 200
 
@@ -1017,11 +1014,8 @@ class TestUS_VW_005_ExportAssetsToExcel:
     MoSCoW: SHOULD
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=("GAP: viewers cannot export assets" " (US-VW-005, S10C)"),
-    )
     def test_viewer_can_export_assets(self, viewer_client):
+        """Viewers have can_export_assets permission per setup_groups."""
         resp = viewer_client.get(reverse("assets:export_assets"))
         assert resp.status_code == 200
 

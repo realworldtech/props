@@ -389,6 +389,7 @@ class Asset(models.Model):
                 "override_hold_checkout",
                 "Can override hold list checkout block",
             ),
+            ("can_be_borrower", "Can be a borrower of assets"),
         ]
 
     def __str__(self):

@@ -267,9 +267,9 @@ class TestApprovalRoleAssignment:
         self, mock_email, admin_client, admin_user, department, db
     ):
         """Role select sends group name; view must match it."""
-        from django.contrib.auth.models import Group
+        from conftest import _ensure_group_permissions
 
-        group, _ = Group.objects.get_or_create(name="Department Manager")
+        _ensure_group_permissions("Department Manager")
         pending = User.objects.create_user(
             username="deptmgr",
             email="deptmgr@example.com",

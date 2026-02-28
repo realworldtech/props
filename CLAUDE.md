@@ -59,7 +59,12 @@ Business logic is extracted into service modules rather than living in views:
 - `merge.py` — Asset deduplication
 - `export.py` — Excel export
 - `bulk.py` — Bulk operations
+- `holdlists.py` — Hold list management
+- `kits.py` — Kit/component assembly
+- `pdf.py` — PDF generation
 - `permissions.py` — Permission checks
+- `print_dispatch.py` — Print dispatch routing
+- `serial.py` — Serial number management
 - `state.py` — Asset state management
 
 ### Key Patterns
@@ -143,7 +148,7 @@ Always prefer these skills over ad-hoc implementation when the spec is available
 
 ### Spec Location
 
-Spec documents are expected at `docs/spec/` in the working tree. If the spec repo is not present, ask the user before proceeding with any implementation work that could conflict with undocumented requirements.
+Spec documents are expected at `specs/` in the working tree. If the spec repo is not present, ask the user before proceeding with any implementation work that could conflict with undocumented requirements.
 
 ## Code Style
 
@@ -203,3 +208,9 @@ assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp
 
 - Dependencies are managed with `pip-tools`: edit `requirements.in`, then compile with `pip-compile requirements.in` to regenerate `requirements.txt`.
 - **Always regenerate `requirements.txt`** after adding or changing entries in `requirements.in`. Never commit a modified `requirements.in` without an updated `requirements.txt` to match.
+
+## Plan Execution Notes
+
+- **Background agents cannot run Bash.** Plans that assume parallel background agents will execute shell commands fail silently. Use a single approved script instead of parallel agent dispatch for any shell-based work.
+- **N-files operations → one script.** For repetitive "run this command on each of N files" tasks, write a script and approve it once. Faster, consistent output, one approval.
+- **Single-session synthesis → collapse steps.** Multi-step synthesis tasks (cross-reference → write → validate → assemble) can be done in one pass when working in a single session. The step breakdown only matters for handoffs between sessions or people.

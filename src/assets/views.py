@@ -1775,53 +1775,17 @@ def asset_checkout(request, pk):
         )
         return redirect("assets:asset_detail", pk=pk)
 
-    from django.contrib.auth.models import Group
+    from assets.services.borrowers import get_borrower_lists
 
-    # Filter to users with Borrower+ roles
-    borrower_roles = [
-        "Borrower",
-        "Member",
-        "Department Manager",
-        "System Admin",
-    ]
-    users = (
-        User.objects.filter(
-            is_active=True,
-            groups__name__in=borrower_roles,
-        )
-        .distinct()
-        .order_by("username")
-    )
-    # Also include superusers
-    from django.db.models import Q
-
-    users = (
-        User.objects.filter(
-            Q(is_active=True, groups__name__in=borrower_roles)
-            | Q(is_superuser=True, is_active=True)
-        )
-        .distinct()
-        .order_by("username")
-    )
-
-    borrower_group = Group.objects.filter(name="Borrower").first()
-    # V130: Split users into internal staff and external borrowers
-    borrower_ids = set()
-    if borrower_group:
-        borrower_ids = set(
-            borrower_group.user_set.values_list("pk", flat=True)
-        )
-    internal_users = [u for u in users if u.pk not in borrower_ids]
-    external_borrowers = [u for u in users if u.pk in borrower_ids]
+    internal_users, external_borrowers, all_users = get_borrower_lists()
 
     locations = Location.objects.filter(is_active=True)
     context = {
         "asset": asset,
-        "users": users,
+        "users": all_users,
         "internal_users": internal_users,
         "external_borrowers": external_borrowers,
         "locations": locations,
-        "borrower_group_id": (borrower_group.pk if borrower_group else None),
     }
 
     # S7.16.4: Warn if this asset is a kit-only component
@@ -3253,32 +3217,9 @@ def location_checkout(request, pk):
         return redirect("assets:location_detail", pk=pk)
 
     # GET — show confirmation form
-    # Build borrower lists (same pattern as asset_checkout)
-    from django.contrib.auth.models import Group
+    from assets.services.borrowers import get_borrower_lists
 
-    borrower_roles = [
-        "Borrower",
-        "Member",
-        "Department Manager",
-        "System Admin",
-    ]
-    users = (
-        User.objects.filter(
-            Q(is_active=True, groups__name__in=borrower_roles)
-            | Q(is_superuser=True, is_active=True)
-        )
-        .distinct()
-        .order_by("first_name", "last_name", "username")
-    )
-
-    borrower_group = Group.objects.filter(name="Borrower").first()
-    borrower_ids = set()
-    if borrower_group:
-        borrower_ids = set(
-            borrower_group.user_set.values_list("pk", flat=True)
-        )
-    internal_users = [u for u in users if u.pk not in borrower_ids]
-    external_borrowers = [u for u in users if u.pk in borrower_ids]
+    internal_users, external_borrowers, _ = get_borrower_lists()
 
     return render(
         request,
@@ -4985,24 +4926,10 @@ def asset_handover(request, pk):
         )
         return redirect("assets:asset_detail", pk=pk)
 
-    from django.contrib.auth.models import Group
-    from django.db.models import Q as HQ
+    from assets.services.borrowers import get_borrower_lists
 
-    borrower_roles = [
-        "Borrower",
-        "Member",
-        "Department Manager",
-        "System Admin",
-    ]
-    borrower_group = Group.objects.filter(name="Borrower").first()
-    users = (
-        User.objects.filter(
-            HQ(is_active=True, groups__name__in=borrower_roles)
-            | HQ(is_superuser=True, is_active=True)
-        )
-        .distinct()
-        .order_by("username")
-    )
+    internal_users, external_borrowers, users = get_borrower_lists()
+
     locations = Location.objects.filter(is_active=True)
     return render(
         request,
@@ -5011,7 +4938,6 @@ def asset_handover(request, pk):
             "asset": asset,
             "users": users,
             "locations": locations,
-            "borrower_group_id": borrower_group.pk if borrower_group else None,
         },
     )
 

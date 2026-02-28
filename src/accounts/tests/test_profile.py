@@ -203,10 +203,10 @@ class TestUserRoleContextProcessor:
         assert ctx["can_manage"] is False
 
     def test_context_processor_member_role(self, db):
-        from django.contrib.auth.models import Group
         from django.test import RequestFactory
 
         from accounts.models import CustomUser
+        from conftest import _ensure_group_permissions
         from props.context_processors import user_role
 
         user = CustomUser.objects.create_user(
@@ -214,7 +214,7 @@ class TestUserRoleContextProcessor:
             email="ctxm@example.com",
             password="pass123!",
         )
-        group, _ = Group.objects.get_or_create(name="Member")
+        group = _ensure_group_permissions("Member")
         user.groups.add(group)
         factory = RequestFactory()
         request = factory.get("/")
