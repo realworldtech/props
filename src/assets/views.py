@@ -1777,12 +1777,12 @@ def asset_checkout(request, pk):
 
     from assets.services.borrowers import get_borrower_lists
 
-    internal_users, external_borrowers = get_borrower_lists()
+    internal_users, external_borrowers, all_users = get_borrower_lists()
 
     locations = Location.objects.filter(is_active=True)
     context = {
         "asset": asset,
-        "users": (internal_users | external_borrowers).distinct(),
+        "users": all_users,
         "internal_users": internal_users,
         "external_borrowers": external_borrowers,
         "locations": locations,
@@ -3219,7 +3219,7 @@ def location_checkout(request, pk):
     # GET — show confirmation form
     from assets.services.borrowers import get_borrower_lists
 
-    internal_users, external_borrowers = get_borrower_lists()
+    internal_users, external_borrowers, _ = get_borrower_lists()
 
     return render(
         request,
@@ -4928,8 +4928,7 @@ def asset_handover(request, pk):
 
     from assets.services.borrowers import get_borrower_lists
 
-    internal_users, external_borrowers = get_borrower_lists()
-    users = (internal_users | external_borrowers).distinct()
+    internal_users, external_borrowers, users = get_borrower_lists()
 
     locations = Location.objects.filter(is_active=True)
     return render(

@@ -365,9 +365,14 @@ def approval_queue_view(request):
     from django.contrib.auth.models import Group
     from django.core.paginator import Paginator
 
-    groups = Group.objects.exclude(
+    # Subquery exclusion: exclude any group that grants can_approve_users,
+    # regardless of its other permissions (avoids JOIN ambiguity).
+    _approving_group_ids = Group.objects.filter(
         permissions__codename="can_approve_users"
-    ).order_by("name")
+    ).values_list("pk", flat=True)
+    groups = Group.objects.exclude(pk__in=_approving_group_ids).order_by(
+        "name"
+    )
     from assets.models import Department
 
     departments = Department.objects.filter(is_active=True).order_by("name")
@@ -481,12 +486,8 @@ def approve_user_view(request, user_pk):
         )
 
     # 3. If the assigned group is dept manager role, add to M2M
-    if (
-        group
-        and group.permissions.filter(codename="can_merge_assets").exists()
-        and not group.permissions.filter(codename="can_approve_users").exists()
-        and dept_ids
-    ):
+    # Reuse _is_dept_manager_role computed earlier to avoid duplicate queries.
+    if _is_dept_manager_role and dept_ids:
         for dept_id in dept_ids:
             try:
                 dept = Department.objects.get(pk=dept_id, is_active=True)

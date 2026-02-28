@@ -46,13 +46,12 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
         return True
 
     if role == "department_manager":
-        # Block write access if the asset's department is inactive
+        # Block write access if the asset's department is inactive.
+        # No need to re-check superuser/can_approve_users — those
+        # users are already classified as system_admin by get_user_role().
         dept = asset.department
         if dept and not dept.is_active:
-            if not user.is_superuser and not user.has_perm(
-                "accounts.can_approve_users"
-            ):
-                return False
+            return False
         return True
 
     if role == "member":

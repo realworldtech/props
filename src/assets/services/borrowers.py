@@ -7,11 +7,12 @@ User = get_user_model()
 
 
 def get_borrower_lists():
-    """Return (internal_users, external_borrowers) querysets.
+    """Return (internal_users, external_borrowers, all_eligible) querysets.
 
     Uses permission-based checks instead of hardcoded group names:
     - Internal: active users who can checkout assets or are superusers
     - External: active users who can only be borrowers (no checkout perm)
+    - All eligible: combined set (avoids re-OR-ing the split querysets)
 
     Checks both group-level and user-level permissions to stay aligned
     with has_perm() semantics used elsewhere.
@@ -46,4 +47,4 @@ def get_borrower_lists():
         pk__in=external_borrowers.values("pk")
     ).order_by("first_name", "last_name", "username")
 
-    return internal_users, external_borrowers
+    return internal_users, external_borrowers, all_eligible
