@@ -29,8 +29,8 @@
             {% endif %}
             <a href="{% url 'assets:stocktake_start' %}?location={{ location.pk }}" class="bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream px-4 py-2 rounded-lg text-sm transition-colors">Start Stocktake</a>
             {% if location.is_checkable and can_checkout_location %}
-            <a href="{% url 'assets:location_checkout' location.pk %}" class="bg-brand-500/20 hover:bg-brand-500/30 text-brand-400 px-4 py-2 rounded-lg text-sm transition-colors">Check Out Location</a>
-            <a href="{% url 'assets:location_checkin' location.pk %}" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 px-4 py-2 rounded-lg text-sm transition-colors">Check In Location</a>
+            <a href="{% url 'assets:location_checkout' location.pk %}" class="bg-brand-500/20 hover:bg-brand-500/30 text-brand-700 dark:text-brand-400 px-4 py-2 rounded-lg text-sm transition-colors">Check Out Location</a>
+            <a href="{% url 'assets:location_checkin' location.pk %}" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-400 px-4 py-2 rounded-lg text-sm transition-colors">Check In Location</a>
             {% endif %}
             {% if v2_printers %}
             <div class="relative" x-data="{ open: false }">
