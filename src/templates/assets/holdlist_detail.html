@@ -2,6 +2,10 @@
 
 {% block title %}{{ hold_list.name }} - {{ SITE_NAME }}{% endblock %}
 
+{% block extra_head %}
+<style>[x-cloak] { display: none !important; }</style>
+{% endblock %}
+
 {% block content %}
 <div class="space-y-6">
     <div class="flex justify-between items-center">
@@ -10,9 +14,11 @@
             <a href="{% url 'assets:holdlist_pick_sheet' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Pick Sheet PDF
             </a>
+            {% if can_edit_holdlist %}
             <a href="{% url 'assets:holdlist_edit' hold_list.pk %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Edit
             </a>
+            {% endif %}
             <a href="{% url 'assets:holdlist_list' %}" class="px-3 py-1.5 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-900 dark:text-cream rounded-lg text-sm font-medium transition-all">
                 Back
             </a>
@@ -60,13 +66,53 @@
     </div>
     {% endif %}
 
-    {% if not hold_list.is_locked %}
-    <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4">
+    {% if not hold_list.is_locked and can_write_holdlist %}
+    <form method="post" action="{% url 'assets:holdlist_add_item' hold_list.pk %}" class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4" x-data="assetAutocomplete()">
         {% csrf_token %}
+        <input type="hidden" name="asset_id" x-model="selectedId">
         <div class="flex flex-wrap gap-3 items-end">
-            <div>
+            <div class="relative">
                 <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Search or scan asset</label>
-                <input type="text" name="asset_id" placeholder="Search by name or barcode..." required class="form-input rounded-lg px-3 py-1.5 w-48">
+                <input type="text" name="search" placeholder="Search by name or barcode..." required
+                    class="form-input rounded-lg px-3 py-1.5 w-64"
+                    x-model="query" @input.debounce.200ms="fetchResults"
+                    @keydown.arrow-down.prevent="highlightNext"
+                    @keydown.arrow-up.prevent="highlightPrev"
+                    @keydown.enter.prevent="highlighted >= 0 ? selectHighlighted() : ($el.form && $el.form.requestSubmit())"
+                    @keydown.escape="showResults = false"
+                    @focus="if (results.length) showResults = true"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    :aria-expanded="showResults && results.length > 0"
+                    aria-controls="search-results-listbox"
+                    :aria-activedescendant="highlighted >= 0 && results[highlighted] ? 'search-option-' + results[highlighted].id : null">
+                <p x-show="searchError" x-cloak class="text-xs text-red-400 mt-1" x-text="searchError"></p>
+                <div x-show="showResults && results.length > 0" x-cloak
+                    @click.outside="showResults = false"
+                    id="search-results-listbox"
+                    role="listbox"
+                    class="absolute z-50 mt-1 w-full bg-white dark:bg-stage-800 border border-stage-200 dark:border-white/10 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    <template x-for="(item, idx) in results" :key="item.id">
+                        <button type="button"
+                            @click="selectItem(item)"
+                            @mouseenter="highlighted = idx"
+                            :class="highlighted === idx ? 'bg-brand-500/20' : ''"
+                            :id="'search-option-' + item.id"
+                            role="option"
+                            :aria-selected="highlighted === idx"
+                            class="w-full text-left px-3 py-2 text-sm hover:bg-brand-500/10 transition-colors">
+                            <span x-text="item.name" class="text-stage-900 dark:text-cream"></span>
+                            <span x-text="item.barcode" class="ml-2 text-xs text-stage-400 dark:text-cream/40"></span>
+                            <template x-if="item.category">
+                                <span class="ml-1 text-xs text-stage-400 dark:text-cream/30" x-text="'[' + item.category + ']'"></span>
+                            </template>
+                            <template x-if="item.location">
+                                <span class="ml-1 text-xs text-stage-400 dark:text-cream/30" x-text="'@ ' + item.location"></span>
+                            </template>
+                        </button>
+                    </template>
+                </div>
             </div>
             <div>
                 <label class="block text-xs text-stage-500 dark:text-cream/50 mb-1">Qty</label>
@@ -81,6 +127,61 @@
             </button>
         </div>
     </form>
+    <script>
+    function assetAutocomplete() {
+        return {
+            query: '',
+            selectedId: '',
+            results: [],
+            showResults: false,
+            highlighted: -1,
+            searchError: '',
+            _controller: null,
+            async fetchResults() {
+                this.selectedId = '';
+                this.searchError = '';
+                if (this.query.length < 1) {
+                    this.results = [];
+                    this.showResults = false;
+                    return;
+                }
+                if (this._controller) this._controller.abort();
+                this._controller = new AbortController();
+                try {
+                    const resp = await fetch(
+                        '{% url "assets:asset_search" %}?q=' + encodeURIComponent(this.query),
+                        { signal: this._controller.signal }
+                    );
+                    if (!resp.ok) throw new Error(resp.statusText || resp.status);
+                    this.results = await resp.json();
+                } catch (e) {
+                    if (e.name === 'AbortError') return;
+                    console.error('Asset search failed:', e);
+                    this.results = [];
+                    this.searchError = 'Search unavailable. You can still type a name or barcode and submit.';
+                }
+                this.highlighted = -1;
+                this.showResults = this.results.length > 0;
+            },
+            selectItem(item) {
+                this.query = item.name;
+                this.selectedId = item.id;
+                this.showResults = false;
+            },
+            highlightNext() {
+                if (this.highlighted < this.results.length - 1) this.highlighted++;
+            },
+            highlightPrev() {
+                if (this.highlighted > 0) this.highlighted--;
+            },
+            selectHighlighted() {
+                if (this.highlighted >= 0 && this.highlighted < this.results.length) {
+                    this.selectItem(this.results[this.highlighted]);
+                }
+            },
+        }
+    }
+    </script>
     {% endif %}
 
     <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 overflow-hidden">
@@ -123,6 +224,7 @@
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-stage-600 dark:text-cream/70">{{ item.notes|default:"-" }}</td>
+                    {% if can_write_holdlist %}
                     <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
                             {% if item.pull_status != 'pulled' %}
@@ -162,6 +264,9 @@
                             {% endif %}
                         </div>
                     </td>
+                    {% else %}
+                    <td class="px-4 py-3"></td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
                 {% empty %}

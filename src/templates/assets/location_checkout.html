@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Check Out Location: {{ location.name }} - {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <div class="flex items-center gap-2 text-sm text-stage-500 dark:text-cream/50 mb-4">
+        <a href="{% url 'assets:location_list' %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">Locations</a>
+        <span>/</span>
+        <a href="{% url 'assets:location_detail' location.pk %}" class="hover:text-stage-900 dark:hover:text-cream transition-colors">{{ location.name }}</a>
+        <span>/</span>
+        <span class="text-stage-900 dark:text-cream">Check Out Location</span>
+    </div>
+    <div>
+        <h1 class="font-display text-2xl font-bold">Check Out Location</h1>
+        <p class="text-stage-500 dark:text-cream/50 mt-1">{{ location.full_path }}</p>
+    </div>
+
+    {% if not eligible_assets %}
+    <div class="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-blue-300 text-sm">
+        <strong>No assets available.</strong> There are no eligible assets at this location to check out.
+    </div>
+    <div class="flex gap-3">
+        <a href="{% url 'assets:location_detail' location.pk %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+            Back to Location
+        </a>
+    </div>
+    {% else %}
+
+    {% if already_out %}
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-300 text-sm">
+        <strong>Warning:</strong> {{ already_out|length }} asset(s) at this location are already checked out and will be skipped.
+    </div>
+    {% endif %}
+
+    <!-- Confirmation: asset summary -->
+    <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-4">
+        <h2 class="text-sm font-medium text-stage-600 dark:text-cream/70 mb-3">Assets to be checked out ({{ eligible_assets|length }})</h2>
+        <div class="max-h-48 overflow-y-auto space-y-1">
+            {% for asset in eligible_assets %}
+            <div class="flex items-center justify-between text-sm py-1.5 px-2 rounded hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
+                <span class="text-stage-900 dark:text-cream">{{ asset.name }}</span>
+                <span class="text-stage-500 dark:text-cream/40 font-mono text-xs">{{ asset.barcode }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-sm rounded-xl border border-stage-200 dark:border-white/5 p-6 space-y-5">
+            <div>
+                <label for="borrower" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Borrower *</label>
+                <input type="text" id="borrower-search" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream mb-2" placeholder="Type to filter users..." autocomplete="off" aria-label="Filter borrower list">
+                <select name="borrower" id="borrower" required class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream">
+                    <option value="">Select a person...</option>
+                    {% if internal_users %}
+                    <optgroup label="Staff">
+                        {% for user in internal_users %}
+                        <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %} ({{ user.username }})</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if external_borrowers %}
+                    <optgroup label="External Borrowers">
+                        {% for user in external_borrowers %}
+                        <option value="{{ user.pk }}">{{ user.get_display_name }}{% if user.organisation %} ({{ user.organisation }}){% endif %} ({{ user.username }})</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Due Date <span class="text-stage-500 dark:text-cream/40">(optional)</span></label>
+                <input type="datetime-local" name="due_date" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream">
+                <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Expected return date for this checkout.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Date of action <span class="text-stage-500 dark:text-cream/40">(optional, defaults to now)</span></label>
+                <input type="datetime-local" name="action_date" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream">
+                <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Set a past date if recording a historical action.</p>
+            </div>
+
+            <div>
+                <label for="notes" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Notes (optional)</label>
+                <textarea name="notes" id="notes" rows="2" class="form-input w-full rounded-lg px-4 py-2.5 text-stage-900 dark:text-cream" placeholder="Reason for checkout, event name, etc."></textarea>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-brand-500 hover:bg-brand-400 text-stage-900 py-3 rounded-lg text-base font-semibold btn-press transition-all">
+                Confirm Checkout ({{ eligible_assets|length }} asset{{ eligible_assets|length|pluralize }})
+            </button>
+            <a href="{% url 'assets:location_detail' location.pk %}" class="px-6 py-3 bg-stage-100 dark:bg-stage-700 hover:bg-stage-200 dark:hover:bg-stage-600 text-stage-600 dark:text-cream/70 rounded-lg text-base font-medium transition-colors text-center">
+                Cancel
+            </a>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var searchInput = document.getElementById('borrower-search');
+    if (!searchInput) return;
+    var select = document.getElementById('borrower');
+    // Deep-clone the server-rendered select to preserve optgroup structure
+    var snapshot = select.cloneNode(true);
+
+    searchInput.addEventListener('input', function() {
+        var query = searchInput.value.toLowerCase().trim();
+        // Restore from snapshot
+        var fresh = snapshot.cloneNode(true);
+        if (query) {
+            Array.from(fresh.querySelectorAll('option')).forEach(function(opt) {
+                if (opt.value !== '' && opt.textContent.toLowerCase().indexOf(query) === -1) {
+                    opt.remove();
+                }
+            });
+            // Remove empty optgroups
+            Array.from(fresh.querySelectorAll('optgroup')).forEach(function(og) {
+                if (og.options.length === 0) og.remove();
+            });
+        }
+        // Replace children while preserving the select element itself
+        while (select.firstChild) select.removeChild(select.firstChild);
+        while (fresh.firstChild) select.appendChild(fresh.firstChild);
+    });
+})();
+</script>
+{% endblock %}

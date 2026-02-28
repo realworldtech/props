@@ -100,6 +100,13 @@ class Location(models.Model):
         related_name="children",
     )
     is_active = models.BooleanField(default=True)
+    is_checkable = models.BooleanField(
+        default=False,
+        help_text=(
+            "If True, this location can be checked out as a unit "
+            "(all assets checked out to a single borrower)."
+        ),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -382,6 +389,7 @@ class Asset(models.Model):
                 "override_hold_checkout",
                 "Can override hold list checkout block",
             ),
+            ("can_be_borrower", "Can be a borrower of assets"),
         ]
 
     def __str__(self):
