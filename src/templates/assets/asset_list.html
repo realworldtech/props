@@ -160,7 +160,7 @@
             }
         } else {
             bulkBar.classList.add('hidden');
-            clearSelectAllMatching();
+            clearSelectAllMatching(true);
         }
 
         // Show/hide select-all-matching banner
@@ -169,7 +169,7 @@
                 selectAllBanner.classList.remove('hidden');
             } else {
                 selectAllBanner.classList.add('hidden');
-                clearSelectAllMatching();
+                clearSelectAllMatching(true);
             }
         }
     }
@@ -241,7 +241,7 @@
         updateBulkBar();
     };
 
-    window.clearSelectAllMatching = function() {
+    window.clearSelectAllMatching = function(skipUpdate) {
         selectAllMatchingInput.value = '0';
         document.getElementById('banner-page-text').classList.remove('hidden');
         document.getElementById('banner-all-text').classList.add('hidden');
@@ -249,7 +249,7 @@
         var clearBtn = document.getElementById('clear-all-matching-btn');
         if (selectBtn) selectBtn.classList.remove('hidden');
         if (clearBtn) clearBtn.classList.add('hidden');
-        updateBulkBar();
+        if (!skipUpdate) updateBulkBar();
     };
 
     // Re-initialize event handlers after HTMX swap
