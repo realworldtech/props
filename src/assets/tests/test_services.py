@@ -1160,10 +1160,15 @@ class TestS3StorageConfiguration:
     """
 
     def test_whitenoise_in_middleware(self):
-        """WhiteNoise middleware is present."""
-        from django.conf import settings
+        """WhiteNoise middleware is present in settings module.
 
-        assert any("whitenoise" in m.lower() for m in settings.MIDDLEWARE)
+        Note: conftest.py removes WhiteNoise from runtime MIDDLEWARE to
+        avoid race conditions with parallel test workers, so we check
+        the settings module source directly.
+        """
+        import props.settings as ps
+
+        assert any("whitenoise" in m.lower() for m in ps.MIDDLEWARE)
 
     def test_whitenoise_staticfiles_backend_in_settings_module(self):
         """Staticfiles uses WhiteNoise storage backend in settings.py.
