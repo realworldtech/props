@@ -30,6 +30,7 @@ def get_borrower_lists():
         User.objects.filter(is_active=True)
         .filter(Q(is_superuser=True) | can_checkout_q | can_be_borrower_q)
         .distinct()
+        .order_by("first_name", "last_name", "username")
     )
 
     # External borrowers: have can_be_borrower but NOT can_checkout_asset
