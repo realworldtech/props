@@ -2287,15 +2287,21 @@ def location_list(request):
         ).distinct()
 
     if view_mode == "tree":
+        sorted_children = Location.objects.filter(is_active=True).order_by(
+            sort_field
+        )
         locations = (
             base_qs.filter(parent__isnull=True)
             .order_by(sort_field)
             .prefetch_related(
                 Prefetch(
                     "children",
-                    queryset=Location.objects.filter(
-                        is_active=True
-                    ).prefetch_related("children"),
+                    queryset=sorted_children.prefetch_related(
+                        Prefetch(
+                            "children",
+                            queryset=sorted_children,
+                        )
+                    ),
                 )
             )
         )
