@@ -265,6 +265,7 @@ services:
         set -a; . /var/lib/garage/credentials.env; set +a;
       fi &&
       cd /app/src &&
+      rm -f /app/src/staticfiles/staticfiles.json &&
       python manage.py migrate --noinput &&
       python manage.py collectstatic --noinput --clear
       "
@@ -304,17 +305,6 @@ services:
         set -a; . /var/lib/garage/credentials.env; set +a;
       fi &&
       cd /app/src &&
-      echo 'Waiting for migrations...' &&
-      until python manage.py migrate --check --no-input 2>/dev/null; do
-        echo 'Migrations not yet applied, waiting...';
-        sleep 2;
-      done &&
-      echo 'Waiting for static files...' &&
-      until [ -f /app/src/staticfiles/staticfiles.json ]; do
-        echo 'Static files not yet collected, waiting...';
-        sleep 2;
-      done &&
-      echo 'Ready, starting Daphne...' &&
       daphne -b 0.0.0.0 -p 8000 props.asgi:application
       "
     healthcheck:
@@ -332,6 +322,8 @@ services:
       redis:
         condition: service_healthy
       garage-init:
+        condition: service_completed_successfully
+      web-init:
         condition: service_completed_successfully
     env_file: .env
     environment:
