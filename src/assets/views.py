@@ -69,7 +69,7 @@ from .services.permissions import (
     can_handover_asset,
     get_user_role,
 )
-from .services.search import build_asset_text_query
+from .services.search import build_asset_search
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
@@ -313,13 +313,7 @@ def asset_list(request):
     q = request.GET.get("q", "").strip()[:200]
     if q:
 
-        text_q = build_asset_text_query(q)
-        # Also match NFC tags (full-phrase, not word-split)
-        nfc_q = Q(
-            nfc_tags__tag_id__icontains=q,
-            nfc_tags__removed_at__isnull=True,
-        )
-        queryset = queryset.filter(text_q | nfc_q).distinct()
+        queryset = build_asset_search(queryset, q, include_nfc=True)
 
     # Filters
     department = request.GET.get("department")
@@ -3562,9 +3556,10 @@ def asset_search(request):
     except (ValueError, TypeError):
         limit = 20
 
-    text_q = build_asset_text_query(q)
-    # Also match category name (full phrase, not word-split)
-    category_q = Q(category__name__icontains=q)
+    base_qs = Asset.objects.filter(status="active")
+    filtered_qs = build_asset_search(
+        base_qs, q, include_nfc=False, include_category=True
+    )
 
     primary_image_prefetch = Prefetch(
         "images",
@@ -3572,10 +3567,7 @@ def asset_search(request):
         to_attr="primary_images",
     )
     qs = (
-        Asset.objects.filter(status="active")
-        .filter(text_q | category_q)
-        .distinct()
-        .annotate(
+        filtered_qs.annotate(
             relevance=Case(
                 When(barcode__iexact=q, then=Value(1)),
                 When(barcode__icontains=q, then=Value(2)),
@@ -4190,7 +4182,7 @@ def export_assets(request):
     q = request.GET.get("q", "").strip()[:200]
     if q:
 
-        queryset = queryset.filter(build_asset_text_query(q)).distinct()
+        queryset = build_asset_search(queryset, q, include_nfc=False)
 
     buffer = export_assets_xlsx(queryset)
 
@@ -4548,16 +4540,7 @@ def print_all_filtered_labels(request):
 
     q = request.GET.get("q", "")
     if q:
-        queryset = queryset.filter(
-            Q(name__icontains=q)
-            | Q(description__icontains=q)
-            | Q(barcode__icontains=q)
-            | Q(tags__name__icontains=q)
-            | Q(
-                nfc_tags__tag_id__icontains=q,
-                nfc_tags__removed_at__isnull=True,
-            )
-        ).distinct()
+        queryset = build_asset_search(queryset, q, include_nfc=True)
 
     department = request.GET.get("department")
     if department:

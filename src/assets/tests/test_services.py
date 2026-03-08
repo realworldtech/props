@@ -242,12 +242,218 @@ class TestMergeService:
         assert asset.transactions.filter(action="audit").exists()
 
 
-class TestBuildAssetTextQuery:
-    """Tests for build_asset_text_query search helper."""
+class TestBuildAssetSearch:
+    """Tests for build_asset_search FTS search service."""
 
-    def test_multi_word_requires_all_words(self, category, location, user):
+    def test_search_by_name(self, category, location, user):
+        """Search matches asset by name (case-insensitive)."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Victorian Chandelier",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        miss = AssetFactory(
+            name="Wooden Table",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(Asset.objects.all(), "chandelier")
+        assert hit in results
+        assert miss not in results
+
+    def test_search_by_name_case_insensitive(self, category, location, user):
+        """FTS search is case-insensitive."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Victorian Chandelier",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(Asset.objects.all(), "CHANDELIER")
+        assert hit in results
+
+    def test_search_by_description(self, category, location, user):
+        """Search matches asset by description text."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Prop Item",
+            description="A beautiful ornate golden frame",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        miss = AssetFactory(
+            name="Other Item",
+            description="A simple wooden box",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(Asset.objects.all(), "ornate golden")
+        assert hit in results
+        assert miss not in results
+
+    def test_search_by_barcode_substring(self, category, location, user):
+        """Barcode search uses substring match (not FTS)."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Some Asset",
+            barcode="PROP-00142",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        miss = AssetFactory(
+            name="Other Asset",
+            barcode="PROP-00999",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(Asset.objects.all(), "PROP-001")
+        assert hit in results
+        assert miss not in results
+
+    def test_search_by_tag_name(self, category, location, user):
+        """Search matches asset by associated tag name."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Tagged Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        tag = TagFactory(name="fragile")
+        hit.tags.add(tag)
+
+        miss = AssetFactory(
+            name="Untagged Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(Asset.objects.all(), "fragile")
+        assert hit in results
+        assert miss not in results
+
+    def test_search_by_nfc_tag_id(self, category, location, user):
+        """Search matches asset by NFC tag ID when include_nfc=True."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="NFC Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        NFCTagFactory(
+            tag_id="04:A3:B2:C1:D4:E5:F6", asset=hit, assigned_by=user
+        )
+
+        miss = AssetFactory(
+            name="Other Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = build_asset_search(
+            Asset.objects.all(), "04:A3:B2", include_nfc=True
+        )
+        assert hit in results
+        assert miss not in results
+
+    def test_search_nfc_excluded_by_default_false(
+        self, category, location, user
+    ):
+        """NFC tag search excluded when include_nfc=False."""
+        from assets.services.search import build_asset_search
+
+        asset = AssetFactory(
+            name="NFC Only Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        NFCTagFactory(
+            tag_id="04:A3:B2:C1:D4:E5:F6", asset=asset, assigned_by=user
+        )
+        results = build_asset_search(
+            Asset.objects.all(), "04:A3:B2", include_nfc=False
+        )
+        assert asset not in results
+
+    def test_search_excludes_removed_nfc_tags(self, category, location, user):
+        """Removed NFC tags are excluded from search results."""
+        from django.utils import timezone
+
+        from assets.services.search import build_asset_search
+
+        asset = AssetFactory(
+            name="Removed NFC Asset",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        NFCTagFactory(
+            tag_id="04:AA:BB:CC:DD:EE:FF",
+            asset=asset,
+            assigned_by=user,
+            removed_at=timezone.now(),
+        )
+        results = build_asset_search(
+            Asset.objects.all(), "04:AA:BB", include_nfc=True
+        )
+        assert asset not in results
+
+    def test_search_by_category_name(self, category, location, user):
+        """Search matches asset by category name when include_category=True."""
+        from assets.services.search import build_asset_search
+
+        hit = AssetFactory(
+            name="Some Prop",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # category fixture has a name — search for it
+        results = build_asset_search(
+            Asset.objects.all(),
+            category.name,
+            include_category=True,
+        )
+        assert hit in results
+
+    def test_search_category_excluded_by_default(
+        self, category, location, user
+    ):
+        """Category search excluded when include_category=False (default)."""
+        from assets.services.search import build_asset_search
+
+        AssetFactory(
+            name="Unique Zephyr",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        # Search by category name only — should not match
+        results = build_asset_search(
+            Asset.objects.all(), category.name, include_category=False
+        )
+        # The asset name doesn't contain the category name, so no match
+        assert results.count() == 0
+
+    def test_multi_word_and_semantics(self, category, location, user):
         """Multi-word query ANDs all words: both must match."""
-        from assets.services.search import build_asset_text_query
+        from assets.services.search import build_asset_search
 
         hit = AssetFactory(
             name="Blue Bonnet Hat",
@@ -261,55 +467,87 @@ class TestBuildAssetTextQuery:
             current_location=location,
             created_by=user,
         )
-        q = build_asset_text_query("blue bonnet")
-        results = Asset.objects.filter(q).distinct()
+        results = build_asset_search(Asset.objects.all(), "blue bonnet")
         assert hit in results
         assert miss not in results
 
-    def test_max_search_words_truncation(self, category, location, user):
-        """The 21st word in a query is silently ignored."""
-        from assets.services.search import (
-            MAX_SEARCH_WORDS,
-            build_asset_text_query,
-        )
+    def test_empty_query_returns_empty(self, asset):
+        """Empty string query returns empty queryset."""
+        from assets.services.search import build_asset_search
 
-        # Create asset matching 20 words but not the 21st
-        words_20 = [f"w{i}" for i in range(MAX_SEARCH_WORDS)]
-        name = " ".join(words_20[:5])
-        desc = " ".join(words_20[5:])
+        results = build_asset_search(Asset.objects.all(), "")
+        assert results.count() == 0
+
+    def test_whitespace_only_returns_empty(self, asset):
+        """Whitespace-only query returns empty queryset."""
+        from assets.services.search import build_asset_search
+
+        results = build_asset_search(Asset.objects.all(), "   ")
+        assert results.count() == 0
+
+    def test_no_duplicates_with_multiple_tags(self, category, location, user):
+        """Asset with multiple matching tags appears only once."""
+        from assets.services.search import build_asset_search
+
         asset = AssetFactory(
-            name=name,
-            description=desc,
+            name="Multi Tag Asset",
             category=category,
             current_location=location,
             created_by=user,
         )
-        # Query with 20 words: should match
-        q_20 = build_asset_text_query(" ".join(words_20))
-        assert (
-            Asset.objects.filter(q_20).distinct().filter(pk=asset.pk).exists()
+        tag1 = TagFactory(name="vintage")
+        tag2 = TagFactory(name="vintage-style")
+        asset.tags.add(tag1, tag2)
+
+        results = build_asset_search(Asset.objects.all(), "vintage")
+        assert list(results.filter(pk=asset.pk)).count(asset) == 1
+
+    def test_max_search_words_truncation(self, category, location, user):
+        """The 21st word in a query is silently ignored."""
+        from assets.services.search import MAX_SEARCH_WORDS, build_asset_search
+
+        words_20 = [f"wordtest{i}" for i in range(MAX_SEARCH_WORDS)]
+        asset = AssetFactory(
+            name=" ".join(words_20[:5]),
+            description=" ".join(words_20[5:]),
+            category=category,
+            current_location=location,
+            created_by=user,
         )
+        # 20 words: should match
+        results = build_asset_search(Asset.objects.all(), " ".join(words_20))
+        assert asset in results
 
-        # Query with 21 words where the extra word doesn't match
-        q_21 = build_asset_text_query(" ".join(words_20) + " nonexistentword")
-        # 21st word is ignored, so result should still match
-        assert (
-            Asset.objects.filter(q_21).distinct().filter(pk=asset.pk).exists()
+        # 21 words where extra doesn't match — still matches (21st ignored)
+        results = build_asset_search(
+            Asset.objects.all(), " ".join(words_20) + " nonexistentxyz"
         )
+        assert asset in results
 
-    def test_empty_query_returns_no_results(self, asset):
-        """Empty string query returns nothing-matching Q."""
-        from assets.services.search import build_asset_text_query
+    def test_barcode_exact_match_ranks_above_name(
+        self, category, location, user
+    ):
+        """Asset with exact barcode match ranks higher than name-only match."""
+        from assets.services.search import build_asset_search
 
-        q = build_asset_text_query("")
-        assert Asset.objects.filter(q).count() == 0
-
-    def test_whitespace_only_returns_no_results(self, asset):
-        """Whitespace-only query returns nothing-matching Q."""
-        from assets.services.search import build_asset_text_query
-
-        q = build_asset_text_query("   ")
-        assert Asset.objects.filter(q).count() == 0
+        barcode_hit = AssetFactory(
+            name="Generic Item",
+            barcode="PROP-00142",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        name_hit = AssetFactory(
+            name="PROP-00142 Label Backup",
+            barcode="PROP-99999",
+            category=category,
+            current_location=location,
+            created_by=user,
+        )
+        results = list(build_asset_search(Asset.objects.all(), "PROP-00142"))
+        assert barcode_hit in results
+        # Barcode exact match should be first
+        assert results.index(barcode_hit) < results.index(name_hit)
 
 
 class TestExportService:
