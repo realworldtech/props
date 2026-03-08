@@ -27,15 +27,24 @@ def _build_fts_search(queryset, words, search_text, icontains_q):
         SearchVector,
     )
 
-    vector = (
-        SearchVector("name", weight="A")
-        + SearchVector("description", weight="B")
-        + SearchVector("tags__name", weight="B")
+    # Only direct fields in the FTS vector — M2M joins (tags) cause
+    # row duplication that breaks DISTINCT + ORDER BY on annotations.
+    # Tags are handled via icontains below instead.
+    vector = SearchVector("name", weight="A") + SearchVector(
+        "description", weight="B"
     )
     search_query = SearchQuery(search_text, search_type="websearch")
 
-    fts_filter = Q(fts_rank__gt=0)
-    combined_filter = fts_filter | icontains_q
+    # Use the @@ match operator (via annotate + filter) rather than
+    # ts_rank > 0, because ts_rank returns ~1e-20 for non-matches.
+    fts_filter = Q(search=search_query)
+
+    # Tags via icontains (short strings, stemming adds little value)
+    tag_q = Q()
+    for word in words:
+        tag_q &= Q(tags__name__icontains=word)
+
+    combined_filter = fts_filter | tag_q | icontains_q
 
     barcode_exact = Case(
         When(barcode__iexact=search_text, then=Value(10.0)),
@@ -45,6 +54,7 @@ def _build_fts_search(queryset, words, search_text, icontains_q):
 
     return (
         queryset.annotate(
+            search=vector,
             fts_rank=SearchRank(vector, search_query),
             barcode_boost=barcode_exact,
         )
