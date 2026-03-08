@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+import sentry_sdk
+
 from django.urls import reverse_lazy
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,6 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     "django_htmx",
     "django_celery_beat",
     "django_gravatar",
@@ -537,6 +540,25 @@ UNFOLD = {
         ],
     },
 }
+
+# Sentry error tracking (enabled when SENTRY_DSN is set)
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+SENTRY_DSN_JS = os.environ.get("SENTRY_DSN_JS", "")
+SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
+SENTRY_TRACES_SAMPLE_RATE = float(
+    os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")
+)
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=SENTRY_ENVIRONMENT,
+        release=APP_VERSION,
+        traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+        send_default_pii=True,
+        # Profile 100% of sampled transactions
+        profiles_sample_rate=1.0,
+    )
 
 # Logging — ensure tracebacks appear in container logs even with DEBUG=False
 LOGGING = {

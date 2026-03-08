@@ -38,6 +38,21 @@
       }
     </style>
     {% endif %}
+    {% if SENTRY_DSN_JS %}
+    <script
+      src="https://browser.sentry-cdn.com/9.5.0/bundle.tracing.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      Sentry.init({
+        dsn: "{{ SENTRY_DSN_JS }}",
+        environment: "{{ SENTRY_ENVIRONMENT|default:'development' }}",
+        release: "{{ app_version }}",
+        integrations: [Sentry.browserTracingIntegration()],
+        tracesSampleRate: 0.1,
+      });
+    </script>
+    {% endif %}
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
     {% block extra_head %}{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  {% if SENTRY_DSN_JS %}
+  <script
+    src="https://browser.sentry-cdn.com/9.5.0/bundle.tracing.min.js"
+    crossorigin="anonymous"
+  ></script>
+  <script>
+    Sentry.init({
+      dsn: "{{ SENTRY_DSN_JS }}",
+      environment: "{{ SENTRY_ENVIRONMENT|default:'development' }}",
+      release: "{{ app_version }}",
+      integrations: [Sentry.browserTracingIntegration()],
+      tracesSampleRate: 0.1,
+    });
+  </script>
+  {% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

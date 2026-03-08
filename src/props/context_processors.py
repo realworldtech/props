@@ -62,6 +62,8 @@ def site_settings(request):
         "logo_url": logo_url,
         "color_mode": color_mode,
         "app_version": settings.APP_VERSION,
+        "SENTRY_DSN_JS": getattr(settings, "SENTRY_DSN_JS", ""),
+        "SENTRY_ENVIRONMENT": getattr(settings, "SENTRY_ENVIRONMENT", ""),
     }
 
 
