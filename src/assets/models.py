@@ -7,6 +7,8 @@ import barcode
 from barcode.writer import ImageWriter
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
@@ -357,6 +359,8 @@ class Asset(models.Model):
         related_name="created_assets",
     )
 
+    search_vector = SearchVectorField(null=True, editable=False)
+
     objects = AssetManager()
 
     class Meta:
@@ -374,6 +378,10 @@ class Asset(models.Model):
             models.Index(
                 fields=["is_serialised"],
                 name="idx_asset_is_serialised",
+            ),
+            GinIndex(
+                fields=["search_vector"],
+                name="idx_asset_search_vector",
             ),
         ]
         permissions = [

@@ -20,26 +20,20 @@ def _is_postgres():
 
 
 def _build_fts_search(queryset, words, search_text, icontains_q):
-    """FTS search path for PostgreSQL."""
-    from django.contrib.postgres.search import (
-        SearchQuery,
-        SearchRank,
-        SearchVector,
-    )
+    """FTS search path for PostgreSQL.
 
-    # Only direct fields in the FTS vector — M2M joins (tags) cause
-    # row duplication that breaks DISTINCT + ORDER BY on annotations.
-    # Tags are handled via icontains below instead.
-    vector = SearchVector("name", weight="A") + SearchVector(
-        "description", weight="B"
-    )
+    Uses the pre-computed search_vector field (updated by a DB trigger)
+    with a GIN index for fast full-text search.
+    """
+    from django.contrib.postgres.search import SearchQuery, SearchRank
+
     search_query = SearchQuery(search_text, search_type="websearch")
 
-    # Use the @@ match operator (via annotate + filter) rather than
-    # ts_rank > 0, because ts_rank returns ~1e-20 for non-matches.
-    fts_filter = Q(search=search_query)
+    # Filter on the stored search_vector field (GIN-indexed)
+    fts_filter = Q(search_vector=search_query)
 
-    # Tags via icontains (short strings, stemming adds little value)
+    # Tags via icontains (short strings, stemming adds little value;
+    # M2M joins in SearchVector cause row duplication issues)
     tag_q = Q()
     for word in words:
         tag_q &= Q(tags__name__icontains=word)
@@ -54,8 +48,7 @@ def _build_fts_search(queryset, words, search_text, icontains_q):
 
     return (
         queryset.annotate(
-            search=vector,
-            fts_rank=SearchRank(vector, search_query),
+            fts_rank=SearchRank("search_vector", search_query),
             barcode_boost=barcode_exact,
         )
         .filter(combined_filter)
