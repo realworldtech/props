@@ -286,7 +286,7 @@ services:
       AWS_S3_ENDPOINT_URL: http://garage:3900
     restart: "no"
 
-  # Prod profile - behind Traefik (single-process Daphne for ASGI/WS)
+  # Prod HTTP — Gunicorn (sync views, static files via WhiteNoise)
   web-prod:
     image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
     restart: unless-stopped
@@ -305,7 +305,7 @@ services:
         set -a; . /var/lib/garage/credentials.env; set +a;
       fi &&
       cd /app/src &&
-      daphne -b 0.0.0.0 -p 8000 props.asgi:application
+      gunicorn --bind 0.0.0.0:8000 --workers 2 --threads 2 props.wsgi:application
       "
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health/\")'"]
@@ -336,6 +336,54 @@ services:
       - "traefik.http.routers.props.entrypoints=websecure"
       - "traefik.http.routers.props.tls.certresolver=letsencrypt"
       - "traefik.http.services.props.loadbalancer.server.port=8000"
+    networks:
+      - default
+      - traefik_public
+
+  # Prod WebSocket — Daphne (ASGI, handles /ws/ paths only)
+  ws-prod:
+    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    restart: unless-stopped
+    profiles: ["prod"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      sh -c "
+      if [ -f /var/lib/garage/credentials.env ]; then
+        set -a; . /var/lib/garage/credentials.env; set +a;
+      fi &&
+      cd /app/src &&
+      daphne -b 0.0.0.0 -p 8000 props.asgi:application
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health/\")'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - garage_data:/var/lib/garage:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+      web-init:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
+      USE_S3: "True"
+      AWS_S3_ENDPOINT_URL: http://garage:3900
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.props-ws.rule=Host(`${DOMAIN}`) && PathPrefix(`/ws/`)"
+      - "traefik.http.routers.props-ws.entrypoints=websecure"
+      - "traefik.http.routers.props-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.props-ws.priority=200"
+      - "traefik.http.services.props-ws.loadbalancer.server.port=8000"
     networks:
       - default
       - traefik_public
