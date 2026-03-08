@@ -319,7 +319,9 @@ def asset_list(request):
     q = request.GET.get("q", "").strip()[:200]
     if q:
 
-        queryset = build_asset_search(queryset, q, include_nfc=True)
+        queryset = build_asset_search(
+            queryset, q, include_nfc=True, include_category=True
+        )
 
     # Filters
     department = request.GET.get("department")
@@ -4188,7 +4190,9 @@ def export_assets(request):
     q = request.GET.get("q", "").strip()[:200]
     if q:
 
-        queryset = build_asset_search(queryset, q, include_nfc=False)
+        queryset = build_asset_search(
+            queryset, q, include_nfc=False, include_category=True
+        )
 
     buffer = export_assets_xlsx(queryset)
 
@@ -4544,9 +4548,11 @@ def print_all_filtered_labels(request):
     if status:
         queryset = queryset.filter(status=status)
 
-    q = request.GET.get("q", "")
+    q = request.GET.get("q", "").strip()[:200]
     if q:
-        queryset = build_asset_search(queryset, q, include_nfc=True)
+        queryset = build_asset_search(
+            queryset, q, include_nfc=True, include_category=True
+        )
 
     department = request.GET.get("department")
     if department:
