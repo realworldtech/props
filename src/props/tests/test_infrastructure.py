@@ -397,7 +397,7 @@ class TestSendBrandedEmail:
 
         assert len(sent_messages) == 1
         msg = sent_messages[0]
-        assert "PROPS" in msg.body
+        assert settings.SITE_NAME in msg.body
 
     @patch("django.core.mail.EmailMultiAlternatives.send")
     def test_handles_list_recipient(self, mock_send, db):

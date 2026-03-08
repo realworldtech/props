@@ -43,6 +43,11 @@ docs/
 
 # Implementation tracking
 .impl-tracker*
+.impl-preferences*
+.impl-verification/
+
+# Binaries (Tailwind standalone CLI for local dev)
+bin/
 
 # Old codebase
 _old/
@@ -52,13 +57,23 @@ _old/
 
 # Claude Code
 .claude/
+CLAUDE.local.md
+
+# Issue pipeline and worktrees
+.issue-pipeline/
+.worktrees/
+
+# Image cache
+.image-cache/
 
 # Docker (avoid recursive copies)
 docker-compose.yml
 Dockerfile
 
-# Media (runtime data, not build artifact)
+# Runtime/dev data (not build artifacts)
 src/media/
+src/staticfiles/
+src/db.sqlite3
 
 # Traefik config
 traefik/

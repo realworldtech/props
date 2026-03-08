@@ -1066,24 +1066,41 @@ class TestAdminAIDashboard:
 class TestAIEdgeCases:
     """S7.11 — AI image analysis edge cases."""
 
-    def test_vv755_large_image_memory_check(self, admin_user):
+    @override_settings(ANTHROPIC_API_KEY="test-key")
+    def test_vv755_large_image_memory_check(self, admin_user, tmp_path):
         """VV755: Very large image should fail AI analysis
         gracefully, not crash the worker."""
+        import io
+
+        from PIL import Image as PILImage
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         asset = AssetFactory(name="Big Image Asset")
+
+        # Create a real image file so FieldFile.read() works
+        buf = io.BytesIO()
+        PILImage.new("RGB", (10, 10), "red").save(buf, format="JPEG")
+        buf.seek(0)
+        upload = SimpleUploadedFile(
+            "big.jpg", buf.read(), content_type="image/jpeg"
+        )
         img = AssetImage.objects.create(
             asset=asset,
-            image="assets/test.jpg",
+            image=upload,
             is_primary=True,
             ai_processing_status="pending",
         )
 
         from assets.services.ai import analyse_image
 
-        mock_img = MagicMock()
-        mock_img.size = (8000, 6000)
-        mock_img.mode = "RGB"
+        mock_pil_img = MagicMock()
+        mock_pil_img.size = (8000, 6001)  # 48_008_000 > 48_000_000 limit
+        mock_pil_img.mode = "RGB"
 
-        with patch("PIL.Image.open", return_value=mock_img):
+        # PIL.Image.open returns oversized dimensions to trigger
+        # the "too large" guard in the task
+        with patch("PIL.Image.open", return_value=mock_pil_img):
             with patch("anthropic.Anthropic"):
                 try:
                     analyse_image(img.pk)

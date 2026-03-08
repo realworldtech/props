@@ -26,6 +26,12 @@ settings.MIDDLEWARE = [
 settings.CELERY_TASK_ALWAYS_EAGER = True
 settings.CELERY_TASK_EAGER_PROPAGATES = True
 
+# Disable AI analysis in tests — prevents eager Celery tasks from
+# hitting the real Anthropic API when ANTHROPIC_API_KEY is set in
+# the Docker environment.  Tests that specifically exercise AI
+# behaviour mock the API client directly.
+settings.ANTHROPIC_API_KEY = ""
+
 # Use in-memory cache for tests (avoids Redis connection errors)
 settings.CACHES = {
     "default": {

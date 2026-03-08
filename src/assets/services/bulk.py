@@ -2,9 +2,10 @@
 
 from django.contrib.auth import get_user_model
 from django.db import transaction as db_transaction
-from django.db.models import F, Q
+from django.db.models import F
 
 from ..models import Asset, AssetSerial, Category, Location, Transaction
+from .search import build_asset_search
 
 User = get_user_model()
 
@@ -52,16 +53,7 @@ def build_asset_filter_queryset(filters: dict):
 
     q = filters.get("q", "")
     if q:
-        queryset = queryset.filter(
-            Q(name__icontains=q)
-            | Q(description__icontains=q)
-            | Q(barcode__icontains=q)
-            | Q(tags__name__icontains=q)
-            | Q(
-                nfc_tags__tag_id__icontains=q,
-                nfc_tags__removed_at__isnull=True,
-            )
-        ).distinct()
+        queryset = build_asset_search(queryset, q, include_nfc=True)
 
     department = filters.get("department", "")
     if department:
@@ -121,12 +113,7 @@ def build_bulk_queryset(
             queryset = queryset.filter(status=filters["status"])
         q = filters.get("q", "")
         if q:
-            queryset = queryset.filter(
-                Q(name__icontains=q)
-                | Q(description__icontains=q)
-                | Q(barcode__icontains=q)
-                | Q(tags__name__icontains=q)
-            ).distinct()
+            queryset = build_asset_search(queryset, q, include_nfc=True)
         if filters.get("department"):
             queryset = queryset.filter(
                 category__department_id=filters["department"]

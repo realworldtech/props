@@ -7680,7 +7680,7 @@ class TestResolveAssetFromInput:
 
 @pytest.mark.django_db
 class TestExportWithWordSearch:
-    """Export view uses build_asset_text_query for multi-word search."""
+    """Export view uses build_asset_search for multi-word search."""
 
     def test_export_multi_word_search_finds_matching_asset(
         self, admin_client, category, location, user

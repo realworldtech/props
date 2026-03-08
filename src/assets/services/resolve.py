@@ -5,9 +5,8 @@ Used by hold list add-item and potentially other views that accept
 flexible asset identifiers.
 """
 
-from django.db.models import Q
-
 from assets.models import Asset, AssetSerial, NFCTag
+from assets.services.search import build_asset_search
 
 
 def _truncate(value, max_len=100):
@@ -128,16 +127,13 @@ def resolve_asset_from_input(asset_id=None, search=None, barcode=None):
             )
 
         # 3e. Broad text match (name, description, tags, category)
-        matches = (
-            Asset.objects.filter(status="active")
-            .filter(
-                Q(name__icontains=search)
-                | Q(description__icontains=search)
-                | Q(tags__name__icontains=search)
-                | Q(category__name__icontains=search)
-            )
-            .distinct()[:2]
-        )
+        base_qs = Asset.objects.filter(status="active")
+        matches = build_asset_search(
+            base_qs,
+            search,
+            include_nfc=False,
+            include_category=True,
+        )[:2]
         results = list(matches)
         if len(results) == 1:
             return results[0], None
