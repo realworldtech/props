@@ -5821,6 +5821,34 @@ class TestV212SearchByCategory:
         assert asset.name in content
         assert other_asset.name not in content
 
+    def test_text_search_by_category_name(
+        self, client_logged_in, category, location, user, department
+    ):
+        """Searching for a category name returns assets in that category."""
+        from assets.models import Asset, Category
+
+        cat = Category.objects.create(name="Religious", department=department)
+        matching = Asset.objects.create(
+            name="Plain Chalice",
+            category=cat,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        unmatched = Asset.objects.create(
+            name="Wooden Table",
+            category=category,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:asset_list")
+        response = client_logged_in.get(url, {"q": "Religious"})
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert matching.name in content
+        assert unmatched.name not in content
+
 
 # ============================================================
 # V213 (S2.6.1-04): Search by location
@@ -7742,6 +7770,34 @@ class TestExportWithWordSearch:
             row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
         ]
         assert "Red Bonnet" not in names
+
+    def test_export_search_by_category_name(
+        self, admin_client, location, user, department
+    ):
+        """Export with category name query includes matching assets."""
+        from assets.models import Category
+
+        cat = Category.objects.create(name="Religious", department=department)
+        matching = AssetFactory(
+            name="Plain Chalice",
+            category=cat,
+            current_location=location,
+            status="active",
+            created_by=user,
+        )
+        url = reverse("assets:export_assets")
+        resp = admin_client.get(url, {"q": "Religious"})
+        assert resp.status_code == 200
+        from io import BytesIO
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(BytesIO(resp.content))
+        ws = wb["Assets"]
+        names = [
+            row[0].value for row in ws.iter_rows(min_row=2) if row[0].value
+        ]
+        assert matching.name in names
 
 
 # ============================================================

@@ -4548,7 +4548,7 @@ def print_all_filtered_labels(request):
     if status:
         queryset = queryset.filter(status=status)
 
-    q = request.GET.get("q", "")
+    q = request.GET.get("q", "").strip()[:200]
     if q:
         queryset = build_asset_search(
             queryset, q, include_nfc=True, include_category=True
