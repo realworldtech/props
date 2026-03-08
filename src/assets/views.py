@@ -210,8 +210,16 @@ def dashboard(request):
         )
     recent_transactions = recent_transactions[:10]
 
-    recent_drafts = Asset.objects.filter(status="draft").select_related(
-        "category", "created_by"
+    recent_drafts = (
+        Asset.objects.filter(status="draft")
+        .select_related("category", "created_by")
+        .prefetch_related(
+            Prefetch(
+                "images",
+                queryset=AssetImage.objects.filter(is_primary=True),
+                to_attr="primary_images",
+            )
+        )
     )
     if role == "department_manager":
         recent_drafts = recent_drafts.filter(dept_filter)
@@ -242,8 +250,6 @@ def dashboard(request):
 
         from django.conf import settings as django_settings
         from django.utils import timezone
-
-        from assets.models import AssetImage
 
         today_local = timezone.localdate()
         today_start = timezone.make_aware(
