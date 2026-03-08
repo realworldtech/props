@@ -541,13 +541,18 @@ UNFOLD = {
     },
 }
 
-# Sentry error tracking (enabled when SENTRY_DSN is set)
+# Sentry error tracking
+# SENTRY_DSN enables backend (Python/Django/Celery) reporting.
+# SENTRY_DSN_JS enables browser JS reporting (frontend + admin).
 SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
 SENTRY_DSN_JS = os.environ.get("SENTRY_DSN_JS", "")
 SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "development")
-SENTRY_TRACES_SAMPLE_RATE = float(
-    os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")
-)
+try:
+    SENTRY_TRACES_SAMPLE_RATE = float(
+        os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")
+    )
+except (TypeError, ValueError):
+    SENTRY_TRACES_SAMPLE_RATE = 0.1
 
 if SENTRY_DSN:
     sentry_sdk.init(
