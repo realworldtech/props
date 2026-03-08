@@ -9,7 +9,7 @@ SQLite in tests).
 """
 
 from django.db import connection
-from django.db.models import Case, Q, Value, When
+from django.db.models import Case, F, Q, Value, When
 from django.db.models.fields import FloatField
 
 MAX_SEARCH_WORDS = 20
@@ -48,7 +48,7 @@ def _build_fts_search(queryset, words, search_text, icontains_q):
 
     return (
         queryset.annotate(
-            fts_rank=SearchRank("search_vector", search_query),
+            fts_rank=SearchRank(F("search_vector"), search_query),
             barcode_boost=barcode_exact,
         )
         .filter(combined_filter)
