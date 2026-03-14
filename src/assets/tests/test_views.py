@@ -7910,3 +7910,96 @@ class TestAssetSearchEmptyQuery:
         resp = client_logged_in.get(url)
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+@pytest.mark.django_db
+class TestLocationCreateInline:
+    """Tests for the inline location creation AJAX endpoint."""
+
+    def test_create_new_top_level_location(self, client_logged_in):
+        """Creating a new top-level location returns success JSON."""
+        url = reverse("assets:location_create_inline")
+        resp = client_logged_in.post(
+            url,
+            data=json.dumps({"name": "Test Box 1"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+        assert data["name"] == "Test Box 1"
+        assert Location.objects.filter(name="Test Box 1").exists()
+
+    def test_duplicate_top_level_location_returns_existing(
+        self, client_logged_in
+    ):
+        """Creating a location with an existing top-level name returns
+        the existing location instead of crashing (bug #189)."""
+        Location.objects.create(name="Skirts long box 1")
+        url = reverse("assets:location_create_inline")
+        resp = client_logged_in.post(
+            url,
+            data=json.dumps({"name": "Skirts long box 1"}),
+            content_type="application/json",
+        )
+        # Should NOT return 500 — should return the existing location
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] is not None
+        assert data["name"] == "Skirts long box 1"
+        # Should not have created a duplicate
+        assert (
+            Location.objects.filter(
+                name="Skirts long box 1", parent__isnull=True
+            ).count()
+            == 1
+        )
+
+    def test_duplicate_child_location_under_same_parent(
+        self, client_logged_in, location
+    ):
+        """Creating a child location with same name under same parent
+        returns existing."""
+        Location.objects.create(name="Sub Box", parent=location)
+        url = reverse("assets:location_create_inline")
+        resp = client_logged_in.post(
+            url,
+            data=json.dumps({"name": "Sub Box", "parent_id": location.pk}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] is not None
+        # Should not have created a duplicate
+        assert (
+            Location.objects.filter(name="Sub Box", parent=location).count()
+            == 1
+        )
+
+    def test_same_name_different_parent_creates_new(
+        self, client_logged_in, location
+    ):
+        """Same name under different parent should create a new location."""
+        Location.objects.create(name="Box A", parent=None)
+        url = reverse("assets:location_create_inline")
+        resp = client_logged_in.post(
+            url,
+            data=json.dumps({"name": "Box A", "parent_id": location.pk}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["created"] is True
+
+    def test_created_false_when_existing_returned(self, client_logged_in):
+        """Response should indicate created=False when returning an
+        existing location."""
+        Location.objects.create(name="Existing Box")
+        url = reverse("assets:location_create_inline")
+        resp = client_logged_in.post(
+            url,
+            data=json.dumps({"name": "Existing Box"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        assert resp.json()["created"] is False

@@ -3700,8 +3700,8 @@ def location_create_inline(request):
             return JsonResponse(
                 {"error": "Invalid parent location"}, status=400
             )
-    loc = Location.objects.create(name=name, parent=parent)
-    return JsonResponse({"id": loc.id, "name": str(loc), "created": True})
+    loc, created = Location.objects.get_or_create(name=name, parent=parent)
+    return JsonResponse({"id": loc.id, "name": str(loc), "created": created})
 
 
 # --- Stocktake ---
