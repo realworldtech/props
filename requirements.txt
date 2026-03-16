@@ -235,7 +235,7 @@ pyflakes==3.4.0
     # via flake8
 pygments==2.19.2
     # via pytest
-pyopenssl==25.3.0
+pyopenssl==26.0.0
     # via twisted
 pyphen==0.17.2
     # via weasyprint
