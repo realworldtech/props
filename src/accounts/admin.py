@@ -106,7 +106,14 @@ class CustomUserAdmin(UserAdmin, ModelAdmin):
         "approved_at",
         "rejection_reason",
     ]
-    add_fieldsets = UserAdmin.add_fieldsets + (
+    add_fieldsets = (
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("username", "password1", "password2"),
+            },
+        ),
         (
             "Additional Info",
             {"fields": ("email", "display_name", "phone_number")},

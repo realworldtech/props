@@ -1198,6 +1198,40 @@ class TestBulkUserActions:
             )
 
 
+class TestAdminAddUserPage:
+    """Regression test for admin user creation page (Sentry #196)."""
+
+    def test_admin_add_user_page_loads(self, admin_client):
+        """GET /admin/accounts/customuser/add/ must not raise FieldError.
+
+        Django 5.1+ added usable_password to UserAdmin.add_fieldsets.
+        If CustomUserAdmin inherits add_fieldsets naively, the dynamic
+        form class fails because usable_password is stripped from
+        CustomUserCreationForm's declared_fields by Meta.fields.
+        """
+        url = reverse("admin:accounts_customuser_add")
+        response = admin_client.get(url)
+        assert response.status_code == 200
+
+    def test_admin_add_user_form_has_password_fields(self, admin_client):
+        """Add user form renders password1 and password2 fields."""
+        url = reverse("admin:accounts_customuser_add")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert 'name="password1"' in content
+        assert 'name="password2"' in content
+
+    def test_admin_add_user_form_has_extra_fields(self, admin_client):
+        """Add user form includes email, display_name, phone_number."""
+        url = reverse("admin:accounts_customuser_add")
+        response = admin_client.get(url)
+        content = response.content.decode()
+        assert 'name="email"' in content
+        assert 'name="display_name"' in content
+        assert 'name="phone_number"' in content
+
+
+@pytest.mark.django_db
 class TestUserDeletionWarning:
     """M11: User deletion warnings for SET_NULL effects (S7.10.1)."""
 
