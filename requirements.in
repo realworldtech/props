@@ -1,5 +1,5 @@
 # Core
-Django>=5.1,<6.0
+Django>=5.2.14,<6.0
 gunicorn
 psycopg[binary]
 whitenoise
