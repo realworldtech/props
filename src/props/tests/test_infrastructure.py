@@ -521,3 +521,30 @@ class TestImageRegistryOverride:
     @_skip_without(".env.example")
     def test_example_env_documents_props_image(self):
         assert "PROPS_IMAGE=" in _repo_file(".env.example").read_text()
+
+
+class TestBuildOnceImages:
+    """One image per commit; the version reaches the app at runtime."""
+
+    @_skip_without("Dockerfile")
+    def test_dockerfile_has_test_stage_and_runtime_default(self):
+        dockerfile = _repo_file("Dockerfile").read_text()
+        assert "FROM base AS test" in dockerfile
+        assert (
+            dockerfile.rstrip()
+            .splitlines()[-1]
+            .startswith("FROM base AS runtime")
+        )
+
+    @_skip_without("Dockerfile")
+    def test_dockerfile_does_not_bake_app_version(self):
+        dockerfile = _repo_file("Dockerfile").read_text()
+        assert "ARG APP_VERSION" not in dockerfile
+        assert "ENV GIT_COMMIT=" in dockerfile
+
+    @_skip_no_compose
+    def test_prod_services_pass_version_from_env(self):
+        content = _compose_file().read_text()
+        images = content.count("${PROPS_IMAGE:-ghcr.io/realworldtech/props}")
+        assert images >= 5
+        assert content.count("APP_VERSION: ${PROPS_VERSION:-latest}") == images

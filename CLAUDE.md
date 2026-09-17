@@ -47,7 +47,9 @@ docker compose exec web python manage.py setup_groups
 ## Branching and Release Workflow
 
 - **Two remotes, same workflows.** `origin` is `github.com/realworldtech/props` (public mirror); `ghe` is `github.realworld.net.au/realworldtech/props`. Push `develop` and `main` to both. The workflows detect the host: on github.com they publish to `ghcr.io`, on GHES to `containers.github.realworld.net.au`. The runner label comes from the `RUNNER_LABEL` repository variable (default `ubuntu-latest`). CI currently runs on GHES because github.com Actions are unavailable for the org; when restored, nothing needs to change.
-- Production selects its registry with `PROPS_IMAGE` in `.env`; the compose default stays `ghcr.io` for self-hosters.
+- **Build once, promote by retag.** A PR's CI builds the image for its head commit, tests it and publishes it as `:sha-<commit>`. Merging to `develop` retags it `:develop`; merging to `main` tags the CalVer release and `:latest`. Nothing is rebuilt on merge. Images carry only `GIT_COMMIT`; the release version reaches the app as the `APP_VERSION` env var (compose passes `PROPS_VERSION`). Sentry uses it as the release.
+- `develop` and `main` on GHES are protected: changes arrive by pull request with the CI checks green. `make release-pr` opens the develop-to-main PR there.
+- Production selects its registry with `PROPS_IMAGE` in `.env` and pins `PROPS_VERSION`; the compose default stays `ghcr.io` for self-hosters.
 
 - **`main`** — production branch. Only updated via PR from `develop`.
 - **`develop`** — integration branch. All feature work merges here first.
@@ -223,7 +225,7 @@ assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp
 
 - Dependencies are managed with `uv`: runtime deps live in `[project.dependencies]` and dev tooling in `[dependency-groups].dev` in `pyproject.toml`. Add with `uv add <package>` (or `uv add --group dev <package>`).
 - **Always regenerate `uv.lock`** (`uv lock`) after changing `pyproject.toml`. CI runs `uv lock --check` and rejects a stale lockfile.
-- The Docker image installs with `uv sync --frozen` into `/usr/local` (no venv). Dev-only tools are included when the `INSTALL_DEV=true` build arg is set (dev compose profile and CI).
+- The Docker image installs with `uv sync --frozen --no-dev` into `/usr/local` (no venv). The `test` build target adds the dev group on top; the dev compose profile and CI use it. The default target `runtime` is what gets published.
 
 ## Plan Execution Notes
 

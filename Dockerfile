@@ -22,8 +22,8 @@ COPY src/tailwind/ src/tailwind/
 COPY src/templates/ src/templates/
 RUN tailwindcss -i src/tailwind/input.css -o src/static/css/tailwind.css --minify
 
-# Stage 3: Main application
-FROM python:3.13-slim
+# Stage 3: Application
+FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -31,9 +31,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-ARG APP_VERSION=dev
+# The image carries only the commit it was built from. The release version
+# reaches the app through the APP_VERSION environment variable at runtime, so
+# one image per commit can be promoted to develop, then to a release.
 ARG GIT_COMMIT=unknown
-ENV APP_VERSION=${APP_VERSION}
+ENV GIT_COMMIT=${GIT_COMMIT}
 
 WORKDIR /app
 
@@ -51,10 +53,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python dependencies with uv, straight into /usr/local (no venv).
 # uv and its cache are mounted at build time only so they never enter a layer.
 COPY pyproject.toml uv.lock ./
-ARG INSTALL_DEV=false
 RUN --mount=type=bind,from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
-    if [ "$INSTALL_DEV" = "true" ]; then uv sync --frozen; else uv sync --frozen --no-dev; fi
+    uv sync --frozen --no-dev
 
 # Copy project files
 COPY . .
@@ -76,8 +77,18 @@ EXPOSE 8000
 
 WORKDIR /app/src
 
-LABEL org.opencontainers.image.version="${APP_VERSION}" \
-      org.opencontainers.image.source="https://github.com/realworldtech/props" \
+LABEL org.opencontainers.image.source="https://github.com/realworldtech/props" \
       org.opencontainers.image.revision="${GIT_COMMIT}"
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "props.wsgi:application"]
+
+# Stage 4: test image = base + dev tooling (CI and the dev compose profile)
+FROM base AS test
+USER root
+RUN --mount=type=bind,from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    cd /app && uv sync --frozen
+USER appuser
+
+# Stage 5: default target, the published image
+FROM base AS runtime

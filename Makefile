@@ -1,10 +1,15 @@
 .PHONY: version release-pr
 
+# Pull requests are raised where CI runs (the internal GHES). Override with
+# GH_HOST=github.com when github.com Actions are in use again.
+GH_HOST ?= github.realworld.net.au
+export GH_HOST
+
 version:
 	@echo "Last released: $$(git tag -l 'v*' --sort=-v:refname | head -1 || echo 'no releases yet')"
 
 release-pr:
-	@git fetch --tags origin main develop; \
+	@git fetch --tags ghe main develop; \
 	LAST_TAG=$$(git tag -l 'v*' --sort=-v:refname | head -1); \
 	if [ -z "$$LAST_TAG" ]; then \
 		DIFF_RANGE="main..develop"; \

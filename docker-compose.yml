@@ -96,8 +96,7 @@ services:
   web:
     build:
       context: .
-      args:
-        INSTALL_DEV: "true"
+      target: test
     restart: unless-stopped
     profiles: ["dev"]
     command: >
@@ -205,6 +204,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -256,6 +256,7 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
 
   # Prod init - runs migrations and collectstatic once before web starts
@@ -284,6 +285,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -330,6 +332,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -377,6 +380,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
