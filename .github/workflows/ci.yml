@@ -18,8 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        run: pipx install uv==0.12.15
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.15"
 
       - name: Install dependencies
         run: uv sync --frozen --only-group dev
@@ -42,8 +43,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        run: pipx install uv==0.12.15
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.12.15"
 
       - name: Verify uv.lock matches pyproject.toml
         run: uv lock --check
