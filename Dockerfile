@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 # Stage 1: Compile MJML email templates
-FROM node:22-slim AS email-builder
+FROM node:24-slim AS email-builder
 WORKDIR /build
-RUN npm install mjml
+RUN npm install mjml@5.4.1
 COPY src/templates/emails/mjml/ src/templates/emails/mjml/
 RUN for f in src/templates/emails/mjml/[a-z]*.mjml; do \
       npx mjml "$f" -o "src/templates/emails/$(basename ${f%.mjml}.html)"; \
@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 RUN ARCH="$(dpkg --print-architecture)" && \
     if [ "$ARCH" = "arm64" ]; then TW_ARCH="linux-arm64"; else TW_ARCH="linux-x64"; fi && \
     curl -sLo /usr/local/bin/tailwindcss \
-        "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.18/tailwindcss-${TW_ARCH}" && \
+        "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-${TW_ARCH}" && \
     chmod +x /usr/local/bin/tailwindcss
 COPY src/tailwind/ src/tailwind/
 COPY src/templates/ src/templates/
