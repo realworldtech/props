@@ -2,7 +2,7 @@
 # Stage 1: Compile MJML email templates
 FROM node:24-slim AS email-builder
 WORKDIR /build
-RUN npm install mjml@5.4.1
+RUN npm install mjml@4.18.0
 COPY src/templates/emails/mjml/ src/templates/emails/mjml/
 RUN for f in src/templates/emails/mjml/[a-z]*.mjml; do \
       npx mjml "$f" -o "src/templates/emails/$(basename ${f%.mjml}.html)"; \
