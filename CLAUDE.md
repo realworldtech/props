@@ -18,8 +18,11 @@ docker compose --profile dev up -d
 # Start production stack (Traefik with auto-SSL)
 docker compose --profile prod up -d
 
-# Run tests (from repo root, use the venv)
-.venv/bin/pytest
+# Install dependencies (creates .venv)
+uv sync
+
+# Run tests (from repo root)
+uv run pytest
 
 # Run tests inside Docker
 docker compose exec web pytest
@@ -31,9 +34,9 @@ pytest src/assets/tests/test_views.py::TestClassName::test_method_name
 coverage run -m pytest && coverage report
 
 # Code formatting
-black src/
-isort src/
-flake8 src/
+uv run black src/
+uv run isort src/
+uv run flake8 src/
 
 # Django management (inside Docker)
 docker compose exec web python manage.py migrate
@@ -215,8 +218,9 @@ assert reverse("assets:asset_checkout", args=[asset.pk]).encode() in detail_resp
 
 ## Dependencies
 
-- Dependencies are managed with `pip-tools`: edit `requirements.in`, then compile with `pip-compile requirements.in` to regenerate `requirements.txt`.
-- **Always regenerate `requirements.txt`** after adding or changing entries in `requirements.in`. Never commit a modified `requirements.in` without an updated `requirements.txt` to match.
+- Dependencies are managed with `uv`: runtime deps live in `[project.dependencies]` and dev tooling in `[dependency-groups].dev` in `pyproject.toml`. Add with `uv add <package>` (or `uv add --group dev <package>`).
+- **Always regenerate `uv.lock`** (`uv lock`) after changing `pyproject.toml`. CI runs `uv lock --check` and rejects a stale lockfile.
+- The Docker image installs with `uv sync --frozen` into `/usr/local` (no venv). Dev-only tools are included when the `INSTALL_DEV=true` build arg is set (dev compose profile and CI).
 
 ## Plan Execution Notes
 

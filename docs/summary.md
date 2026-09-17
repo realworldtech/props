@@ -1588,7 +1588,7 @@ PROPS integrates with external services and libraries to provide its full featur
 | **Image Processing** | Pillow | Image resizing, format conversion, thumbnail generation | Yes | (Python library, no config) |
 | **HTMX** | HTMX 1.9+ | Dynamic UI updates without page reloads (inline editing, polling, modals) | Yes | (front-end library, CDN-loaded) |
 | **Tailwind CSS** | Tailwind CSS 3.4+ | Utility-first CSS framework for responsive design | Yes | (front-end library, CDN-loaded) |
-| **Dependency Management** | pip-tools | Pin dependencies with pip-compile for reproducible builds | Yes | `requirements.in` → `requirements.txt` |
+| **Dependency Management** | uv | Lock dependencies for reproducible builds | Yes | `pyproject.toml` → `uv.lock` |
 | **Reverse Proxy** | Traefik 3.6 | HTTPS termination, Let's Encrypt SSL, automatic certificate renewal (production only) | No | `DOMAIN`, `ACME_EMAIL` |
 | **WSGI Server** | Gunicorn | Production application server (4 workers by default) | No (dev uses runserver) | (configured in docker-compose.yml) |
 | **Static Files** | WhiteNoise | Efficient static file serving with compression and caching | Yes | (Django middleware) |
@@ -1878,7 +1878,7 @@ PROPS is built with a modern, pragmatic tech stack emphasising developer product
 | **AI Integration** | anthropic SDK | 0.46+ | Claude API client |
 | **Storage Backend** | django-storages | 1.14+ | S3-compatible storage for Django |
 | **HTMX Integration** | django-htmx | 1.21+ | HTMX helpers for Django views |
-| **Dependency Management** | pip-tools | 7.4+ | Reproducible dependency pinning |
+| **Dependency Management** | uv | 0.12+ | Reproducible dependency locking |
 | **WSGI Server** | Gunicorn | 23.0+ | Production application server |
 | **Static Files** | WhiteNoise | 6.7+ | Efficient static file serving |
 | **Reverse Proxy** | Traefik | 3.6+ | HTTPS termination, Let's Encrypt |
@@ -1893,7 +1893,7 @@ PROPS is built with a modern, pragmatic tech stack emphasising developer product
 - **PostgreSQL 17:** Latest stable Postgres with excellent JSON support (for AI tag suggestions), full-text search (future upgrade path), and performance improvements.
 - **Celery + Redis:** Industry-standard async task queue. Redis doubles as cache backend for session storage and query result caching.
 - **Anthropic Claude:** Best-in-class vision model for asset identification. Structured output support makes integration simple.
-- **pip-tools:** `requirements.in` (human-written) → `requirements.txt` (pinned versions). Reproducible builds without manual version management.
+- **uv:** `pyproject.toml` (human-written version ranges) → `uv.lock` (fully pinned). Reproducible builds without manual version management.
 
 ---
 

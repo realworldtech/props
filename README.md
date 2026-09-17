@@ -100,10 +100,16 @@ guide — `pg_dump`/managed-snapshot strategies, offsite media mirroring with
 
 ## Development
 
+### Local environment
+
+```bash
+uv sync          # creates .venv with all runtime and dev dependencies
+```
+
 ### Running tests
 
 ```bash
-pytest
+uv run pytest
 # or inside Docker:
 docker compose exec web pytest
 ```
@@ -111,9 +117,9 @@ docker compose exec web pytest
 ### Code style
 
 ```bash
-black src/
-isort src/
-flake8 src/
+uv run black src/
+uv run isort src/
+uv run flake8 src/
 ```
 
 Configuration is in `pyproject.toml`.

@@ -94,7 +94,10 @@ services:
 
   # Dev profile - direct access on port 8003 with Daphne (ASGI)
   web:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"
     restart: unless-stopped
     profiles: ["dev"]
     command: >

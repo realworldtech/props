@@ -2,9 +2,10 @@
 
 Behind Traefik every request reaches gunicorn from the proxy container,
 so REMOTE_ADDR is the same for all users and they share one rate-limit
-bucket. Traefik strips client-supplied X-Forwarded-For before it adds
-its own, so the first hop is trustworthy exactly when the proxy is
-trusted for the scheme header too.
+bucket. The proxy appends the address it saw to X-Forwarded-For, so the
+rightmost hop is the one the proxy vouches for; anything to its left was
+supplied by the client and cannot be trusted. The header is used only
+when the proxy is trusted for the scheme header too.
 """
 
 from django.conf import settings
@@ -15,5 +16,5 @@ def client_ip(request):
     if getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
         forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            return forwarded.rsplit(",", 1)[-1].strip()
     return request.META.get("REMOTE_ADDR")

@@ -1,3 +1,67 @@
+[project]
+name = "props"
+version = "0.0.0"
+description = "Self-hosted asset tracking for community organisations"
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = [
+    # Core
+    "Django>=5.2,<6.0",
+    "gunicorn>=23",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.8",
+    # Security
+    "django-ratelimit>=4.1",
+    # Storage
+    "django-storages[boto3]>=1.14",
+    "Pillow>=11",
+    "pi-heif>=0.20",
+    # Avatars
+    "django-gravatar2>=1.4",
+    # Frontend
+    "django-htmx>=1.20",
+    # Admin
+    "django-unfold>=0.60",
+    # Background tasks
+    "celery[redis]>=5.4",
+    "django-celery-beat>=2.7",
+    "redis>=5",
+    # WebSocket / ASGI support
+    "channels>=4.2",
+    "channels-redis>=4.2",
+    "daphne>=4.1",
+    # Barcode & QR
+    "python-barcode[images]>=0.15",
+    "qrcode[pil]>=8",
+    # Export
+    "openpyxl>=3.1",
+    "weasyprint>=63",
+    # AI (optional at runtime, required at build)
+    "anthropic>=0.50",
+    # Error tracking
+    "sentry-sdk[django,celery]>=2.20",
+    # Colour
+    "coloraide>=4",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25",
+    "flake8>=7",
+    "isort>=6",
+    "pip-audit>=2.8",
+    "pre-commit>=4",
+    "pytest-django>=4.9",
+    "pytest-asyncio>=0.25",
+    "pytest-xdist>=3.6",
+    "pytest-cov>=6",
+    "factory-boy>=3.3",
+]
+
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "props.settings"
 pythonpath = ["src"]

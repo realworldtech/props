@@ -248,14 +248,25 @@ class TestDeploymentConstraints:
         """V688, V691: Docker Compose + S3."""
         assert _compose_file() is not None
 
-    def test_pip_tools_configured(self):
-        """V690, V628: pip-tools dependency management."""
+    def test_uv_dependency_management_configured(self):
+        """V690, V628: uv dependency management (S4.13)."""
         from pathlib import Path
 
-        req_in = Path(__file__).parent.parent.parent.parent / "requirements.in"
-        assert req_in.exists()
-        content = req_in.read_text()
-        assert "Django" in content
+        root = Path(__file__).parent.parent.parent.parent
+        pyproject = (root / "pyproject.toml").read_text()
+        assert "[project]" in pyproject
+        assert "Django" in pyproject
+        assert (root / "uv.lock").exists()
+        assert not (root / "requirements.txt").exists()
+
+    def test_docker_build_installs_from_lockfile(self):
+        """S4.13.2-04: the image installs from the frozen lockfile."""
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent.parent.parent
+        dockerfile = (root / "Dockerfile").read_text()
+        assert "uv sync --frozen" in dockerfile
+        assert "pip install" not in dockerfile
 
     @_skip_no_compose
     def test_single_server_deployment(self):

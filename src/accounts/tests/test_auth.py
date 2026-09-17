@@ -456,6 +456,24 @@ class TestLoginRateLimit:
         )
         assert response.status_code == 302
 
+    def test_client_supplied_forwarded_hops_cannot_evade_limit(
+        self, client, user, password, settings
+    ):
+        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+        for i in range(5):
+            client.post(
+                reverse("accounts:login"),
+                {"username": "nobody", "password": "bad"},
+                HTTP_X_FORWARDED_FOR=f"198.51.100.{i}, 203.0.113.10",
+            )
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": user.username, "password": password},
+            HTTP_X_FORWARDED_FOR="198.51.100.99, 203.0.113.10",
+        )
+        assert response.status_code == 200
+        assert b"Too many login attempts" in response.content
+
     def test_forwarded_header_ignored_without_proxy(
         self, client, user, password, settings
     ):

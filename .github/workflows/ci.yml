@@ -15,55 +15,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: "3.13"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install black isort flake8
+        run: uv sync --frozen --only-group dev
 
       - name: Check black formatting
-        run: black --check --line-length 79 --target-version py312 src/
+        run: uv run black --check src/
 
       - name: Check isort ordering
-        run: isort --check --profile black --line-length 79 src/
+        run: uv run isort --check src/
 
       - name: Run flake8
-        run: flake8 src/
+        run: uv run flake8 src/
 
-  requirements-check:
-    name: Requirements in sync
+      - name: Audit dependencies for known vulnerabilities
+        run: uv run pip-audit --progress-spinner off
+
+  lockfile-check:
+    name: Lockfile in sync
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify every package in requirements.in appears in requirements.txt
-        run: |
-          missing=0
-          while IFS= read -r line; do
-            line=$(echo "$line" | sed 's/#.*//' | xargs)
-            [ -z "$line" ] && continue
-            [[ "$line" == -* ]] && continue
-            pkg=$(echo "$line" | sed 's/\[.*\]//' | sed 's/[><=!].*//' | xargs | tr '[:upper:]' '[:lower:]')
-            [ -z "$pkg" ] && continue
-            if ! grep -qi "^${pkg}[>=<! \[]" requirements.txt && ! grep -qi "# via.*-r requirements.in" requirements.txt; then
-              if ! grep -qi "^${pkg}" requirements.txt; then
-                echo "MISSING: $pkg is in requirements.in but not in requirements.txt"
-                missing=1
-              fi
-            fi
-          done < requirements.in
-          if [ "$missing" -eq 1 ]; then
-            echo "requirements.txt is out of sync with requirements.in. Run 'pip-compile requirements.in' and commit the result."
-            exit 1
-          fi
-          echo "All packages from requirements.in found in requirements.txt"
+      - uses: astral-sh/setup-uv@v10
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
 
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, requirements-check]
+    needs: [lint, lockfile-check]
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +65,7 @@ jobs:
           build-args: |
             APP_VERSION=ci-${{ github.sha }}
             GIT_COMMIT=${{ github.sha }}
+            INSTALL_DEV=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

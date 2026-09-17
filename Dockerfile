@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Stage 1: Compile MJML email templates
 FROM node:22-slim AS email-builder
 WORKDIR /build
@@ -22,10 +23,13 @@ COPY src/templates/ src/templates/
 RUN tailwindcss -i src/tailwind/input.css -o src/static/css/tailwind.css --minify
 
 # Stage 3: Main application
-FROM python:3.12-slim
+FROM python:3.13-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
 
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
@@ -36,7 +40,7 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
-    libgobject-2.0-0 \
+    libglib2.0-0t64 \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
     libpangocairo-1.0-0 \
@@ -44,9 +48,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with uv, straight into /usr/local (no venv).
+# uv and its cache are mounted at build time only so they never enter a layer.
+COPY pyproject.toml uv.lock ./
+ARG INSTALL_DEV=false
+RUN --mount=type=bind,from=ghcr.io/astral-sh/uv:0.12,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=cache,target=/root/.cache/uv \
+    if [ "$INSTALL_DEV" = "true" ]; then uv sync --frozen; else uv sync --frozen --no-dev; fi
 
 # Copy project files
 COPY . .
