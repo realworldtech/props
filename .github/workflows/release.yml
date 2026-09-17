@@ -8,10 +8,15 @@ permissions:
   contents: write
   packages: write
 
+# Same file runs on github.com and on GHES; the registry follows the host and
+# the runner label comes from the RUNNER_LABEL repository variable.
+env:
+  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || 'containers.github.realworld.net.au' }}
+
 jobs:
   version:
     name: Calculate & Tag Version
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     outputs:
       version: ${{ steps.calc.outputs.version }}
       tag: ${{ steps.calc.outputs.tag }}
@@ -45,7 +50,7 @@ jobs:
 
   build:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: version
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +83,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +106,7 @@ jobs:
 
   publish:
     name: Publish image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: [version, test]
     steps:
       - name: Download image artifact
@@ -113,10 +118,10 @@ jobs:
       - name: Load image
         run: gunzip -c /tmp/props-ci.tar.gz | docker load
 
-      - name: Log in to the GHES container registry
+      - name: Log in to the container registry
         uses: docker/login-action@v3
         with:
-          registry: containers.github.realworld.net.au
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -124,7 +129,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          IMAGE=containers.github.realworld.net.au/realworldtech/props
+          IMAGE=${REGISTRY}/realworldtech/props
           YEAR_MONTH=$(echo "$VERSION" | cut -d. -f1,2)
           SHA_SHORT=$(echo "${{ github.sha }}" | head -c 7)
 

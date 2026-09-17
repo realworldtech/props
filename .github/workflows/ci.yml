@@ -1,8 +1,7 @@
 name: CI
 
-# Runs on the internal GHES (github.realworld.net.au). `ubuntu-latest` is a
-# self-hosted runner label there, built from the same base as GitHub-hosted
-# runners. github.com hosts the public mirror only; Actions do not run there.
+# Runs unchanged on github.com and on the internal GHES. The runner label comes
+# from the RUNNER_LABEL repository variable (default ubuntu-latest).
 
 on:
   pull_request:
@@ -15,7 +14,7 @@ concurrency:
 jobs:
   lint:
     name: Lint & Format
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +38,7 @@ jobs:
 
   lockfile-check:
     name: Lockfile in sync
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +50,7 @@ jobs:
 
   build:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: [lint, lockfile-check]
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +84,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: build
     steps:
       - uses: actions/checkout@v4

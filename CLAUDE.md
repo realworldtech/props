@@ -46,8 +46,8 @@ docker compose exec web python manage.py setup_groups
 
 ## Branching and Release Workflow
 
-- **CI, CodeQL and releases run on the internal GHES** (`github.realworld.net.au/realworldtech/props`, remote `ghe`). `github.com/realworldtech/props` is the public mirror; GitHub Actions do not run there. Push `develop` and `main` to both remotes.
-- Release images publish to `containers.github.realworld.net.au/realworldtech/props`. Production sets `PROPS_IMAGE` to that registry; the compose default stays `ghcr.io` for self-hosters.
+- **Two remotes, same workflows.** `origin` is `github.com/realworldtech/props` (public mirror); `ghe` is `github.realworld.net.au/realworldtech/props`. Push `develop` and `main` to both. The workflows detect the host: on github.com they publish to `ghcr.io`, on GHES to `containers.github.realworld.net.au`. The runner label comes from the `RUNNER_LABEL` repository variable (default `ubuntu-latest`). CI currently runs on GHES because github.com Actions are unavailable for the org; when restored, nothing needs to change.
+- Production selects its registry with `PROPS_IMAGE` in `.env`; the compose default stays `ghcr.io` for self-hosters.
 
 - **`main`** — production branch. Only updated via PR from `develop`.
 - **`develop`** — integration branch. All feature work merges here first.
