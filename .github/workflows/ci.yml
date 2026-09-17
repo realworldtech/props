@@ -52,8 +52,8 @@ jobs:
       - name: Verify uv.lock matches pyproject.toml
         run: uv lock --check
 
-  build:
-    name: Build Docker Image
+  build-test:
+    name: Build image and run tests
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: [lint, lockfile-check]
     steps:
@@ -62,6 +62,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Build and test in one job: artifact upload v4 is unavailable on GHES.
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -75,32 +76,6 @@ jobs:
             INSTALL_DEV=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Save image as artifact
-        run: docker save props:ci-test | gzip > /tmp/props-ci.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp/props-ci.tar.gz
-          retention-days: 1
-
-  test:
-    name: Test
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load image
-        run: gunzip -c /tmp/props-ci.tar.gz | docker load
 
       - name: Run tests
         run: CI_IMAGE=props:ci-test docker compose -f docker-compose.ci.yml up --exit-code-from web
