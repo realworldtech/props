@@ -59,7 +59,7 @@
                         <input type="checkbox" name="selected" value="{{ asset.pk }}" class="bulk-checkbox rounded border-stage-300 dark:border-white/20 text-brand-500 focus:ring-brand-500">
                     </div>
                     {% if asset.primary_image %}
-                    <img src="{% if asset.primary_image.thumbnail %}{{ asset.primary_image.thumbnail.url }}{% else %}{{ asset.primary_image.image.url }}{% endif %}" alt="{{ asset.name }}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                    <img src="{{ asset.primary_image.thumbnail_url }}" alt="{{ asset.name }}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
                     {% else %}
                     <div class="w-16 h-16 rounded-lg bg-stage-100 dark:bg-stage-700 flex items-center justify-center flex-shrink-0">
                         <svg class="w-6 h-6 text-stage-200 dark:text-cream/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">

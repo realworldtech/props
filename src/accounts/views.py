@@ -20,7 +20,10 @@ from django.db import models
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.utils.http import urlsafe_base64_decode
+from django.utils.http import (
+    url_has_allowed_host_and_scheme,
+    urlsafe_base64_decode,
+)
 
 from .email import send_branded_email
 from .forms import ProfileEditForm, RegistrationForm
@@ -86,15 +89,23 @@ def login_view(request):
 
         if form.is_valid():
             user = form.get_user()
-            # Block borrower-role users from logging in
-            if user.groups.filter(name="Borrower").exists():
+            # Block borrower-only users from logging in
+            if user.has_perm("assets.can_be_borrower") and not user.has_perm(
+                "assets.can_checkout_asset"
+            ):
                 return render(
                     request,
                     "registration/account_state.html",
                     {"state": "borrower_no_access"},
                 )
             login(request, user)
-            next_url = request.GET.get("next", "assets:dashboard")
+            next_url = request.GET.get("next", "")
+            if not url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                next_url = "assets:dashboard"
             return redirect(next_url)
     else:
         form = AuthenticationForm()
@@ -253,21 +264,21 @@ def verify_email_view(request, token):
 
 def _notify_admins_new_pending_user(user, request):
     """Notify system admins about a new user pending approval (S2.15.2-11)."""
-    from django.contrib.auth.models import Group
-
-    try:
-        admin_group = Group.objects.get(name="System Admin")
-        admin_emails = list(
-            admin_group.user_set.filter(is_active=True, email__isnull=False)
-            .exclude(email="")
-            .values_list("email", flat=True)
+    # Find users with can_approve_users permission (covers renamed groups)
+    admin_emails = list(
+        CustomUser.objects.filter(
+            is_active=True,
+            email__isnull=False,
         )
-    except Group.DoesNotExist:
-        admin_emails = list(
-            CustomUser.objects.filter(is_superuser=True, email__isnull=False)
-            .exclude(email="")
-            .values_list("email", flat=True)
+        .filter(
+            models.Q(is_superuser=True)
+            | models.Q(groups__permissions__codename="can_approve_users")
+            | models.Q(user_permissions__codename="can_approve_users")
         )
+        .exclude(email="")
+        .distinct()
+        .values_list("email", flat=True)
+    )
 
     if not admin_emails:
         return
@@ -363,7 +374,14 @@ def approval_queue_view(request):
     from django.contrib.auth.models import Group
     from django.core.paginator import Paginator
 
-    groups = Group.objects.exclude(name="System Admin").order_by("name")
+    # Subquery exclusion: exclude any group that grants can_approve_users,
+    # regardless of its other permissions (avoids JOIN ambiguity).
+    _approving_group_ids = Group.objects.filter(
+        permissions__codename="can_approve_users"
+    ).values_list("pk", flat=True)
+    groups = Group.objects.exclude(pk__in=_approving_group_ids).order_by(
+        "name"
+    )
     from assets.models import Department
 
     departments = Department.objects.filter(is_active=True).order_by("name")
@@ -415,7 +433,19 @@ def approve_user_view(request, user_pk):
     dept_ids = request.POST.getlist("departments")
 
     # S7.13-06: Re-validate department is_active server-side
-    if group_name == "Department Manager" and dept_ids:
+    # Check if the selected group is a dept manager role
+    # (has can_merge_assets but NOT can_approve_users)
+    _selected_group = Group.objects.filter(name=group_name).first()
+    _is_dept_manager_role = bool(
+        _selected_group
+        and _selected_group.permissions.filter(
+            codename="can_merge_assets"
+        ).exists()
+        and not _selected_group.permissions.filter(
+            codename="can_approve_users"
+        ).exists()
+    )
+    if _is_dept_manager_role and dept_ids:
         inactive_depts = Department.objects.filter(
             pk__in=dept_ids, is_active=False
         )
@@ -447,12 +477,12 @@ def approve_user_view(request, user_pk):
         ]
     )
 
-    # 2. Add to group
-    try:
-        group = Group.objects.get(name=group_name)
+    # 2. Add to group (reuse _selected_group from dept manager check)
+    group = _selected_group
+    if group:
         pending_user.groups.clear()
         pending_user.groups.add(group)
-    except Group.DoesNotExist:
+    else:
         logger.error(
             "Approval role '%s' not found for user %s",
             group_name,
@@ -464,8 +494,9 @@ def approve_user_view(request, user_pk):
             f"User was activated but no role was assigned.",
         )
 
-    # 3. If Department Manager, add to dept managers M2M
-    if group_name == "Department Manager" and dept_ids:
+    # 3. If the assigned group is dept manager role, add to M2M
+    # Reuse _is_dept_manager_role computed earlier to avoid duplicate queries.
+    if _is_dept_manager_role and dept_ids:
         for dept_id in dept_ids:
             try:
                 dept = Department.objects.get(pk=dept_id, is_active=True)

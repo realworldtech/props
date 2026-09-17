@@ -186,6 +186,16 @@ urlpatterns = [
         name="location_deactivate",
     ),
     path(
+        "locations/<int:pk>/checkout/",
+        views.location_checkout,
+        name="location_checkout",
+    ),
+    path(
+        "locations/<int:pk>/checkin/",
+        views.location_checkin,
+        name="location_checkin",
+    ),
+    path(
         "locations/<int:pk>/print-label/",
         views.location_print_label,
         name="location_print_label",
@@ -203,6 +213,11 @@ urlpatterns = [
         "locations/search/",
         views.location_search,
         name="location_search",
+    ),
+    path(
+        "assets/search/",
+        views.asset_search,
+        name="asset_search",
     ),
     path(
         "tags/create-inline/",

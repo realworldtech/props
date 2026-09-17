@@ -37,7 +37,7 @@ This project follows **test-driven development**. For every change:
 1. Write a failing test that describes the expected behaviour
 2. Run `pytest` and confirm it fails
 3. Implement the code
-4. Run `pytest` and confirm it passes
+4. Run `uv run pytest` and confirm it passes
 5. Verify tests also pass inside Docker: `docker compose exec web pytest`
 
 Target 80%+ test coverage on changed code.
@@ -54,15 +54,21 @@ Configuration is in `pyproject.toml`.
 
 ### 5. Update Dependencies Properly
 
-If you add or change a dependency, edit `requirements.in` and regenerate `requirements.txt`:
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). To add or
+change a dependency, edit `pyproject.toml` (or use `uv add <package>`), then
+refresh the lockfile:
 
 ```bash
-pip-compile requirements.in
+uv lock
+uv sync
 ```
 
-Never commit a modified `requirements.in` without the corresponding `requirements.txt` update.
+Never commit a modified `pyproject.toml` without the matching `uv.lock` update.
+CI rejects a stale lockfile.
 
 ### 6. Submit a Pull Request
+
+CI for this project runs on the maintainers' internal GitHub Enterprise Server; checks on github.com pull requests are run by a maintainer mirroring the branch.
 
 Use the PR template provided. Your PR should include:
 

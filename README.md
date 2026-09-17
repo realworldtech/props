@@ -77,6 +77,14 @@ Copy `.env.example` to `.env` and configure. Key variables:
 
 See `.env.example` for the full list with descriptions.
 
+## Backup & Recovery
+
+A PROPS deployment has two data stores to protect: the **PostgreSQL database**
+(the system of record) and the **object/media store** (uploaded images). See
+[docs/backup-and-recovery.md](docs/backup-and-recovery.md) for the full operator
+guide — `pg_dump`/managed-snapshot strategies, offsite media mirroring with
+`rclone`, retention, and restore procedures.
+
 ## User Roles
 
 | Role | Capabilities |
@@ -92,10 +100,16 @@ See `.env.example` for the full list with descriptions.
 
 ## Development
 
+### Local environment
+
+```bash
+uv sync          # creates .venv with all runtime and dev dependencies
+```
+
 ### Running tests
 
 ```bash
-pytest
+uv run pytest
 # or inside Docker:
 docker compose exec web pytest
 ```
@@ -103,9 +117,9 @@ docker compose exec web pytest
 ### Code style
 
 ```bash
-black src/
-isort src/
-flake8 src/
+uv run black src/
+uv run isort src/
+uv run flake8 src/
 ```
 
 Configuration is in `pyproject.toml`.

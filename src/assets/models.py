@@ -7,6 +7,8 @@ import barcode
 from barcode.writer import ImageWriter
 
 from django.conf import settings
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
@@ -100,6 +102,14 @@ class Location(models.Model):
         related_name="children",
     )
     is_active = models.BooleanField(default=True)
+    is_checkable = models.BooleanField(
+        default=False,
+        help_text=(
+            "If True, this location can be checked out as a unit "
+            "(all assets checked out to a single borrower)."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["name"]
@@ -349,6 +359,8 @@ class Asset(models.Model):
         related_name="created_assets",
     )
 
+    search_vector = SearchVectorField(null=True, editable=False)
+
     objects = AssetManager()
 
     class Meta:
@@ -367,6 +379,10 @@ class Asset(models.Model):
                 fields=["is_serialised"],
                 name="idx_asset_is_serialised",
             ),
+            GinIndex(
+                fields=["search_vector"],
+                name="idx_asset_search_vector",
+            ),
         ]
         permissions = [
             ("can_checkout_asset", "Can check out assets"),
@@ -382,6 +398,7 @@ class Asset(models.Model):
                 "override_hold_checkout",
                 "Can override hold list checkout block",
             ),
+            ("can_be_borrower", "Can be a borrower of assets"),
         ]
 
     def __str__(self):
@@ -736,6 +753,19 @@ class AssetImage(models.Model):
                 name="idx_assetimage_asset_primary",
             ),
         ]
+
+    @property
+    def thumbnail_url(self):
+        """Return the best available thumbnail URL.
+
+        Prefers the generated thumbnail; falls back to the full image.
+        Returns an empty string when no image is set.
+        """
+        if self.thumbnail:
+            return self.thumbnail.url
+        if self.image:
+            return self.image.url
+        return ""
 
     def __str__(self):
         return f"Image for {self.asset.name}"

@@ -7,8 +7,6 @@ __pycache__/
 env/
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
 *.egg-info/
 dist/
 build/
@@ -64,9 +62,11 @@ bin/
 # Claude Code
 .claude/
 CLAUDE.local.md
+.mcp.json
 
 # Git worktrees
 .worktrees/
 
 # Spec pipeline state
 .issue-pipeline/
+.image-cache/

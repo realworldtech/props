@@ -41,6 +41,7 @@ class Command(BaseCommand):
         export_assets = get_perm("can_export_assets", asset_ct)
         handover_asset = get_perm("can_handover_asset", asset_ct)
         override_hold = get_perm("override_hold_checkout", asset_ct)
+        be_borrower = get_perm("can_be_borrower", asset_ct)
 
         # Category permissions
         add_category = get_perm("add_category", category_ct)
@@ -78,6 +79,7 @@ class Command(BaseCommand):
                 export_assets,
                 handover_asset,
                 override_hold,
+                be_borrower,
                 add_category,
                 change_category,
                 delete_category,
@@ -157,9 +159,9 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("Created/updated 'Viewer' group"))
 
-        # Borrower group (no permissions — external loan recipients)
+        # Borrower group (can_be_borrower only — external loan recipients)
         borrower, _ = Group.objects.get_or_create(name="Borrower")
-        borrower.permissions.clear()
+        borrower.permissions.set([be_borrower])
         self.stdout.write(
             self.style.SUCCESS("Created/updated 'Borrower' group")
         )

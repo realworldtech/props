@@ -315,7 +315,14 @@ class LocationForm(forms.ModelForm):
 
     class Meta:
         model = Location
-        fields = ["name", "address", "description", "parent", "is_active"]
+        fields = [
+            "name",
+            "address",
+            "description",
+            "parent",
+            "is_active",
+            "is_checkable",
+        ]
         widgets = {
             "name": forms.TextInput(
                 attrs={
