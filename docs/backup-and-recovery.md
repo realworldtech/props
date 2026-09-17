@@ -112,7 +112,7 @@ tooling, not an everyday restore tool.
 on the deployment host and runs as a Docker Compose sidecar (configured via a
 host-local `backup.toml` + a root-only secrets file and a
 `docker-compose.override.yml`). Nothing ARK-related is committed to this
-repository or added to `requirements.txt`. Open-source and self-hosted
+repository or added to `pyproject.toml`. Open-source and self-hosted
 deployments should use Option A or Option B above and have **no ARK
 dependency**. ARK is internal RWTS infrastructure and is not available to
 external deployments.

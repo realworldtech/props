@@ -19,11 +19,23 @@ class EmailOrUsernameBackend(ModelBackend):
                 return None
             user = users.first()
         else:
-            try:
-                user = User.objects.get(username=username)
-            except User.DoesNotExist:
+            user = self._get_by_username(username)
+            if user is None:
                 return None
 
         if user.check_password(password) and self.user_can_authenticate(user):
             return user
         return None
+
+    @staticmethod
+    def _get_by_username(username):
+        """Exact match first; otherwise a unique case-insensitive match.
+
+        Usernames are generated in lowercase, but mobile keyboards
+        capitalise the first letter of a text field.
+        """
+        user = User.objects.filter(username=username).first()
+        if user is not None:
+            return user
+        users = list(User.objects.filter(username__iexact=username)[:2])
+        return users[0] if len(users) == 1 else None

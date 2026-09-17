@@ -8,10 +8,16 @@ permissions:
   contents: write
   packages: write
 
+# Same file runs on github.com and on GHES; the registry follows the host and
+# the runner label comes from the RUNNER_LABEL repository variable.
+env:
+  IMAGE: realworldtech/props
+  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || 'containers.github.realworld.net.au' }}
+
 jobs:
   version:
     name: Calculate & Tag Version
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     outputs:
       version: ${{ steps.calc.outputs.version }}
       tag: ${{ steps.calc.outputs.tag }}
@@ -43,103 +49,74 @@ jobs:
           git tag -a "${{ steps.calc.outputs.tag }}" -m "Release ${{ steps.calc.outputs.version }}"
           git push origin "${{ steps.calc.outputs.tag }}"
 
-  build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
+  publish:
+    name: Promote commit image to release
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     needs: version
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: true
-          tags: props:ci-test
-          build-args: |
-            APP_VERSION=${{ needs.version.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Save image as artifact
-        run: docker save props:ci-test | gzip > /tmp/props-ci.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp/props-ci.tar.gz
-          retention-days: 1
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest-large
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load image
-        run: gunzip -c /tmp/props-ci.tar.gz | docker load
-
-      - name: Run tests
-        run: CI_IMAGE=props:ci-test docker compose -f docker-compose.ci.yml up --exit-code-from web
-
-      - name: Clean up
-        if: always()
-        run: docker compose -f docker-compose.ci.yml down -v
-
-  publish:
-    name: Publish to GHCR
-    runs-on: ubuntu-latest
-    needs: [version, test]
-    steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load image
-        run: gunzip -c /tmp/props-ci.tar.gz | docker load
-
-      - name: Log in to GHCR
+      - name: Log in to the container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Tag and push
+      - name: Find the image built for this merge
+        id: src
+        run: |
+          # The merge commit itself was never built; the PR head (second parent)
+          # was. Fall back to building when no image exists for it.
+          set -euo pipefail
+          IMG="$REGISTRY/$IMAGE"
+          if git rev-parse -q --verify HEAD^2 >/dev/null; then SRC=$(git rev-parse HEAD^2); else SRC=$(git rev-parse HEAD); fi
+          echo "source commit: $SRC"
+          if docker buildx imagetools inspect "$IMG:sha-$SRC" >/dev/null 2>&1; then
+            echo "promote=$IMG:sha-$SRC" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::no image for $SRC; building from this commit"
+            echo "promote=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The image carries only its commit; the release version is passed to
+      # the app at runtime as APP_VERSION (PROPS_VERSION in .env).
+      - name: Retag as release
+        if: steps.src.outputs.promote != ''
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          IMAGE=ghcr.io/realworldtech/props
+          IMG="$REGISTRY/$IMAGE"
           YEAR_MONTH=$(echo "$VERSION" | cut -d. -f1,2)
-          SHA_SHORT=$(echo "${{ github.sha }}" | head -c 7)
+          docker buildx imagetools create \
+            -t "$IMG:$VERSION" -t "$IMG:$YEAR_MONTH" -t "$IMG:latest" -t "$IMG:sha-${{ github.sha }}" \
+            "${{ steps.src.outputs.promote }}"
 
-          docker tag props:ci-test "${IMAGE}:${VERSION}"
-          docker tag props:ci-test "${IMAGE}:${YEAR_MONTH}"
-          docker tag props:ci-test "${IMAGE}:latest"
-          docker tag props:ci-test "${IMAGE}:sha-${SHA_SHORT}"
+      - name: Build (fallback, direct push without a tested image)
+        if: steps.src.outputs.promote == ''
+        uses: docker/build-push-action@v6
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:sha-${{ github.sha }}
+          build-args: GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-          docker push "${IMAGE}:${VERSION}"
-          docker push "${IMAGE}:${YEAR_MONTH}"
-          docker push "${IMAGE}:latest"
-          docker push "${IMAGE}:sha-${SHA_SHORT}"
-
-          echo "### Published Docker Images" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${IMAGE}:${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${IMAGE}:${YEAR_MONTH}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${IMAGE}:latest\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`${IMAGE}:sha-${SHA_SHORT}\`" >> "$GITHUB_STEP_SUMMARY"
+      - name: Summary
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          echo "### Release $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`$REGISTRY/$IMAGE:$VERSION\` (also :latest). Deploy with PROPS_VERSION=$VERSION." >> "$GITHUB_STEP_SUMMARY"

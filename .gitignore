@@ -7,8 +7,6 @@ __pycache__/
 env/
 venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
 *.egg-info/
 dist/
 build/

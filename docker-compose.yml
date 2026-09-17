@@ -94,7 +94,9 @@ services:
 
   # Dev profile - direct access on port 8003 with Daphne (ASGI)
   web:
-    build: .
+    build:
+      context: .
+      target: test
     restart: unless-stopped
     profiles: ["dev"]
     command: >
@@ -172,7 +174,7 @@ services:
 
   # Celery worker (prod - uses pre-built GHCR image)
   celery-worker-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     extra_hosts:
@@ -202,6 +204,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -233,7 +236,7 @@ services:
 
   # Celery beat scheduler (prod - uses pre-built GHCR image)
   celery-beat-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     command: >
@@ -253,11 +256,12 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
 
   # Prod init - runs migrations and collectstatic once before web starts
   web-init:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     profiles: ["prod"]
     command: >
       sh -c "
@@ -281,6 +285,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -288,7 +293,7 @@ services:
 
   # Prod HTTP — Gunicorn (sync views, static files via WhiteNoise)
   web-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     deploy:
@@ -327,6 +332,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900
@@ -342,7 +348,7 @@ services:
 
   # Prod WebSocket — Daphne (ASGI, handles /ws/ paths only)
   ws-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     extra_hosts:
@@ -374,6 +380,7 @@ services:
         condition: service_completed_successfully
     env_file: .env
     environment:
+      APP_VERSION: ${PROPS_VERSION:-latest}
       DATABASE_URL: postgres://props:${POSTGRES_PASSWORD}@db:5432/props
       USE_S3: "True"
       AWS_S3_ENDPOINT_URL: http://garage:3900

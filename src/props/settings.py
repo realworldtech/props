@@ -195,6 +195,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # V894: Custom rate limit view returns 429 with Retry-After header
 RATELIMIT_VIEW = "props.views.ratelimited_view"
+# Key rate limits on the real client IP, not the proxy container
+RATELIMIT_IP_META_KEY = "props.ratelimit.client_ip"
 
 AUTHENTICATION_BACKENDS = [
     "accounts.backends.EmailOrUsernameBackend",
@@ -254,18 +256,26 @@ BARCODE_PREFIX = os.environ.get("BARCODE_PREFIX", "ASSET")
 BRAND_PRIMARY_COLOR = os.environ.get("BRAND_PRIMARY_COLOR", "#4F46E5")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 
-# Cache configuration
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": os.environ.get("CACHE_URL", "redis://localhost:6379/1"),
-    }
-}
-
 # Celery configuration
 CELERY_BROKER_URL = os.environ.get(
     "CELERY_BROKER_URL", "redis://localhost:6379/0"
 )
+
+
+def cache_url_from_broker(broker_url):
+    """Same Redis as the Celery broker, database 1."""
+    return broker_url.rsplit("/", 1)[0] + "/1"
+
+
+# Cache configuration. Every page reads the cache (site branding), so an
+# unreachable cache is a hard failure; default to the broker's Redis host.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.environ.get("CACHE_URL")
+        or cache_url_from_broker(CELERY_BROKER_URL),
+    }
+}
 CELERY_RESULT_BACKEND = os.environ.get(
     "CELERY_RESULT_BACKEND", "redis://localhost:6379/0"
 )

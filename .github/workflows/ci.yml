@@ -1,117 +1,137 @@
 name: CI
 
+# Build once, promote later. Every pull request builds the image for its head
+# commit, runs the test suite against it, and publishes it as
+# <registry>/realworldtech/props:sha-<commit>. Merges to develop and main only
+# retag that image (see promote-develop.yml and release.yml), and a pull
+# request whose head commit already has an image (develop -> main) skips the
+# build and the tests: that image has been tested already.
+#
+# Runs unchanged on github.com and on the internal GHES. The runner label comes
+# from the RUNNER_LABEL repository variable (default ubuntu-latest) and the
+# registry follows the host.
+
 on:
   pull_request:
     branches: [develop, main]
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ${{ github.server_url == 'https://github.com' && 'ghcr.io' || 'containers.github.realworld.net.au' }}
+  IMAGE: realworldtech/props
 
 jobs:
   lint:
     name: Lint & Format
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
+      - name: Install uv 0.12.15
+        run: |
+          curl -LsSf -o "$RUNNER_TEMP/uv-install.sh" https://astral.sh/uv/0.12.15/install.sh
+          echo "716a1d6844740756c68770fcec2f79c2013fb9b03869a113f61e15f6f482a6a1  $RUNNER_TEMP/uv-install.sh" | sha256sum -c -
+          UV_INSTALL_DIR="$RUNNER_TEMP/uv" sh "$RUNNER_TEMP/uv-install.sh" --no-modify-path
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: pip install black isort flake8
+        run: uv sync --frozen --only-group dev
 
       - name: Check black formatting
-        run: black --check --line-length 79 --target-version py312 src/
+        run: uv run black --check src/
 
       - name: Check isort ordering
-        run: isort --check --profile black --line-length 79 src/
+        run: uv run isort --check src/
 
       - name: Run flake8
-        run: flake8 src/
+        run: uv run flake8 src/
 
-  requirements-check:
-    name: Requirements in sync
-    runs-on: ubuntu-latest
+      - name: Audit dependencies for known vulnerabilities
+        run: uv run pip-audit --progress-spinner off
+
+  lockfile-check:
+    name: Lockfile in sync
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify every package in requirements.in appears in requirements.txt
+      - name: Install uv 0.12.15
         run: |
-          missing=0
-          while IFS= read -r line; do
-            line=$(echo "$line" | sed 's/#.*//' | xargs)
-            [ -z "$line" ] && continue
-            [[ "$line" == -* ]] && continue
-            pkg=$(echo "$line" | sed 's/\[.*\]//' | sed 's/[><=!].*//' | xargs | tr '[:upper:]' '[:lower:]')
-            [ -z "$pkg" ] && continue
-            if ! grep -qi "^${pkg}[>=<! \[]" requirements.txt && ! grep -qi "# via.*-r requirements.in" requirements.txt; then
-              if ! grep -qi "^${pkg}" requirements.txt; then
-                echo "MISSING: $pkg is in requirements.in but not in requirements.txt"
-                missing=1
-              fi
-            fi
-          done < requirements.in
-          if [ "$missing" -eq 1 ]; then
-            echo "requirements.txt is out of sync with requirements.in. Run 'pip-compile requirements.in' and commit the result."
-            exit 1
-          fi
-          echo "All packages from requirements.in found in requirements.txt"
+          curl -LsSf -o "$RUNNER_TEMP/uv-install.sh" https://astral.sh/uv/0.12.15/install.sh
+          echo "716a1d6844740756c68770fcec2f79c2013fb9b03869a113f61e15f6f482a6a1  $RUNNER_TEMP/uv-install.sh" | sha256sum -c -
+          UV_INSTALL_DIR="$RUNNER_TEMP/uv" sh "$RUNNER_TEMP/uv-install.sh" --no-modify-path
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
 
-  build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: [lint, requirements-check]
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+
+  build-test:
+    name: Build & Test
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [lint, lockfile-check]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
+      # Forks cannot push to the registry; their PRs are tested only.
+      - name: Log in to the container registry
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for an image already built and tested for this commit
+        id: existing
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if docker buildx imagetools inspect "$REGISTRY/$IMAGE:sha-$HEAD_SHA" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$REGISTRY/$IMAGE:sha-$HEAD_SHA exists; build and tests skipped"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build test image
+        if: steps.existing.outputs.found != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: test
           push: false
           load: true
           tags: props:ci-test
-          build-args: |
-            APP_VERSION=ci-${{ github.sha }}
-            GIT_COMMIT=${{ github.sha }}
+          build-args: GIT_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Save image as artifact
-        run: docker save props:ci-test | gzip > /tmp/props-ci.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp/props-ci.tar.gz
-          retention-days: 1
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest-large
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load image
-        run: gunzip -c /tmp/props-ci.tar.gz | docker load
-
       - name: Run tests
+        if: steps.existing.outputs.found != 'true'
         run: CI_IMAGE=props:ci-test docker compose -f docker-compose.ci.yml up --exit-code-from web
 
       - name: Clean up
-        if: always()
+        if: always() && steps.existing.outputs.found != 'true'
         run: docker compose -f docker-compose.ci.yml down -v
+
+      - name: Publish runtime image for this commit
+        if: steps.existing.outputs.found != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:sha-${{ github.event.pull_request.head.sha || github.sha }}
+          build-args: GIT_COMMIT=${{ github.event.pull_request.head.sha || github.sha }}
+          cache-from: type=gha

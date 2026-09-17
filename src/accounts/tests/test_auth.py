@@ -420,3 +420,116 @@ class TestSendBrandedEmail:
         )
 
         mock_send.assert_called_once()
+
+
+class TestLoginRateLimit:
+    """Login rate limiting must key on the real client and be visible."""
+
+    def _exhaust(self, client, **extra):
+        for _ in range(5):
+            client.post(
+                reverse("accounts:login"),
+                {"username": "nobody", "password": "bad"},
+                **extra,
+            )
+
+    def test_rate_limited_login_shows_error_message(
+        self, client, user, password
+    ):
+        self._exhaust(client)
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": user.username, "password": password},
+        )
+        assert response.status_code == 200
+        assert b"Too many login attempts" in response.content
+
+    def test_rate_limit_keys_on_forwarded_client_ip_behind_proxy(
+        self, client, user, password, settings
+    ):
+        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+        self._exhaust(client, HTTP_X_FORWARDED_FOR="203.0.113.10")
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": user.username, "password": password},
+            HTTP_X_FORWARDED_FOR="203.0.113.20",
+        )
+        assert response.status_code == 302
+
+    def test_client_supplied_forwarded_hops_cannot_evade_limit(
+        self, client, user, password, settings
+    ):
+        settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+        for i in range(5):
+            client.post(
+                reverse("accounts:login"),
+                {"username": "nobody", "password": "bad"},
+                HTTP_X_FORWARDED_FOR=f"198.51.100.{i}, 203.0.113.10",
+            )
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": user.username, "password": password},
+            HTTP_X_FORWARDED_FOR="198.51.100.99, 203.0.113.10",
+        )
+        assert response.status_code == 200
+        assert b"Too many login attempts" in response.content
+
+    def test_forwarded_header_ignored_without_proxy(
+        self, client, user, password, settings
+    ):
+        settings.SECURE_PROXY_SSL_HEADER = None
+        self._exhaust(client, HTTP_X_FORWARDED_FOR="203.0.113.10")
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": user.username, "password": password},
+            HTTP_X_FORWARDED_FOR="203.0.113.20",
+        )
+        assert response.status_code == 200
+
+
+class TestLoginUsernameCase:
+    """Usernames are generated lowercase; mobile keyboards capitalise."""
+
+    def test_login_by_username_case_insensitive(self, client, user, password):
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": "TestUser", "password": password},
+        )
+        assert response.status_code == 302
+
+    def test_exact_username_wins_over_case_variant(
+        self, client, user, password, db
+    ):
+        other = User.objects.create_user(
+            username="TESTUSER", email="other@example.com", password="x"
+        )
+        response = client.post(
+            reverse("accounts:login"),
+            {"username": "TESTUSER", "password": password},
+        )
+        assert response.status_code == 200
+        assert other.pk != user.pk
+
+    def test_login_input_disables_autocapitalise(self, client, db):
+        response = client.get(reverse("accounts:login"))
+        content = response.content.decode()
+        assert 'autocapitalize="none"' in content
+        assert 'autocorrect="off"' in content
+
+
+class TestLoginNextRedirect:
+    def test_login_rejects_external_next_url(self, client, user, password):
+        response = client.post(
+            reverse("accounts:login") + "?next=https://evil.example/",
+            {"username": user.username, "password": password},
+        )
+        assert response.status_code == 302
+        assert response.url == reverse("assets:dashboard")
+
+    def test_login_honours_local_next_url(self, client, user, password):
+        response = client.post(
+            reverse("accounts:login") + "?next=/assets/",
+            {"username": user.username, "password": password},
+        )
+        assert response.status_code == 302
+        assert response.url == "/assets/"

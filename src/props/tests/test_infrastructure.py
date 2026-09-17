@@ -95,6 +95,21 @@ _skip_no_compose = pytest.mark.skipif(
 )
 
 
+def _repo_file(name):
+    """Return a repo-root file's Path, or None inside the Docker image."""
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent.parent.parent / name
+    return path if path.exists() else None
+
+
+def _skip_without(name):
+    return pytest.mark.skipif(
+        _repo_file(name) is None,
+        reason=f"{name} not available (excluded by .dockerignore)",
+    )
+
+
 @_skip_no_compose
 @pytest.mark.django_db
 class TestDockerComposeServices:
@@ -248,14 +263,23 @@ class TestDeploymentConstraints:
         """V688, V691: Docker Compose + S3."""
         assert _compose_file() is not None
 
-    def test_pip_tools_configured(self):
-        """V690, V628: pip-tools dependency management."""
+    def test_uv_dependency_management_configured(self):
+        """V690, V628: uv dependency management (S4.13)."""
         from pathlib import Path
 
-        req_in = Path(__file__).parent.parent.parent.parent / "requirements.in"
-        assert req_in.exists()
-        content = req_in.read_text()
-        assert "Django" in content
+        root = Path(__file__).parent.parent.parent.parent
+        pyproject = (root / "pyproject.toml").read_text()
+        assert "[project]" in pyproject
+        assert "Django" in pyproject
+        assert (root / "uv.lock").exists()
+        assert not (root / "requirements.txt").exists()
+
+    @_skip_without("Dockerfile")
+    def test_docker_build_installs_from_lockfile(self):
+        """S4.13.2-04: the image installs from the frozen lockfile."""
+        dockerfile = _repo_file("Dockerfile").read_text()
+        assert "uv sync --frozen" in dockerfile
+        assert "pip install" not in dockerfile
 
     @_skip_no_compose
     def test_single_server_deployment(self):
@@ -433,3 +457,94 @@ class TestSendBrandedEmail:
             "admin1@example.com",
             "admin2@example.com",
         ]
+
+
+class TestCacheConfiguration:
+    """CACHE_URL is optional; the cache follows the Celery Redis host."""
+
+    def test_cache_url_defaults_to_broker_host_db_one(self):
+        from props.settings import cache_url_from_broker
+
+        assert (
+            cache_url_from_broker("redis://redis:6379/0")
+            == "redis://redis:6379/1"
+        )
+
+    def test_cache_url_default_keeps_credentials_and_host(self):
+        from props.settings import cache_url_from_broker
+
+        assert (
+            cache_url_from_broker("redis://:secret@cache.internal:6380/3")
+            == "redis://:secret@cache.internal:6380/1"
+        )
+
+    @_skip_without(".env.example")
+    def test_example_env_documents_cache_url(self):
+        assert "CACHE_URL=" in _repo_file(".env.example").read_text()
+
+
+class TestMediaIsolation:
+    """Tests must not write media into the source tree.
+
+    Generated files under src/media are walked by pytest collection and,
+    through a Docker bind mount, make the suite appear to hang.
+    """
+
+    def test_media_root_is_outside_source_tree(self, settings):
+        from pathlib import Path
+
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        source_media = (Path(settings.BASE_DIR) / "media").resolve()
+        assert media_root != source_media
+        assert source_media not in media_root.parents
+
+    def test_pytest_does_not_recurse_into_generated_dirs(self):
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent.parent.parent
+        pyproject = (root / "pyproject.toml").read_text()
+        assert "norecursedirs" in pyproject
+        for name in ("media", "staticfiles"):
+            assert f'"{name}"' in pyproject
+
+
+class TestImageRegistryOverride:
+    """Prod services pull from a registry chosen per deployment."""
+
+    @_skip_no_compose
+    def test_prod_images_use_props_image_variable(self):
+        content = _compose_file().read_text()
+        assert "ghcr.io/realworldtech/props:" not in content
+        image = "${PROPS_IMAGE:-ghcr.io/realworldtech/props}"
+        assert f"{image}:${{PROPS_VERSION:-latest}}" in content
+
+    @_skip_without(".env.example")
+    def test_example_env_documents_props_image(self):
+        assert "PROPS_IMAGE=" in _repo_file(".env.example").read_text()
+
+
+class TestBuildOnceImages:
+    """One image per commit; the version reaches the app at runtime."""
+
+    @_skip_without("Dockerfile")
+    def test_dockerfile_has_test_stage_and_runtime_default(self):
+        dockerfile = _repo_file("Dockerfile").read_text()
+        assert "FROM base AS test" in dockerfile
+        assert (
+            dockerfile.rstrip()
+            .splitlines()[-1]
+            .startswith("FROM base AS runtime")
+        )
+
+    @_skip_without("Dockerfile")
+    def test_dockerfile_does_not_bake_app_version(self):
+        dockerfile = _repo_file("Dockerfile").read_text()
+        assert "ARG APP_VERSION" not in dockerfile
+        assert "ENV GIT_COMMIT=" in dockerfile
+
+    @_skip_no_compose
+    def test_prod_services_pass_version_from_env(self):
+        content = _compose_file().read_text()
+        images = content.count("${PROPS_IMAGE:-ghcr.io/realworldtech/props}")
+        assert images >= 5
+        assert content.count("APP_VERSION: ${PROPS_VERSION:-latest}") == images
