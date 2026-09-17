@@ -444,3 +444,29 @@ class TestSendBrandedEmail:
             "admin1@example.com",
             "admin2@example.com",
         ]
+
+
+class TestCacheConfiguration:
+    """CACHE_URL is optional; the cache follows the Celery Redis host."""
+
+    def test_cache_url_defaults_to_broker_host_db_one(self):
+        from props.settings import cache_url_from_broker
+
+        assert (
+            cache_url_from_broker("redis://redis:6379/0")
+            == "redis://redis:6379/1"
+        )
+
+    def test_cache_url_default_keeps_credentials_and_host(self):
+        from props.settings import cache_url_from_broker
+
+        assert (
+            cache_url_from_broker("redis://:secret@cache.internal:6380/3")
+            == "redis://:secret@cache.internal:6380/1"
+        )
+
+    def test_example_env_documents_cache_url(self):
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent.parent.parent
+        assert "CACHE_URL=" in (root / ".env.example").read_text()
