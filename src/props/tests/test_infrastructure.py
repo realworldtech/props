@@ -495,3 +495,20 @@ class TestMediaIsolation:
         assert "norecursedirs" in pyproject
         for name in ("media", "staticfiles"):
             assert f'"{name}"' in pyproject
+
+
+class TestImageRegistryOverride:
+    """Prod services pull from a registry chosen per deployment."""
+
+    @_skip_no_compose
+    def test_prod_images_use_props_image_variable(self):
+        content = _compose_file().read_text()
+        assert "ghcr.io/realworldtech/props:" not in content
+        image = "${PROPS_IMAGE:-ghcr.io/realworldtech/props}"
+        assert f"{image}:${{PROPS_VERSION:-latest}}" in content
+
+    def test_example_env_documents_props_image(self):
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent.parent.parent
+        assert "PROPS_IMAGE=" in (root / ".env.example").read_text()

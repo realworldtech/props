@@ -175,7 +175,7 @@ services:
 
   # Celery worker (prod - uses pre-built GHCR image)
   celery-worker-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     extra_hosts:
@@ -236,7 +236,7 @@ services:
 
   # Celery beat scheduler (prod - uses pre-built GHCR image)
   celery-beat-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     command: >
@@ -260,7 +260,7 @@ services:
 
   # Prod init - runs migrations and collectstatic once before web starts
   web-init:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     profiles: ["prod"]
     command: >
       sh -c "
@@ -291,7 +291,7 @@ services:
 
   # Prod HTTP — Gunicorn (sync views, static files via WhiteNoise)
   web-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     deploy:
@@ -345,7 +345,7 @@ services:
 
   # Prod WebSocket — Daphne (ASGI, handles /ws/ paths only)
   ws-prod:
-    image: ghcr.io/realworldtech/props:${PROPS_VERSION:-latest}
+    image: ${PROPS_IMAGE:-ghcr.io/realworldtech/props}:${PROPS_VERSION:-latest}
     restart: unless-stopped
     profiles: ["prod"]
     extra_hosts:
