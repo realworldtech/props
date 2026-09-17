@@ -20,8 +20,10 @@ jobs:
 
       - name: Install uv 0.12.15
         run: |
-          curl -LsSf https://astral.sh/uv/0.12.15/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -LsSf -o "$RUNNER_TEMP/uv-install.sh" https://astral.sh/uv/0.12.15/install.sh
+          echo "716a1d6844740756c68770fcec2f79c2013fb9b03869a113f61e15f6f482a6a1  $RUNNER_TEMP/uv-install.sh" | sha256sum -c -
+          UV_INSTALL_DIR="$RUNNER_TEMP/uv" sh "$RUNNER_TEMP/uv-install.sh" --no-modify-path
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: uv sync --frozen --only-group dev
@@ -46,8 +48,10 @@ jobs:
 
       - name: Install uv 0.12.15
         run: |
-          curl -LsSf https://astral.sh/uv/0.12.15/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          curl -LsSf -o "$RUNNER_TEMP/uv-install.sh" https://astral.sh/uv/0.12.15/install.sh
+          echo "716a1d6844740756c68770fcec2f79c2013fb9b03869a113f61e15f6f482a6a1  $RUNNER_TEMP/uv-install.sh" | sha256sum -c -
+          UV_INSTALL_DIR="$RUNNER_TEMP/uv" sh "$RUNNER_TEMP/uv-install.sh" --no-modify-path
+          echo "$RUNNER_TEMP/uv" >> "$GITHUB_PATH"
 
       - name: Verify uv.lock matches pyproject.toml
         run: uv lock --check
