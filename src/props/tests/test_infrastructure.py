@@ -470,3 +470,28 @@ class TestCacheConfiguration:
 
         root = Path(__file__).parent.parent.parent.parent
         assert "CACHE_URL=" in (root / ".env.example").read_text()
+
+
+class TestMediaIsolation:
+    """Tests must not write media into the source tree.
+
+    Generated files under src/media are walked by pytest collection and,
+    through a Docker bind mount, make the suite appear to hang.
+    """
+
+    def test_media_root_is_outside_source_tree(self, settings):
+        from pathlib import Path
+
+        media_root = Path(settings.MEDIA_ROOT).resolve()
+        source_media = (Path(settings.BASE_DIR) / "media").resolve()
+        assert media_root != source_media
+        assert source_media not in media_root.parents
+
+    def test_pytest_does_not_recurse_into_generated_dirs(self):
+        from pathlib import Path
+
+        root = Path(__file__).parent.parent.parent.parent
+        pyproject = (root / "pyproject.toml").read_text()
+        assert "norecursedirs" in pyproject
+        for name in ("media", "staticfiles"):
+            assert f'"{name}"' in pyproject

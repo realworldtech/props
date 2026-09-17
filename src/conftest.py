@@ -1,12 +1,17 @@
 """Shared pytest fixtures and factories for PROPS tests."""
 
+import tempfile
+
 import pytest
 
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 
-# Use local filesystem storage for tests (avoids S3 credential errors)
+# Use local filesystem storage for tests (avoids S3 credential errors),
+# rooted in a throwaway directory so generated media never lands in
+# src/media, where pytest collection would walk it.
+settings.MEDIA_ROOT = tempfile.mkdtemp(prefix="props-test-media-")
 settings.STORAGES["default"] = {
     "BACKEND": "django.core.files.storage.FileSystemStorage",
 }

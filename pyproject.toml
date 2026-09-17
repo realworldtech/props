@@ -69,6 +69,7 @@ testpaths = ["src"]
 python_files = ["tests.py", "test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+norecursedirs = ["media", "staticfiles", "static", "templates", "tailwind", "migrations"]
 addopts = "-v --tb=short -n auto --cov=. --cov-report=term-missing:skip-covered"
 
 [tool.black]
