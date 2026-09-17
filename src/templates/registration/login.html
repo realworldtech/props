@@ -34,6 +34,11 @@
         </div>
 
         <div class="bg-white/50 dark:bg-stage-800/50 backdrop-blur-xl rounded-2xl border border-stage-200 dark:border-white/5 p-8">
+            {% for message in messages %}
+            <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300 text-sm">
+                {{ message }}
+            </div>
+            {% endfor %}
             {% if form.errors %}
             <div class="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300 text-sm">
                 Invalid email/username or password. Please try again.
@@ -47,6 +52,7 @@
                     <input type="text" name="username" id="id_username" autofocus required
                         placeholder="you@example.com or username"
                         autocomplete="username email"
+                        autocapitalize="none" autocorrect="off" spellcheck="false"
                         class="w-full rounded-lg px-4 py-3 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-stage-900 dark:text-cream placeholder-stage-500 dark:placeholder-cream/30 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all">
                 </div>
                 <div>

@@ -20,7 +20,10 @@ from django.db import models
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.utils.http import urlsafe_base64_decode
+from django.utils.http import (
+    url_has_allowed_host_and_scheme,
+    urlsafe_base64_decode,
+)
 
 from .email import send_branded_email
 from .forms import ProfileEditForm, RegistrationForm
@@ -96,7 +99,13 @@ def login_view(request):
                     {"state": "borrower_no_access"},
                 )
             login(request, user)
-            next_url = request.GET.get("next", "assets:dashboard")
+            next_url = request.GET.get("next", "")
+            if not url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                next_url = "assets:dashboard"
             return redirect(next_url)
     else:
         form = AuthenticationForm()

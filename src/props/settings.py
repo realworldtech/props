@@ -195,6 +195,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # V894: Custom rate limit view returns 429 with Retry-After header
 RATELIMIT_VIEW = "props.views.ratelimited_view"
+# Key rate limits on the real client IP, not the proxy container
+RATELIMIT_IP_META_KEY = "props.ratelimit.client_ip"
 
 AUTHENTICATION_BACKENDS = [
     "accounts.backends.EmailOrUsernameBackend",
