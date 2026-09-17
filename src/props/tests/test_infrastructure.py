@@ -95,6 +95,21 @@ _skip_no_compose = pytest.mark.skipif(
 )
 
 
+def _repo_file(name):
+    """Return a repo-root file's Path, or None inside the Docker image."""
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent.parent.parent / name
+    return path if path.exists() else None
+
+
+def _skip_without(name):
+    return pytest.mark.skipif(
+        _repo_file(name) is None,
+        reason=f"{name} not available (excluded by .dockerignore)",
+    )
+
+
 @_skip_no_compose
 @pytest.mark.django_db
 class TestDockerComposeServices:
@@ -259,12 +274,10 @@ class TestDeploymentConstraints:
         assert (root / "uv.lock").exists()
         assert not (root / "requirements.txt").exists()
 
+    @_skip_without("Dockerfile")
     def test_docker_build_installs_from_lockfile(self):
         """S4.13.2-04: the image installs from the frozen lockfile."""
-        from pathlib import Path
-
-        root = Path(__file__).parent.parent.parent.parent
-        dockerfile = (root / "Dockerfile").read_text()
+        dockerfile = _repo_file("Dockerfile").read_text()
         assert "uv sync --frozen" in dockerfile
         assert "pip install" not in dockerfile
 
@@ -465,11 +478,9 @@ class TestCacheConfiguration:
             == "redis://:secret@cache.internal:6380/1"
         )
 
+    @_skip_without(".env.example")
     def test_example_env_documents_cache_url(self):
-        from pathlib import Path
-
-        root = Path(__file__).parent.parent.parent.parent
-        assert "CACHE_URL=" in (root / ".env.example").read_text()
+        assert "CACHE_URL=" in _repo_file(".env.example").read_text()
 
 
 class TestMediaIsolation:
@@ -507,8 +518,6 @@ class TestImageRegistryOverride:
         image = "${PROPS_IMAGE:-ghcr.io/realworldtech/props}"
         assert f"{image}:${{PROPS_VERSION:-latest}}" in content
 
+    @_skip_without(".env.example")
     def test_example_env_documents_props_image(self):
-        from pathlib import Path
-
-        root = Path(__file__).parent.parent.parent.parent
-        assert "PROPS_IMAGE=" in (root / ".env.example").read_text()
+        assert "PROPS_IMAGE=" in _repo_file(".env.example").read_text()
