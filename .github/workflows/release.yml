@@ -78,7 +78,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest-large
+    runs-on: ubuntu-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
         run: docker compose -f docker-compose.ci.yml down -v
 
   publish:
-    name: Publish to GHCR
+    name: Publish image
     runs-on: ubuntu-latest
     needs: [version, test]
     steps:
@@ -113,10 +113,10 @@ jobs:
       - name: Load image
         run: gunzip -c /tmp/props-ci.tar.gz | docker load
 
-      - name: Log in to GHCR
+      - name: Log in to the GHES container registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: containers.github.realworld.net.au
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -124,7 +124,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          IMAGE=ghcr.io/realworldtech/props
+          IMAGE=containers.github.realworld.net.au/realworldtech/props
           YEAR_MONTH=$(echo "$VERSION" | cut -d. -f1,2)
           SHA_SHORT=$(echo "${{ github.sha }}" | head -c 7)
 

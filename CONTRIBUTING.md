@@ -68,6 +68,8 @@ CI rejects a stale lockfile.
 
 ### 6. Submit a Pull Request
 
+CI for this project runs on the maintainers' internal GitHub Enterprise Server; checks on github.com pull requests are run by a maintainer mirroring the branch.
+
 Use the PR template provided. Your PR should include:
 
 - **Summary** — what the change does and why

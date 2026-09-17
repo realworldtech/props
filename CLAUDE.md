@@ -46,6 +46,9 @@ docker compose exec web python manage.py setup_groups
 
 ## Branching and Release Workflow
 
+- **CI, CodeQL and releases run on the internal GHES** (`github.realworld.net.au/realworldtech/props`, remote `ghe`). `github.com/realworldtech/props` is the public mirror; GitHub Actions do not run there. Push `develop` and `main` to both remotes.
+- Release images publish to `containers.github.realworld.net.au/realworldtech/props`. Production sets `PROPS_IMAGE` to that registry; the compose default stays `ghcr.io` for self-hosters.
+
 - **`main`** — production branch. Only updated via PR from `develop`.
 - **`develop`** — integration branch. All feature work merges here first.
 - **Feature branches** — branch from `develop`, PR back to `develop`.
