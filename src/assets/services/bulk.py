@@ -225,12 +225,19 @@ def bulk_status_change(
         ]
         return 0, failures
 
-    from .state import validate_transition
+    from .state import RECOVERABLE_STATUSES, validate_transition
 
     assets = list(Asset.objects.filter(pk__in=asset_ids))
     valid_assets: list[Asset] = []
     failures: list[str] = []
     for asset in assets:
+        # Missing and recovery need notes, a location and a transaction.
+        if new_status == "missing" or asset.status in RECOVERABLE_STATUSES:
+            failures.append(
+                f"{asset.name}: Use the Status menu on the asset page "
+                f"for this change."
+            )
+            continue
         try:
             validate_transition(asset, new_status)
             asset.status = new_status

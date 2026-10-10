@@ -864,7 +864,7 @@ class TestUS_SA_015_RecoverLostOrStolenAsset:
 
     MoSCoW: MUST
     Spec refs: S2.2.3-08, S3.3.2
-    UI Surface: /assets/<pk>/edit/
+    UI Surface: /assets/<pk>/status/active/ (Mark as found)
     """
 
     def test_recover_lost_asset_to_active(
@@ -879,19 +879,20 @@ class TestUS_SA_015_RecoverLostOrStolenAsset:
             current_location=location,
             created_by=admin_user,
         )
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[lost_asset.pk]),
-            {
-                "name": lost_asset.name,
-                "category": lost_asset.category.pk,
-                "current_location": lost_asset.current_location.pk,
-                "condition": lost_asset.condition,
-                "quantity": lost_asset.quantity,
-                "status": "active",
-            },
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[lost_asset.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(location.pk)
+        admin_client.post(recover_url, fields)
         lost_asset.refresh_from_db()
         assert lost_asset.status == "active"
+        assert lost_asset.current_location == location
 
     def test_recovered_asset_visible_in_default_search(
         self, admin_client, category, location, admin_user

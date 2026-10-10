@@ -3,6 +3,7 @@
 from django import forms
 
 from .models import Asset, AssetImage, Category, Location, Tag
+from .services.state import RECOVERABLE_STATUSES, status_action_label
 
 _CSS = (
     "form-input w-full rounded-lg"
@@ -33,7 +34,7 @@ class AssetForm(forms.ModelForm):
                 "class": _CSS,
             }
         ),
-        help_text="Draft assets can be saved without category or location.",
+        help_text="Draft assets don't require category or location.",
     )
 
     class Meta:
@@ -159,7 +160,16 @@ class AssetForm(forms.ModelForm):
         # draft/active
         if self.instance and self.instance.pk:
             current = self.instance.status
-            if current not in dict(FORM_STATUS_CHOICES):
+            if current in RECOVERABLE_STATUSES:
+                # Recovery needs a location and a transaction (S7.17.3).
+                status = self.fields["status"]
+                status.choices = [
+                    (current, self.instance.get_status_display())
+                ]
+                status.disabled = True
+                label = status_action_label(self.instance, "active")
+                status.help_text = f"Use {label} on the asset page."
+            elif current not in dict(FORM_STATUS_CHOICES):
                 self.fields["status"].choices = FORM_STATUS_CHOICES + [
                     (current, current.title())
                 ]

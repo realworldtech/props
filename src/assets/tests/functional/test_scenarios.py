@@ -1226,20 +1226,36 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
             asset.status != "lost"
         ), "Bulk lost transition should be blocked per S7.17.5"
 
-    def test_lost_asset_can_be_recovered_to_active_via_bulk_action(
+    def test_lost_asset_is_recovered_via_status_menu_not_bulk_action(
         self, admin_client, asset
     ):
+        """Recovery needs a location and a transaction (S7.17.3), so bulk
+        status change rejects it; the asset page action recovers it."""
         asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
         asset.save()
-        url = reverse("assets:bulk_actions")
         admin_client.post(
-            url,
+            reverse("assets:bulk_actions"),
             {
                 "bulk_action": "status_change",
                 "asset_ids": [asset.pk],
                 "new_status": "active",
             },
         )
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[asset.pk, "active"]
+        )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(asset.current_location.pk)
+        admin_client.post(recover_url, fields)
         asset.refresh_from_db()
         assert asset.status == "active"
 
@@ -1469,15 +1485,18 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
         draft.refresh_from_db()
         assert draft.status == "lost"
 
-        # Recover via bulk_actions (active recovery is allowed in bulk)
-        admin_client.post(
-            reverse("assets:bulk_actions"),
-            {
-                "bulk_action": "status_change",
-                "asset_ids": [draft.pk],
-                "new_status": "active",
-            },
+        # Recover via Mark as found on the asset page (S7.17.3)
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[draft.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(location.pk)
+        admin_client.post(recover_url, fields)
         draft.refresh_from_db()
         assert draft.status == "active"
 
@@ -3361,15 +3380,10 @@ class TestScenario_11_9_RecoveryFromLost:
     def test_recovery_from_lost_sets_location(
         self, admin_client, asset, location
     ):
-        """Mark an asset as lost, then recover it via bulk_actions
-        status_change. Assert status becomes 'active' and location is
-        set (not null).
-
-        The bulk recovery path via status_change to 'active' is the
-        documented recovery route (GAP #31b: no dedicated recover URL
-        exists with location selection). This test verifies the basic
-        state machine: lost → active is permitted by bulk_actions and
-        the asset retains its current_location.
+        """Mark an asset as lost, then recover it with Mark as found on
+        the asset page. Assert status becomes 'active' and the location
+        is set (not null). GAP #31b (no recover action with location
+        selection) is closed by the asset page Status menu.
         """
         from assets.services.state import transition_asset
 
@@ -3383,16 +3397,18 @@ class TestScenario_11_9_RecoveryFromLost:
         # Ensure there is a location set (it should still be the original one)
         original_location = asset.current_location
 
-        # Recover via bulk_actions (status_change to active)
-        url = reverse("assets:bulk_actions")
-        resp = admin_client.post(
-            url,
-            {
-                "bulk_action": "status_change",
-                "asset_ids": [asset.pk],
-                "new_status": "active",
-            },
+        # Recover via Mark as found on the asset page
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[asset.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(original_location.pk)
+        resp = admin_client.post(recover_url, fields)
         assert resp.status_code in (200, 302)
         asset.refresh_from_db()
         assert (

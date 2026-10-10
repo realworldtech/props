@@ -607,6 +607,45 @@ class TestBulkEditDraftOnly:
 
 
 @pytest.mark.django_db
+class TestBulkStatusChangeKeepsManualStatusRules:
+    """Bulk status must not bypass the missing/lost/stolen/found rules
+    (S2.8.3-03: all transition rules apply; S2.2.3-03, S7.17.3)."""
+
+    def test_bulk_change_to_missing_is_rejected(self, asset, admin_user):
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change([asset.pk], "missing", admin_user)
+        assert count == 0
+        assert "Status menu" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_recovery_of_missing_asset_is_rejected(
+        self, asset, admin_user
+    ):
+        from assets.services.bulk import bulk_status_change
+
+        asset.status = "missing"
+        asset.save()
+        count, failures = bulk_status_change([asset.pk], "active", admin_user)
+        assert count == 0
+        assert "Status menu" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_bulk_activate_draft_still_works(
+        self, category, location, admin_user
+    ):
+        from assets.services.bulk import bulk_status_change
+
+        draft = AssetFactory(
+            status="draft", category=category, current_location=location
+        )
+        count, failures = bulk_status_change([draft.pk], "active", admin_user)
+        assert (count, failures) == (1, [])
+
+
+@pytest.mark.django_db
 class TestV264BulkStatusChange:
     """V264: bulk_actions POST with action=status_change updates selected
     assets."""

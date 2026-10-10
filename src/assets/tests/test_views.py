@@ -8112,19 +8112,12 @@ class TestAssetStatusChangeView:
     # --- Round trip: GET the form, POST the parsed fields ---
 
     def _form_fields(self, client, asset, status):
-        from assets.tests.functional.helpers import FormFieldCollector
+        from assets.tests.functional.helpers import collect_form_fields
 
         resp = client.get(self._url(asset, status))
         assert resp.status_code == 200
         content = resp.content.decode()
-        start = content.index('id="status-change-form"')
-        end = content.index("</form>", start)
-        form_html = content[start:end]
-        parser = FormFieldCollector()
-        parser.feed("<form " + form_html)
-        fields = parser.fields
-        fields.pop("csrfmiddlewaretoken", None)
-        return fields, content
+        return collect_form_fields(content, "status-change-form"), content
 
     def test_round_trip_mark_missing(self, admin_client, asset):
         from assets.models import Transaction
@@ -8253,3 +8246,50 @@ class TestAssetStatusChangeView:
 
         content = self._detail(admin_client, asset)
         assert "Last seen in the scene dock" in content
+
+    # --- Edit form must not bypass the status rules ---
+
+    def _edit_fields(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        resp = client.get(reverse("assets:asset_edit", args=[asset.pk]))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        return collect_form_fields(content, "asset-form"), content
+
+    def test_edit_form_cannot_recover_missing_asset(self, admin_client, asset):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["status"] = "active"  # user picks Active if offered
+        admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_edit_form_of_lost_asset_points_to_status_menu(
+        self, admin_client, asset
+    ):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        _, content = self._edit_fields(admin_client, asset)
+        assert "Use Mark as found on the asset page" in content
+
+    def test_edit_form_still_saves_other_fields_of_missing_asset(
+        self, admin_client, asset
+    ):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["name"] = "Renamed Prop"
+        resp = admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.name == "Renamed Prop"
+        assert asset.status == "missing"
