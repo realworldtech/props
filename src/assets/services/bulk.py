@@ -151,8 +151,9 @@ def bulk_transfer(asset_ids: list[int], location_id: int, user) -> dict:
     S7.22.4: Enforces per-asset department permission checks for
     department managers.
 
-    Returns a dict with 'transferred' count and 'skipped' list of
-    asset names that were skipped (e.g. checked-out assets).
+    Returns a dict with the 'transferred' count, the 'skipped' names
+    of checked-out assets and the 'excluded' names of assets the user
+    cannot edit.
     """
     location = Location.objects.get(pk=location_id, is_active=True)
     eligible_assets = list(
@@ -160,31 +161,16 @@ def bulk_transfer(asset_ids: list[int], location_id: int, user) -> dict:
             pk__in=asset_ids,
             status="active",
             checked_out_to__isnull=True,
-        )
+        ).select_related("category__department")
     )
     all_requested = Asset.objects.filter(pk__in=asset_ids)
     skipped_assets = all_requested.filter(checked_out_to__isnull=False)
     skipped_names = list(skipped_assets.values_list("name", flat=True))
 
-    # S7.22.4: Per-asset department permission check for
-    # department managers only. Only queries managed_departments
-    # if the user resolves to department_manager role (avoids
-    # extra queries for other roles).
-    from .permissions import get_user_role
-
-    if not user.is_superuser and get_user_role(user) == "department_manager":
-        managed_dept_ids = set(
-            user.managed_departments.values_list("pk", flat=True)
-        )
-        if managed_dept_ids:
-            permitted = []
-            for asset in eligible_assets:
-                dept = asset.department
-                if dept and dept.pk not in managed_dept_ids:
-                    skipped_names.append(asset.name)
-                else:
-                    permitted.append(asset)
-            eligible_assets = permitted
+    # S7.22.4, S2.8.3-05: only assets the user can edit.
+    eligible_assets, excluded_names = split_by_edit_permission(
+        user, eligible_assets
+    )
 
     if eligible_assets:
         transactions = [
@@ -207,6 +193,7 @@ def bulk_transfer(asset_ids: list[int], location_id: int, user) -> dict:
     return {
         "transferred": len(eligible_assets),
         "skipped": skipped_names,
+        "excluded": excluded_names,
     }
 
 
@@ -268,31 +255,91 @@ def bulk_status_change(
 
 def bulk_edit(
     asset_ids: list[int],
+    user,
     category_id: int | None = None,
     location_id: int | None = None,
-) -> int:
+) -> tuple[int, list[str]]:
     """Bulk edit category and/or location for multiple assets.
 
     V259: Category assignment is restricted to draft assets only.
-    Location assignment applies to all assets.
+    Location assignment applies to all assets. S2.8.3-05: assets the
+    user cannot edit, before or after the category change, are left out.
 
-    Returns the number of assets updated.
+    Returns a tuple of (updated count, list of failure messages).
     """
+    assets = list(
+        Asset.objects.filter(pk__in=asset_ids).select_related(
+            "category__department"
+        )
+    )
+    allowed, excluded = split_by_edit_permission(user, assets)
+    failures = [
+        f"{name}: You do not have permission to change this asset."
+        for name in excluded
+    ]
     count = 0
 
     if category_id:
         category = Category.objects.get(pk=category_id)
         # V259: Only draft assets can have category bulk-assigned
-        draft_qs = Asset.objects.filter(pk__in=asset_ids, status="draft")
-        count = draft_qs.update(category=category)
+        drafts = [a for a in allowed if a.status == "draft"]
+        movable = [
+            a for a in drafts if can_edit_with_category(user, a, category)
+        ]
+        failures += [
+            f"{a.name}: You cannot assign the category '{category.name}'."
+            for a in drafts
+            if a not in movable
+        ]
+        count = Asset.objects.filter(pk__in=[a.pk for a in movable]).update(
+            category=category
+        )
 
     if location_id:
         location = Location.objects.get(pk=location_id, is_active=True)
-        all_qs = Asset.objects.filter(pk__in=asset_ids)
-        loc_count = all_qs.update(current_location=location)
+        loc_count = Asset.objects.filter(
+            pk__in=[a.pk for a in allowed]
+        ).update(current_location=location)
         count = max(count, loc_count)
 
-    return count
+    return count, failures
+
+
+def split_by_edit_permission(user, assets) -> tuple[list, list[str]]:
+    """Return (assets the user can edit, names of the other assets)."""
+    from .permissions import can_edit_asset
+
+    allowed, excluded = [], []
+    # The result depends only on these fields, so check each set once.
+    results = {}
+    for asset in assets:
+        key = (
+            asset.category.department_id if asset.category_id else None,
+            asset.status,
+            asset.created_by_id,
+        )
+        if key not in results:
+            results[key] = can_edit_asset(user, asset)
+        if results[key]:
+            allowed.append(asset)
+        else:
+            excluded.append(asset.name)
+    return allowed, excluded
+
+
+def can_edit_with_category(user, asset, category) -> bool:
+    """Return True if the user can still edit the asset in the category.
+
+    This stops a manager moving an asset into another department.
+    """
+    from .permissions import can_edit_asset
+
+    original = asset.category
+    asset.category = category
+    try:
+        return can_edit_asset(user, asset)
+    finally:
+        asset.category = original
 
 
 def bulk_checkout(

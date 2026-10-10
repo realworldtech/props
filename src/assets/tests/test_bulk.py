@@ -499,7 +499,7 @@ class TestBulkTransferEfficiency:
     """Bulk transfer should use bulk_create for efficiency."""
 
     def test_bulk_transfer_creates_transactions(
-        self, user, category, location
+        self, admin_user, category, location
     ):
         """Verify bulk transfer works correctly with multiple assets."""
         assets = []
@@ -509,7 +509,7 @@ class TestBulkTransferEfficiency:
                 category=category,
                 current_location=location,
                 status="active",
-                created_by=user,
+                created_by=admin_user,
             )
             a.save()
             assets.append(a)
@@ -517,13 +517,13 @@ class TestBulkTransferEfficiency:
         from assets.services.bulk import bulk_transfer
 
         new_loc = Location.objects.create(name="Bulk Dest Efficient")
-        result = bulk_transfer([a.pk for a in assets], new_loc.pk, user)
+        result = bulk_transfer([a.pk for a in assets], new_loc.pk, admin_user)
         assert result["transferred"] == 5
         for a in assets:
             a.refresh_from_db()
             assert a.current_location == new_loc
 
-    def test_bulk_transfer_efficiency(self, user, category, location):
+    def test_bulk_transfer_efficiency(self, admin_user, category, location):
         """Verify fewer queries with bulk operations."""
         assets = []
         for i in range(5):
@@ -532,7 +532,7 @@ class TestBulkTransferEfficiency:
                 category=category,
                 current_location=location,
                 status="active",
-                created_by=user,
+                created_by=admin_user,
             )
             a.save()
             assets.append(a)
@@ -545,7 +545,7 @@ class TestBulkTransferEfficiency:
         from django.test.utils import CaptureQueriesContext
 
         with CaptureQueriesContext(connection) as ctx:
-            bulk_transfer([a.pk for a in assets], new_loc.pk, user)
+            bulk_transfer([a.pk for a in assets], new_loc.pk, admin_user)
 
         # With bulk_create + filter().update(), the query count
         # should be constant regardless of asset count (setup +
@@ -563,7 +563,7 @@ class TestBulkEditDraftOnly:
     """V259 — S2.8.3-01: Bulk category edit restricted to drafts."""
 
     def test_bulk_category_edit_only_updates_drafts(
-        self, admin_client, asset, draft_asset, category
+        self, admin_user, asset, draft_asset, category
     ):
         """Category assignment only applies to draft assets."""
         from assets.services.bulk import bulk_edit
@@ -572,8 +572,9 @@ class TestBulkEditDraftOnly:
             name="New Cat",
             department=category.department,
         )
-        count = bulk_edit(
+        count, _ = bulk_edit(
             [asset.pk, draft_asset.pk],
+            admin_user,
             category_id=new_cat.pk,
         )
         # Only draft should be updated
@@ -584,14 +585,15 @@ class TestBulkEditDraftOnly:
         assert asset.category == category  # unchanged
 
     def test_bulk_location_edit_applies_to_all(
-        self, admin_client, asset, draft_asset, location
+        self, admin_user, asset, draft_asset, location
     ):
         """Location assignment applies to all assets."""
         from assets.services.bulk import bulk_edit
 
         new_loc = Location.objects.create(name="New Loc")
-        count = bulk_edit(
+        count, _ = bulk_edit(
             [asset.pk, draft_asset.pk],
+            admin_user,
             location_id=new_loc.pk,
         )
         assert count == 2
@@ -815,3 +817,160 @@ class TestV265BulkLocationTransfer:
         asset2.refresh_from_db()
         assert asset.current_location == new_location
         assert asset2.current_location == new_location
+
+
+@pytest.mark.django_db
+class TestBulkOperationsRespectDepartments:
+    """S2.8.3-05: bulk operations exclude assets the user cannot edit and
+    list them in a warning. S2.10.3-04: members edit their own drafts."""
+
+    @pytest.fixture
+    def other_asset(self, location):
+        return AssetFactory(
+            name="Other Dept Prop",
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+            current_location=location,
+        )
+
+    @pytest.fixture
+    def new_location(self):
+        return LocationFactory(name="Bulk Target")
+
+    def test_transfer_excludes_other_department_asset(
+        self, asset, other_asset, dept_manager_user, new_location
+    ):
+        from assets.services.bulk import bulk_transfer
+
+        result = bulk_transfer(
+            [asset.pk, other_asset.pk], new_location.pk, dept_manager_user
+        )
+        assert result["transferred"] == 1
+        assert result["excluded"] == ["Other Dept Prop"]
+        other_asset.refresh_from_db()
+        assert other_asset.current_location != new_location
+
+    def test_transfer_by_member_moves_nothing(
+        self, asset, member_user, new_location
+    ):
+        from assets.services.bulk import bulk_transfer
+
+        result = bulk_transfer([asset.pk], new_location.pk, member_user)
+        assert result["transferred"] == 0
+        asset.refresh_from_db()
+        assert asset.current_location != new_location
+
+    def test_view_warns_about_excluded_transfer(
+        self, dept_manager_client, asset, other_asset, new_location
+    ):
+        # Permission boundary: direct view input on purpose.
+        resp = dept_manager_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk, other_asset.pk],
+                "bulk_action": "transfer",
+                "location": new_location.pk,
+            },
+            follow=True,
+        )
+        texts = [str(m) for m in resp.context["messages"]]
+        assert any("Other Dept Prop" in t and "permission" in t for t in texts)
+
+    def test_edit_location_excludes_other_department_asset(
+        self, asset, other_asset, dept_manager_user, new_location
+    ):
+        from assets.services.bulk import bulk_edit
+
+        count, failures = bulk_edit(
+            [asset.pk, other_asset.pk],
+            dept_manager_user,
+            location_id=new_location.pk,
+        )
+        assert count == 1
+        assert failures == [
+            "Other Dept Prop: You do not have permission to change "
+            "this asset."
+        ]
+        other_asset.refresh_from_db()
+        assert other_asset.current_location != new_location
+
+    def test_edit_cannot_move_draft_into_other_department(
+        self, dept_manager_user, category
+    ):
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(
+            name="My Draft", status="draft", category=category
+        )
+        foreign = CategoryFactory(department=DepartmentFactory())
+        count, failures = bulk_edit(
+            [draft.pk], dept_manager_user, category_id=foreign.pk
+        )
+        assert count == 0
+        assert failures
+        draft.refresh_from_db()
+        assert draft.category == category
+
+    def test_member_edits_only_own_drafts(self, member_user, new_location):
+        from assets.services.bulk import bulk_edit
+
+        own = AssetFactory(status="draft", created_by=member_user)
+        other = AssetFactory(status="draft")
+        count, _ = bulk_edit(
+            [own.pk, other.pk], member_user, location_id=new_location.pk
+        )
+        assert count == 1
+        own.refresh_from_db()
+        other.refresh_from_db()
+        assert own.current_location == new_location
+        assert other.current_location != new_location
+
+    def test_drafts_activate_excludes_other_department_draft(
+        self, dept_manager_client, category, location
+    ):
+        own = AssetFactory(
+            status="draft", category=category, current_location=location
+        )
+        other = AssetFactory(
+            status="draft",
+            category=CategoryFactory(department=DepartmentFactory()),
+            current_location=location,
+        )
+        # Permission boundary: direct view input on purpose.
+        dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "activate", "selected": [own.pk, other.pk]},
+        )
+        own.refresh_from_db()
+        other.refresh_from_db()
+        assert own.status == "active"
+        assert other.status == "draft"
+
+    def test_drafts_activate_cannot_assign_other_department_category(
+        self, dept_manager_client, category, location
+    ):
+        own = AssetFactory(status="draft", category=category)
+        foreign = CategoryFactory(department=DepartmentFactory())
+        # Permission boundary: direct view input on purpose.
+        dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [own.pk],
+                "category": foreign.pk,
+                "location": location.pk,
+            },
+        )
+        own.refresh_from_db()
+        assert own.status == "draft"
+        assert own.category == category
+
+    def test_member_cannot_dispose_drafts(self, member_client, member_user):
+        own = AssetFactory(status="draft", created_by=member_user)
+        # Permission boundary: direct view input on purpose.
+        member_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "delete", "selected": [own.pk]},
+        )
+        own.refresh_from_db()
+        assert own.status == "draft"

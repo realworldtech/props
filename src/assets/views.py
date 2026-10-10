@@ -980,12 +980,49 @@ def drafts_bulk_action(request):
             return redirect("assets:drafts_queue")
 
         drafts = Asset.objects.filter(pk__in=selected_ids, status="draft")
+        if action in ("activate", "delete"):
+            from .services.bulk import (
+                can_edit_with_category,
+                split_by_edit_permission,
+            )
+
+            # S2.8.3-05: leave out drafts the user cannot change.
+            if action == "delete":
+                allowed = [
+                    d for d in drafts if can_delete_asset(request.user, d)
+                ]
+                excluded = [d.name for d in drafts if d not in allowed]
+            else:
+                allowed, excluded = split_by_edit_permission(
+                    request.user, drafts
+                )
+            if excluded:
+                messages.warning(
+                    request,
+                    f"{len(excluded)} draft(s) were excluded because you do "
+                    f"not have permission to change them: "
+                    f"{', '.join(excluded)}.",
+                )
+            drafts = Asset.objects.filter(pk__in=[d.pk for d in allowed])
         if action == "activate":
             category_id = request.POST.get("category")
             location_id = request.POST.get("location")
             if category_id and location_id:
-                count = drafts.count()
-                drafts.update(
+                category = get_object_or_404(Category, pk=category_id)
+                movable = [
+                    d
+                    for d in drafts
+                    if can_edit_with_category(request.user, d, category)
+                ]
+                if len(movable) < len(drafts):
+                    messages.warning(
+                        request,
+                        f"You cannot assign the category '{category.name}' "
+                        f"to {len(drafts) - len(movable)} draft(s).",
+                    )
+                count = Asset.objects.filter(
+                    pk__in=[d.pk for d in movable]
+                ).update(
                     status="active",
                     category_id=category_id,
                     current_location_id=location_id,
@@ -4255,7 +4292,15 @@ def bulk_actions(request):
         )
         count = result["transferred"]
         skipped = result["skipped"]
-        messages.success(request, f"{count} asset(s) transferred.")
+        if count:
+            messages.success(request, f"{count} asset(s) transferred.")
+        if result["excluded"]:
+            messages.warning(
+                request,
+                f"{len(result['excluded'])} asset(s) were excluded because "
+                f"you do not have permission to change them: "
+                f"{', '.join(result['excluded'])}.",
+            )
         if skipped:
             skipped_list = ", ".join(skipped)
             messages.warning(
@@ -4304,12 +4349,20 @@ def bulk_actions(request):
             return redirect("assets:asset_list")
         from .services.bulk import bulk_edit
 
-        count = bulk_edit(
+        count, failures = bulk_edit(
             [int(i) for i in asset_ids],
+            request.user,
             category_id=int(edit_category) if edit_category else None,
             location_id=int(edit_location) if edit_location else None,
         )
-        messages.success(request, f"{count} asset(s) updated.")
+        if count:
+            messages.success(request, f"{count} asset(s) updated.")
+        if failures:
+            messages.warning(
+                request,
+                f"{len(failures)} asset(s) were not changed: "
+                f"{'; '.join(failures)}",
+            )
 
     elif action == "bulk_checkout":
         borrower_id = request.POST.get("bulk_borrower")

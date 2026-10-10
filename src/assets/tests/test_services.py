@@ -795,11 +795,11 @@ class TestBarcodeService:
 
 
 class TestBulkService:
-    def test_bulk_transfer(self, asset, user):
+    def test_bulk_transfer(self, asset, admin_user):
         from assets.services.bulk import bulk_transfer
 
         new_loc = Location.objects.create(name="Bulk Dest")
-        result = bulk_transfer([asset.pk], new_loc.pk, user)
+        result = bulk_transfer([asset.pk], new_loc.pk, admin_user)
         assert result["transferred"] == 1
         asset.refresh_from_db()
         assert asset.current_location == new_loc
