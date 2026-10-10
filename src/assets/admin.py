@@ -275,7 +275,9 @@ class AssetAdminForm(forms.ModelForm):
         new = self.cleaned_data.get("status")
         if old is None or new == old:
             return None
-        if new in ("missing", "lost", "stolen") or old in RECOVERABLE_STATUSES:
+        if new in ("missing", "lost", "stolen", "disposed"):
+            return new
+        if old in RECOVERABLE_STATUSES:
             return new
         return None
 
@@ -290,7 +292,15 @@ class AssetAdminForm(forms.ModelForm):
             self.old_location = self.instance.current_location
         cleaned = super().clean()
         new_status = self.status_change()
-        if new_status:
+        if new_status == "disposed":
+            # S2.2.3-13: disposal clears the location in save_model.
+            from .services.state import validate_transition
+
+            try:
+                validate_transition(self.instance, "disposed")
+            except ValidationError as exc:
+                self.add_error("status", exc)
+        elif new_status:
             try:
                 check_status_change(
                     self.instance,
@@ -440,12 +450,24 @@ class AssetAdmin(ModelAdmin):
             super().save_model(request, obj, form, change)
             return
 
-        from .services.state import RECOVERABLE_STATUSES, change_status
+        from .services.state import (
+            RECOVERABLE_STATUSES,
+            change_status,
+            dispose_asset,
+        )
 
         # Save the other fields first, then apply the status change
         # with the same rules and transaction as the asset page.
         new_location = obj.current_location
         obj.status = form.old_status
+        if new_status == "disposed":
+            super().save_model(request, obj, form, change)
+            dispose_asset(
+                obj,
+                request.user,
+                notes=form.cleaned_data.get("status_notes", ""),
+            )
+            return
         if form.old_status in RECOVERABLE_STATUSES:
             obj.current_location = form.old_location
         super().save_model(request, obj, form, change)

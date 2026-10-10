@@ -74,7 +74,7 @@ from .services.permissions import (
     get_user_role,
 )
 from .services.search import build_asset_search
-from .services.state import recover_on_checkin
+from .services.state import dispose_asset, recover_on_checkin
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
@@ -718,8 +718,11 @@ def asset_delete(request, pk):
         return redirect("assets:asset_detail", pk=asset.pk)
 
     if request.method == "POST":
-        asset.status = "disposed"
-        asset.save(update_fields=["status"])
+        try:
+            dispose_asset(asset, request.user)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+            return redirect("assets:asset_detail", pk=asset.pk)
         messages.success(request, f"Asset '{asset.name}' has been disposed.")
         return redirect("assets:asset_list")
 
@@ -1042,8 +1045,10 @@ def drafts_bulk_action(request):
                         activated += 1
                 messages.success(request, f"{activated} draft(s) activated.")
         elif action == "delete":
-            count = drafts.count()
-            drafts.update(status="disposed")
+            count = 0
+            for draft in drafts:
+                dispose_asset(draft, request.user)
+                count += 1
             messages.success(request, f"{count} draft(s) disposed.")
         elif action == "remote_print":
             remote_printer = request.POST.get("remote_printer", "")

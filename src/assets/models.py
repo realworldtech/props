@@ -470,7 +470,8 @@ class Asset(models.Model):
                 raise ValidationError(
                     {"category": "Category is required for non-draft assets."}
                 )
-            if not self.current_location:
+            # S2.2.3-13: a disposed asset is not at any location.
+            if not self.current_location and self.status != "disposed":
                 raise ValidationError(
                     {
                         "current_location": "Location is required for "

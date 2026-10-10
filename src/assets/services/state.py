@@ -243,3 +243,27 @@ def recover_on_checkin(asset: Asset, user, *, was_checked_out: bool) -> None:
             f"Recovered on check-in{where}."
         ),
     )
+
+
+def dispose_asset(asset: Asset, user, *, notes: str = "") -> Asset:
+    """Dispose of an asset and clear its location (S2.2.3-13).
+
+    The note transaction keeps the last location as from_location, so
+    the location can be deleted later. Raises ValidationError.
+    """
+    with transaction.atomic():
+        old_status = asset.status
+        old_location = asset.current_location
+        validate_transition(asset, "disposed")
+        asset.status = "disposed"
+        asset.current_location = None
+        asset.save(update_fields=["status", "current_location"])
+        labels = dict(Asset.STATUS_CHOICES)
+        Transaction.objects.create(
+            asset=asset,
+            user=user,
+            action="note",
+            from_location=old_location,
+            notes=f"Status: {labels[old_status]} → Disposed. {notes}".strip(),
+        )
+    return asset

@@ -594,6 +594,22 @@ class TestAdminChangeFormStatusRules:
         assert asset.status == "active"
         assert asset.current_location == location
 
+    def test_dispose_clears_location_and_records_it(
+        self, admin_client, asset, location
+    ):
+        """S2.2.3-13: the admin change form is a disposal path."""
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "disposed"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "disposed"
+        assert asset.current_location is None
+        assert asset.transactions.filter(
+            action="note", from_location=location
+        ).exists()
+
     def test_lost_without_notes_is_rejected(self, admin_client, asset):
         fields, _ = self._fields(admin_client, asset)
         assert "status_notes" in fields

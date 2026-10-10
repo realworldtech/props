@@ -2101,3 +2101,81 @@ class TestRecoverOnCheckin:
 
         asset.refresh_from_db()
         assert (asset.status, asset.checked_out_to) == ("active", None)
+
+
+@pytest.mark.django_db
+class TestDisposeAsset:
+    """S2.2.3-13: disposal records the last location, then clears it."""
+
+    def test_dispose_records_last_location_and_clears_it(
+        self, asset, admin_user, location
+    ):
+        from assets.services.state import dispose_asset
+
+        dispose_asset(asset, admin_user, notes="Water damage")
+
+        asset.refresh_from_db()
+        assert asset.status == "disposed"
+        assert asset.current_location is None
+        note = Transaction.objects.get(asset=asset, action="note")
+        assert note.from_location == location
+        assert note.user == admin_user
+        assert note.notes == "Status: Active → Disposed. Water damage"
+
+    def test_dispose_refuses_checked_out_asset(
+        self, asset, admin_user, member_user
+    ):
+        from assets.services.state import dispose_asset
+
+        asset.checked_out_to = member_user
+        asset.save()
+        with pytest.raises(ValidationError):
+            dispose_asset(asset, admin_user)
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_disposed_asset_without_location_is_valid(self, asset):
+        asset.status = "disposed"
+        asset.current_location = None
+        asset.clean()
+
+    def test_merge_disposes_secondary_through_the_rule(
+        self, asset, admin_user, category, location
+    ):
+        from assets.services.merge import merge_assets
+
+        dup = AssetFactory(
+            name="Duplicate", category=category, current_location=location
+        )
+        merge_assets(asset, [dup], admin_user)
+
+        dup.refresh_from_db()
+        assert dup.status == "disposed"
+        assert dup.current_location is None
+        assert Transaction.objects.filter(
+            asset=dup, action="note", from_location=location
+        ).exists()
+
+    def test_migration_clears_location_of_already_disposed_assets(
+        self, asset, location
+    ):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module(
+            "assets.migrations.0040_clear_disposed_asset_locations"
+        )
+        asset.status = "disposed"
+        asset.save()
+        kept = AssetFactory(status="active", current_location=location)
+
+        migration.clear_disposed_locations(apps, None)
+
+        asset.refresh_from_db()
+        kept.refresh_from_db()
+        assert asset.current_location is None
+        assert kept.current_location == location
+        note = Transaction.objects.get(asset=asset, action="note")
+        assert note.from_location == location
+        assert "→ Disposed" in note.notes

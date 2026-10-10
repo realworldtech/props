@@ -8381,3 +8381,62 @@ class TestAssetStatusChangeView:
         assert (
             asset.lost_stolen_notes == "Left at venue\nRecovered: In the van"
         )
+
+
+@pytest.mark.django_db
+class TestDisposalFrontend:
+    """S2.2.3-13 and the disposed-asset story (S2.2.3-05): disposal
+    clears the location, and the asset page shows that it is disposed."""
+
+    def _dispose(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        url = reverse("assets:asset_delete", args=[asset.pk])
+        resp = client.get(url)
+        assert resp.status_code == 200
+        fields = collect_form_fields(resp.content.decode(), "dispose-form")
+        return client.post(url, fields)
+
+    def test_dispose_page_clears_location_and_records_it(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+
+        asset.refresh_from_db()
+        assert asset.status == "disposed"
+        assert asset.current_location is None
+        assert asset.transactions.filter(
+            action="note", from_location=location
+        ).exists()
+
+    def test_location_can_be_deleted_after_its_asset_is_disposed(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+        admin_client.post(
+            reverse("admin:assets_location_delete", args=[location.pk]),
+            {"post": "yes"},
+        )
+        assert not Location.objects.filter(pk=location.pk).exists()
+
+    def test_drafts_queue_disposal_clears_location(
+        self, admin_client, location
+    ):
+        draft = AssetFactory(status="draft", current_location=location)
+        # Permission boundary style: the queue form is JS-driven.
+        admin_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "delete", "selected": [draft.pk]},
+        )
+        draft.refresh_from_db()
+        assert draft.status == "disposed"
+        assert draft.current_location is None
+
+    def test_disposed_asset_history_shows_disposal(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert "Status: Active → Disposed" in resp.content.decode()
