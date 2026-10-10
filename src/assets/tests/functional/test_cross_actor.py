@@ -1901,6 +1901,63 @@ class TestUS_XA_030_LostStolenTransitionEdgeCases:
         assert active_asset.status == "active"
         assert other.status == "active"
 
+    # US-XA-030-2 (S7.5.4): marking a checked-out asset as missing.
+
+    def _checked_out_missing_form(self, client, asset, admin_user, borrower):
+        from assets.services.transactions import create_checkout
+        from assets.tests.functional.helpers import collect_form_fields
+
+        create_checkout(asset, borrower, admin_user)
+        url = reverse("assets:asset_change_status", args=[asset.pk, "missing"])
+        content = client.get(url).content.decode()
+        return url, collect_form_fields(content, "status-change-form"), content
+
+    def test_checked_out_missing_shows_ambiguity_warning(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): the page explains the ambiguity."""
+        _, _, content = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        assert (
+            "This asset is currently checked out. Marking it as missing "
+            "will preserve the checkout record. You may check it in first "
+            "if the asset is known to be at a location, or proceed to mark "
+            "it as missing if its whereabouts are unknown." in content
+        )
+
+    def test_checked_out_missing_requires_explicit_confirmation(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): without the confirmation the change is
+        rejected."""
+        url, fields, _ = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        assert "confirm_checked_out" in fields
+        fields.pop("confirm_checked_out")  # box left clear
+        resp = admin_client.post(url, fields)
+
+        assert resp.status_code == 200
+        active_asset.refresh_from_db()
+        assert active_asset.status == "active"
+
+    def test_checked_out_missing_preserves_borrower(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): with the confirmation the asset is
+        missing and checked_out_to is unchanged."""
+        url, fields, _ = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        fields["confirm_checked_out"] = "on"  # user ticks the box
+        resp = admin_client.post(url, fields)
+
+        assert resp.status_code == 302
+        active_asset.refresh_from_db()
+        assert active_asset.status == "missing"
+        assert active_asset.checked_out_to == borrower_user
+
 
 @pytest.mark.django_db
 class TestUS_XA_031_LocationHierarchyEdgeCases:

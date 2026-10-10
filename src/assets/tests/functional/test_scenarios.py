@@ -1296,89 +1296,53 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
         resp = admin_client.get(url)
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #31a: No dedicated mark-lost form with required notes"
-            " field (S2.2.3-08). mark-as-lost is only available via"
-            " the edit form status field — there is no dedicated surface"
-            " with a mandatory reason/notes field."
-        ),
-    )
     def test_mark_as_lost_requires_notes_field(self, admin_client, asset):
-        """S2.2.3-08: A dedicated 'mark as lost' surface must require
-        a notes/reason field before accepting the transition."""
-        from django.urls import NoReverseMatch
+        """S2.2.3-08: the mark-as-lost page requires notes before it
+        accepts the change. Closes GAP #31a."""
+        from assets.tests.functional.helpers import collect_form_fields
 
-        # Try to find a dedicated mark-lost URL
-        url = None
-        for url_name in ["assets:asset_mark_lost", "assets:mark_lost"]:
-            try:
-                url = reverse(url_name, args=[asset.pk])
-                break
-            except NoReverseMatch:
-                continue
+        url = reverse("assets:asset_change_status", args=[asset.pk, "lost"])
+        detail = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+        assert url in detail  # affordance on the asset page
 
-        if url is None:
-            # Try the asset detail page which may have an inline form
-            resp = admin_client.get(
-                reverse("assets:asset_detail", args=[asset.pk])
-            )
-            content = resp.content.decode().lower()
-            # Either a dedicated URL exists or the detail has a notes field
-            assert (
-                "lost" in content and "notes" in content
-            ), "No dedicated mark-lost surface with notes field found"
-        else:
-            resp = admin_client.get(url)
-            assert resp.status_code == 200
-            content = resp.content.decode().lower()
-            assert (
-                "notes" in content or "reason" in content
-            ), "mark-lost form must include a notes/reason field"
+        fields = collect_form_fields(
+            admin_client.get(url).content.decode(), "status-change-form"
+        )
+        assert "notes" in fields
+        resp = admin_client.post(url, fields)  # notes left empty
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #31b: No dedicated recover-from-lost surface with"
-            " location selection (S2.2.3-08). Recovery only available"
-            " via bulk_actions status_change which doesn't require"
-            " location selection."
-        ),
-    )
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
     def test_recover_from_lost_requires_location_selection(
         self, admin_client, asset
     ):
-        """S2.2.3-08: Recover-from-lost must require selecting a
-        location where the asset was found."""
-        from django.urls import NoReverseMatch
+        """S2.2.3-08: recovering a lost asset requires a location.
+        Closes GAP #31b."""
+        from assets.tests.functional.helpers import collect_form_fields
 
         asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
         asset.save()
+        url = reverse("assets:asset_change_status", args=[asset.pk, "active"])
+        detail = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+        assert url in detail  # affordance on the asset page
 
-        url = None
-        for url_name in [
-            "assets:asset_recover",
-            "assets:recover_asset",
-            "assets:asset_mark_found",
-        ]:
-            try:
-                url = reverse(url_name, args=[asset.pk])
-                break
-            except NoReverseMatch:
-                continue
+        fields = collect_form_fields(
+            admin_client.get(url).content.decode(), "status-change-form"
+        )
+        assert "location" in fields
+        fields["location"] = ""
+        resp = admin_client.post(url, fields)
 
-        if url is None:
-            pytest.xfail(
-                "GAP #31b: No dedicated recover-from-lost URL exists."
-            )
-
-        resp = admin_client.get(url)
         assert resp.status_code == 200
-        content = resp.content.decode().lower()
-        assert (
-            "location" in content
-        ), "Recover-from-lost form must include a location selection field"
+        asset.refresh_from_db()
+        assert asset.status == "lost"
 
     def test_checkin_form_has_condition_field(
         self, admin_client, active_asset, borrower_user
