@@ -29,6 +29,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.http import (
+    Http404,
     HttpResponse,
     HttpResponseForbidden,
     HttpResponseNotAllowed,
@@ -40,6 +41,7 @@ from django.utils import timezone
 from .forms import (
     AssetForm,
     AssetImageForm,
+    AssetStatusChangeForm,
     CategoryForm,
     LocationForm,
     QuickCaptureForm,
@@ -63,6 +65,7 @@ from .models import (
     VirtualBarcode,
 )
 from .services.permissions import (
+    can_change_status,
     can_checkout_asset,
     can_delete_asset,
     can_edit_asset,
@@ -498,6 +501,11 @@ def asset_detail(request, pk):
     can_delete = can_delete_asset(request.user, asset)
     can_checkout = can_checkout_asset(request.user, asset)
     can_handover = can_handover_asset(request.user, asset)
+    status_actions = []
+    if can_change_status(request.user, asset):
+        from assets.services.state import status_actions as get_status_actions
+
+        status_actions = get_status_actions(asset)
 
     from assets.services.holdlists import get_active_hold_items
 
@@ -510,23 +518,6 @@ def asset_detail(request, pk):
     member_of_kits = AssetKit.objects.filter(component=asset).select_related(
         "kit"
     )
-
-    # S7.5.4: Show a warning when the asset is checked out and
-    # could be marked as missing
-    checkout_warning = None
-    if asset.is_checked_out and asset.status == "active":
-        borrower = asset.checked_out_to
-        borrower_name = (
-            borrower.get_full_name() or borrower.username
-            if borrower
-            else "unknown"
-        )
-        checkout_warning = (
-            f"Warning: This asset is currently checked out to "
-            f"{borrower_name}. Changing the status to missing, "
-            f"lost, or stolen requires explicit confirmation "
-            f"acknowledging that the asset is checked out."
-        )
 
     # V492: Serialised assets — active + archived serial sections
     active_serials = []
@@ -592,7 +583,7 @@ def asset_detail(request, pk):
             "can_handover": can_handover,
             "active_holds": active_holds,
             "member_of_kits": member_of_kits,
-            "checkout_warning": checkout_warning,
+            "status_actions": status_actions,
             "can_convert": can_convert,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
@@ -4867,6 +4858,66 @@ def ai_reanalyse(request, pk, image_pk):
 
 
 # --- Handover ---
+
+
+@login_required
+def asset_change_status(request, pk, new_status):
+    """Mark an asset missing, lost, stolen, or found/recovered."""
+    from .services.state import (
+        MANUAL_STATUSES,
+        change_status,
+        status_action_label,
+        status_actions,
+    )
+
+    if new_status not in MANUAL_STATUSES:
+        raise Http404
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_change_status(request.user, asset):
+        raise PermissionDenied
+    if new_status not in dict(status_actions(asset)):
+        messages.error(
+            request,
+            f"A {asset.get_status_display().lower()} asset cannot be "
+            f"changed to {new_status}.",
+        )
+        return redirect("assets:asset_detail", pk=pk)
+
+    title = status_action_label(asset, new_status)
+    form = AssetStatusChangeForm(
+        request.POST or None, asset=asset, new_status=new_status
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            change_status(
+                asset,
+                new_status,
+                request.user,
+                notes=form.cleaned_data.get("notes", ""),
+                location=form.cleaned_data.get("location"),
+                confirm_checked_out=form.cleaned_data.get(
+                    "confirm_checked_out", False
+                ),
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(
+                request,
+                f"'{asset.name}' is now {asset.get_status_display().lower()}.",
+            )
+            return redirect("assets:asset_detail", pk=pk)
+
+    return render(
+        request,
+        "assets/asset_change_status.html",
+        {
+            "asset": asset,
+            "form": form,
+            "title": title,
+            "new_status": new_status,
+        },
+    )
 
 
 @login_required

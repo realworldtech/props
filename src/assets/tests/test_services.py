@@ -966,7 +966,9 @@ class TestQueryCounts:
         # V492: +2 for serial queries
         # S2.4.5: +1 for remote print client query
         # Permission-based roles use has_perm cache, fewer queries
-        with django_assert_num_queries(25):
+        # Status actions: +1 manager check, -2 for the removed
+        # checkout warning (is_checked_out sums)
+        with django_assert_num_queries(24):
             response = client_logged_in.get(
                 reverse("assets:asset_detail", args=[asset.pk])
             )

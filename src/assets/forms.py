@@ -194,6 +194,33 @@ class AssetForm(forms.ModelForm):
         return cleaned
 
 
+class AssetStatusChangeForm(forms.Form):
+    """Mark an asset missing, lost, stolen or found."""
+
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": _CSS, "rows": 3}),
+    )
+
+    def __init__(self, *args, asset, new_status, **kwargs):
+        super().__init__(*args, **kwargs)
+        if new_status in ("lost", "stolen"):
+            self.fields["notes"].required = True
+            self.fields["notes"].help_text = (
+                "Required. Describe what happened."
+            )
+        if new_status == "active":
+            self.fields["location"] = forms.ModelChoiceField(
+                queryset=Location.objects.filter(is_active=True),
+                widget=forms.Select(attrs={"class": _CSS}),
+                help_text="Where is the asset now?",
+            )
+        if new_status == "missing" and asset.is_checked_out:
+            self.fields["confirm_checked_out"] = forms.BooleanField(
+                label="I understand that this asset is checked out",
+            )
+
+
 class AssetImageForm(forms.ModelForm):
     """Image upload form."""
 

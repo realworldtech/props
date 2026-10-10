@@ -7,6 +7,27 @@ from ..models import Asset, Location, Transaction
 from .permissions import can_change_status
 
 RECOVERABLE_STATUSES = ("missing", "lost", "stolen")
+MANUAL_STATUSES = ("missing", "lost", "stolen", "active")
+
+
+def status_action_label(asset: Asset, new_status: str) -> str:
+    if new_status == "active":
+        return (
+            "Mark as recovered"
+            if asset.status == "stolen"
+            else "Mark as found"
+        )
+    return f"Mark as {new_status}"
+
+
+def status_actions(asset: Asset) -> list[tuple[str, str]]:
+    """Return (status, label) for each manual change valid now."""
+    return [
+        (status, status_action_label(asset, status))
+        for status in MANUAL_STATUSES
+        if asset.can_transition_to(status)
+        and (status != "active" or asset.status in RECOVERABLE_STATUSES)
+    ]
 
 
 def validate_transition(asset: Asset, new_status: str) -> None:
