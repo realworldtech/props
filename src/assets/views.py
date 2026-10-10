@@ -3454,6 +3454,11 @@ def category_edit(request, pk):
     if request.method == "POST":
         form = CategoryForm(request.POST, instance=category)
         if form.is_valid():
+            # The new department must also be one the manager manages.
+            if role == "department_manager":
+                dept = form.cleaned_data.get("department")
+                if dept not in request.user.managed_departments.all():
+                    raise PermissionDenied
             form.save()
             messages.success(request, f"Category '{category.name}' updated.")
             return redirect("assets:category_list")

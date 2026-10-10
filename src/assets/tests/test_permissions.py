@@ -522,6 +522,25 @@ class TestManagerRoleIsScopedToManagedDepartments:
         content = self._detail(dept_manager_client, other_asset)
         assert reverse("assets:stocktake_list") in content
 
+    def test_manager_cannot_move_category_to_other_department(
+        self, dept_manager_client, category
+    ):
+        """S2.10.3-03: managers manage categories of their departments."""
+        foreign = DepartmentFactory()
+        # Security boundary: posts a department the user does not manage.
+        resp = dept_manager_client.post(
+            reverse("assets:category_edit", args=[category.pk]),
+            {
+                "name": category.name,
+                "description": "",
+                "icon": "",
+                "department": foreign.pk,
+            },
+        )
+        assert resp.status_code == 403
+        category.refresh_from_db()
+        assert category.department != foreign
+
     def test_kit_contents_hides_manage_controls_for_other_department(
         self, dept_manager_client, other_asset
     ):
