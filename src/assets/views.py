@@ -998,10 +998,7 @@ def drafts_bulk_action(request):
 
         drafts = Asset.objects.filter(pk__in=selected_ids, status="draft")
         if action in ("activate", "delete"):
-            from .services.bulk import (
-                can_edit_with_category,
-                split_by_edit_permission,
-            )
+            from .services.bulk import split_by_edit_permission
 
             # S2.8.3-05: leave out drafts the user cannot change.
             if action == "delete":
@@ -1025,21 +1022,7 @@ def drafts_bulk_action(request):
             category_id = request.POST.get("category")
             location_id = request.POST.get("location")
             if category_id and location_id:
-                category = get_object_or_404(Category, pk=category_id)
-                movable = [
-                    d
-                    for d in drafts
-                    if can_edit_with_category(request.user, d, category)
-                ]
-                if len(movable) < len(drafts):
-                    messages.warning(
-                        request,
-                        f"You cannot assign the category '{category.name}' "
-                        f"to {len(drafts) - len(movable)} draft(s).",
-                    )
-                count = Asset.objects.filter(
-                    pk__in=[d.pk for d in movable]
-                ).update(
+                count = drafts.update(
                     status="active",
                     category_id=category_id,
                     current_location_id=location_id,

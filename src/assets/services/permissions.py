@@ -51,6 +51,10 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
     if role == "system_admin":
         return True
 
+    # S2.10.3-04: drafts are shared work in progress.
+    if asset.status == "draft" and role in ("department_manager", "member"):
+        return True
+
     if role == "department_manager":
         # Block write access if the asset's department is inactive.
         # No need to re-check superuser/can_approve_users — those
@@ -59,11 +63,6 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
         if dept and not dept.is_active:
             return False
         return True
-
-    if role == "member":
-        # Members can edit their own drafts
-        if asset.status == "draft" and asset.created_by == user:
-            return True
 
     return False
 

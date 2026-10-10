@@ -894,40 +894,26 @@ class TestBulkOperationsRespectDepartments:
         other_asset.refresh_from_db()
         assert other_asset.current_location != new_location
 
-    def test_edit_cannot_move_draft_into_other_department(
-        self, dept_manager_user, category
+    def test_member_edits_any_draft_but_not_active_assets(
+        self, member_user, asset, new_location
     ):
+        """S2.10.3-04: drafts are shared; active assets are not."""
         from assets.services.bulk import bulk_edit
 
-        draft = AssetFactory(
-            name="My Draft", status="draft", category=category
-        )
-        foreign = CategoryFactory(department=DepartmentFactory())
-        count, failures = bulk_edit(
-            [draft.pk], dept_manager_user, category_id=foreign.pk
-        )
-        assert count == 0
-        assert failures
-        draft.refresh_from_db()
-        assert draft.category == category
-
-    def test_member_edits_only_own_drafts(self, member_user, new_location):
-        from assets.services.bulk import bulk_edit
-
-        own = AssetFactory(status="draft", created_by=member_user)
-        other = AssetFactory(status="draft")
+        draft = AssetFactory(status="draft")
         count, _ = bulk_edit(
-            [own.pk, other.pk], member_user, location_id=new_location.pk
+            [draft.pk, asset.pk], member_user, location_id=new_location.pk
         )
         assert count == 1
-        own.refresh_from_db()
-        other.refresh_from_db()
-        assert own.current_location == new_location
-        assert other.current_location != new_location
+        draft.refresh_from_db()
+        asset.refresh_from_db()
+        assert draft.current_location == new_location
+        assert asset.current_location != new_location
 
-    def test_drafts_activate_excludes_other_department_draft(
+    def test_drafts_activate_includes_other_department_draft(
         self, dept_manager_client, category, location
     ):
+        """S2.10.3-04: any manager can work on any draft."""
         own = AssetFactory(
             status="draft", category=category, current_location=location
         )
@@ -944,26 +930,7 @@ class TestBulkOperationsRespectDepartments:
         own.refresh_from_db()
         other.refresh_from_db()
         assert own.status == "active"
-        assert other.status == "draft"
-
-    def test_drafts_activate_cannot_assign_other_department_category(
-        self, dept_manager_client, category, location
-    ):
-        own = AssetFactory(status="draft", category=category)
-        foreign = CategoryFactory(department=DepartmentFactory())
-        # Permission boundary: direct view input on purpose.
-        dept_manager_client.post(
-            reverse("assets:drafts_bulk_action"),
-            {
-                "action": "activate",
-                "selected": [own.pk],
-                "category": foreign.pk,
-                "location": location.pk,
-            },
-        )
-        own.refresh_from_db()
-        assert own.status == "draft"
-        assert own.category == category
+        assert other.status == "active"
 
     def test_member_cannot_dispose_drafts(self, member_client, member_user):
         own = AssetFactory(status="draft", created_by=member_user)

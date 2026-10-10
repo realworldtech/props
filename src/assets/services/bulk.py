@@ -264,7 +264,7 @@ def bulk_edit(
 
     V259: Category assignment is restricted to draft assets only.
     Location assignment applies to all assets. S2.8.3-05: assets the
-    user cannot edit, before or after the category change, are left out.
+    user cannot edit are left out.
 
     Returns a tuple of (updated count, list of failure messages).
     """
@@ -283,18 +283,8 @@ def bulk_edit(
     if category_id:
         category = Category.objects.get(pk=category_id)
         # V259: Only draft assets can have category bulk-assigned
-        drafts = [a for a in allowed if a.status == "draft"]
-        movable = [
-            a for a in drafts if can_edit_with_category(user, a, category)
-        ]
-        failures += [
-            f"{a.name}: You cannot assign the category '{category.name}'."
-            for a in drafts
-            if a not in movable
-        ]
-        count = Asset.objects.filter(pk__in=[a.pk for a in movable]).update(
-            category=category
-        )
+        drafts = [a.pk for a in allowed if a.status == "draft"]
+        count = Asset.objects.filter(pk__in=drafts).update(category=category)
 
     if location_id:
         location = Location.objects.get(pk=location_id, is_active=True)
@@ -326,21 +316,6 @@ def split_by_edit_permission(user, assets) -> tuple[list, list[str]]:
         else:
             excluded.append(asset.name)
     return allowed, excluded
-
-
-def can_edit_with_category(user, asset, category) -> bool:
-    """Return True if the user can still edit the asset in the category.
-
-    This stops a manager moving an asset into another department.
-    """
-    from .permissions import can_edit_asset
-
-    original = asset.category
-    asset.category = category
-    try:
-        return can_edit_asset(user, asset)
-    finally:
-        asset.category = original
 
 
 def bulk_checkout(

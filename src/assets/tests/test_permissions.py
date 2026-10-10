@@ -871,3 +871,53 @@ class TestUserManagementAdmin:
         url = reverse("admin:accounts_customuser_changelist")
         response = client_logged_in.get(url)
         assert response.status_code == 302
+
+
+@pytest.mark.django_db
+class TestAnyoneCanEditDrafts:
+    """S2.10.3-04: drafts are shared work in progress."""
+
+    @pytest.fixture
+    def others_draft(self):
+        return AssetFactory(
+            status="draft",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+
+    def test_member_can_edit_draft_made_by_someone_else(
+        self, member_user, others_draft
+    ):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(member_user, others_draft) is True
+
+    def test_manager_can_edit_draft_of_other_department(
+        self, dept_manager_user, others_draft
+    ):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(dept_manager_user, others_draft) is True
+
+    def test_viewer_cannot_edit_draft(self, viewer_user, others_draft):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(viewer_user, others_draft) is False
+
+    def test_member_cannot_edit_active_asset(self, member_user, asset):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(member_user, asset) is False
+
+    def test_member_can_add_image_and_nfc_to_others_draft(
+        self, member_client, others_draft
+    ):
+        detail = member_client.get(
+            reverse("assets:asset_detail", args=[others_draft.pk])
+        ).content.decode()
+        for name in ("image_upload", "nfc_add"):
+            url = reverse(f"assets:{name}", args=[others_draft.pk])
+            assert url in detail
+        resp = member_client.get(
+            reverse("assets:nfc_add", args=[others_draft.pk])
+        )
+        assert resp.status_code == 200

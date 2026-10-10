@@ -334,10 +334,11 @@ class TestPermissionsService:
         a.save()
         assert can_edit_asset(member_user, a)
 
-    def test_member_cannot_edit_others_draft(self, member_user, draft_asset):
+    def test_member_can_edit_others_draft(self, member_user, draft_asset):
+        """S2.10.3-04: drafts are shared work in progress."""
         from assets.services.permissions import can_edit_asset
 
-        assert not can_edit_asset(member_user, draft_asset)
+        assert can_edit_asset(member_user, draft_asset)
 
     def test_can_delete_asset(self, admin_user, asset):
         from assets.services.permissions import can_delete_asset
