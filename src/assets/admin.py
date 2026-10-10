@@ -530,7 +530,10 @@ class AssetAdmin(ModelAdmin):
             new_status,
             request.user,
         )
-        messages.success(request, f"{count} asset(s) marked as {new_status}.")
+        if count:
+            messages.success(
+                request, f"{count} asset(s) marked as {new_status}."
+            )
         for failure in failures:
             messages.warning(request, failure)
 
@@ -577,9 +580,10 @@ class AssetAdmin(ModelAdmin):
                     messages.warning(
                         request, f"{asset.name}: {' '.join(exc.messages)}"
                     )
-            messages.success(
-                request, f"{count} asset(s) marked as {new_status}."
-            )
+            if count:
+                messages.success(
+                    request, f"{count} asset(s) marked as {new_status}."
+                )
             return None
         return TemplateResponse(
             request,

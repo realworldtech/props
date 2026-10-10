@@ -438,6 +438,23 @@ class TestAdminStatusActionsUseStatusRules:
         assert retired.status == "retired"
         assert any("Old Cloak" in m for m in self._messages(resp))
 
+    @pytest.mark.parametrize(
+        "action,extra",
+        [
+            ("mark_active", {}),
+            ("mark_lost", {"apply": "1", "notes": "Truck broke down"}),
+        ],
+    )
+    def test_action_with_no_changed_asset_shows_no_success(
+        self, admin_client, category, location, action, extra
+    ):
+        disposed = AssetFactory(
+            status="disposed", category=category, current_location=location
+        )
+        resp = self._post_action(admin_client, action, [disposed], **extra)
+
+        assert not any("0 asset(s)" in m for m in self._messages(resp))
+
     def test_bulk_mark_lost_records_transaction_per_asset(
         self, admin_client, asset, category, location
     ):
