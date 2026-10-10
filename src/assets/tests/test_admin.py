@@ -515,6 +515,55 @@ class TestAdminChangeFormStatusRules:
     def _post(self, client, asset, fields):
         return client.post(self._url(asset), fields)
 
+    S754_WARNING = (
+        "This asset is currently checked out. Marking it as missing will "
+        "preserve the checkout record. You may check it in first if the "
+        "asset is known to be at a location, or proceed to mark it as "
+        "missing if its whereabouts are unknown."
+    )
+
+    def test_checked_out_asset_shows_s754_warning(
+        self, admin_client, asset, member_user
+    ):
+        """S7.5.4: the admin form shows the same warning as the
+        Status menu page."""
+        asset.checked_out_to = member_user
+        asset.save()
+        fields, content = self._fields(admin_client, asset)
+
+        assert self.S754_WARNING in content
+        assert "confirm_checked_out" in fields
+
+    def test_asset_not_checked_out_has_no_confirmation(
+        self, admin_client, asset
+    ):
+        fields, content = self._fields(admin_client, asset)
+
+        assert "confirm_checked_out" not in fields
+        assert self.S754_WARNING not in content
+
+    def test_checked_out_to_missing_needs_confirmation(
+        self, admin_client, asset, member_user
+    ):
+        asset.checked_out_to = member_user
+        asset.save()
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "missing"
+        fields.pop("confirm_checked_out", None)
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+        fields["confirm_checked_out"] = "on"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+        assert asset.checked_out_to == member_user
+
     def test_lost_without_notes_is_rejected(self, admin_client, asset):
         fields, _ = self._fields(admin_client, asset)
         assert "status_notes" in fields

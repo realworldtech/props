@@ -4872,6 +4872,7 @@ def ai_reanalyse(request, pk, image_pk):
 def asset_change_status(request, pk, new_status):
     """Mark an asset missing, lost, stolen, or found/recovered."""
     from .services.state import (
+        CHECKED_OUT_MISSING_WARNING,
         MANUAL_STATUSES,
         change_status,
         status_action_label,
@@ -4924,6 +4925,7 @@ def asset_change_status(request, pk, new_status):
             "form": form,
             "title": title,
             "new_status": new_status,
+            "checked_out_warning": CHECKED_OUT_MISSING_WARNING,
         },
     )
 

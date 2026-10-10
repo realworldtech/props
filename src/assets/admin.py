@@ -47,6 +47,7 @@ from .models import (
     Tag,
     Transaction,
 )
+from .services.state import CHECKED_OUT_MISSING_WARNING
 
 
 class AssetImageInline(TabularInline):
@@ -258,7 +259,7 @@ class AssetAdminForm(forms.ModelForm):
         required=False,
         widget=UnfoldBooleanWidget,
         label="I understand that this asset is checked out",
-        help_text="Required to mark a checked-out asset as missing.",
+        help_text=CHECKED_OUT_MISSING_WARNING,
     )
     user = None
 
@@ -349,6 +350,24 @@ class AssetAdmin(ModelAdmin):
         AssetImageInline,
         NFCTagInline,
     ]
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is not None and obj.is_checked_out:
+            return fieldsets
+        # S7.5.4: the confirmation applies only to checked-out assets.
+        return [
+            (
+                name,
+                {
+                    **opts,
+                    "fields": tuple(
+                        f for f in opts["fields"] if f != "confirm_checked_out"
+                    ),
+                },
+            )
+            for name, opts in fieldsets
+        ]
 
     fieldsets = (
         (

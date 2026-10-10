@@ -8,6 +8,13 @@ from .permissions import can_change_status
 
 RECOVERABLE_STATUSES = ("missing", "lost", "stolen")
 MANUAL_STATUSES = ("missing", "lost", "stolen", "active")
+# S7.5.4: shown before a checked-out asset is marked missing.
+CHECKED_OUT_MISSING_WARNING = (
+    "This asset is currently checked out. Marking it as missing will "
+    "preserve the checkout record. You may check it in first if the "
+    "asset is known to be at a location, or proceed to mark it as "
+    "missing if its whereabouts are unknown."
+)
 
 
 def status_action_label(asset: Asset, new_status: str) -> str:

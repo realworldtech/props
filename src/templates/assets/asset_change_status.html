@@ -12,7 +12,7 @@
     {% if new_status == 'missing' and asset.is_checked_out %}
     <div class="p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-600 dark:text-amber-300 text-sm">
         <strong>Checked out to {{ asset.checked_out_to.get_display_name }}.</strong>
-        This asset is currently checked out. Marking it as missing will preserve the checkout record. You may check it in first if the asset is known to be at a location, or proceed to mark it as missing if its whereabouts are unknown.
+        {{ checked_out_warning }}
     </div>
     {% endif %}
 
