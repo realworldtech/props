@@ -4060,31 +4060,51 @@ def stocktake_complete(request, pk):
             # Mark unconfirmed assets as missing
             mark_missing = request.POST.get("mark_missing") == "1"
             if mark_missing:
-                missing = session.missing_assets.filter(
-                    checked_out_to__isnull=True
-                ).select_related("category__department")
-                # S2.2.3-03: only assets the user can mark missing.
+                # S2.2.3-03: only assets the user can mark missing. Use
+                # one permitted set for the assets, items and records.
+                missing = list(
+                    session.missing_assets.select_related(
+                        "category__department"
+                    )
+                )
+                expected_items = list(
+                    session.items.filter(status="expected").select_related(
+                        "asset__category__department"
+                    )
+                )
+                candidates = {a.pk: a for a in missing}
+                candidates.update(
+                    {i.asset.pk: i.asset for i in expected_items}
+                )
+                permitted = {
+                    pk
+                    for pk, a in candidates.items()
+                    if can_change_status(request.user, a)
+                }
                 excluded = [
-                    a
-                    for a in missing
-                    if not can_change_status(request.user, a)
+                    a.name
+                    for pk, a in candidates.items()
+                    if pk not in permitted
                 ]
                 if excluded:
                     messages.warning(
                         request,
                         f"{len(excluded)} asset(s) were not marked missing "
                         f"because you do not manage their department: "
-                        f"{', '.join(a.name for a in excluded)}.",
+                        f"{', '.join(sorted(excluded))}.",
                     )
-                excluded_ids = [a.pk for a in excluded]
-                missing_count = missing.exclude(pk__in=excluded_ids).update(
-                    status="missing"
-                )
+                missing_count = Asset.objects.filter(
+                    pk__in=[
+                        a.pk
+                        for a in missing
+                        if a.pk in permitted and a.checked_out_to_id is None
+                    ]
+                ).update(status="missing")
                 # M7: Update StocktakeItems and create Transactions
-                missing_items = session.items.filter(
-                    status="expected"
-                ).exclude(asset_id__in=excluded_ids)
-                for item in missing_items.select_related("asset"):
+                missing_items = [
+                    i for i in expected_items if i.asset.pk in permitted
+                ]
+                for item in missing_items:
                     Transaction.objects.create(
                         asset=item.asset,
                         user=request.user,
@@ -4096,7 +4116,9 @@ def stocktake_complete(request, pk):
                             f"stocktake #{session.pk}"
                         ),
                     )
-                missing_items.update(status="missing")
+                StocktakeItem.objects.filter(
+                    pk__in=[i.pk for i in missing_items]
+                ).update(status="missing")
                 messages.success(
                     request,
                     f"Stocktake completed. {missing_count} asset(s) "

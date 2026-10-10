@@ -1079,6 +1079,34 @@ class TestStocktakeRespectsRolesAndDepartments:
         texts = [str(m) for m in resp.context["messages"]]
         assert any("Other Dept Prop" in t for t in texts)
 
+    def test_complete_leaves_other_department_items_alone(
+        self,
+        dept_manager_client,
+        dept_manager_user,
+        other_asset,
+        location,
+        member_user,
+    ):
+        """Checked-out assets of other departments get no audit record
+        and their stocktake item stays expected."""
+        other_asset.checked_out_to = member_user
+        other_asset.save()
+        session = StocktakeSession.objects.create(
+            location=location, started_by=dept_manager_user
+        )
+        item = StocktakeItemFactory(
+            session=session, asset=other_asset, status="expected"
+        )
+        dept_manager_client.post(
+            reverse("assets:stocktake_complete", args=[session.pk]),
+            {"action": "complete", "mark_missing": "1"},
+        )
+        item.refresh_from_db()
+        assert item.status == "expected"
+        assert not Transaction.objects.filter(
+            asset=other_asset, action="audit"
+        ).exists()
+
     def test_member_sees_no_start_button(self, member_client):
         resp = member_client.get(reverse("assets:stocktake_list"))
         assert reverse("assets:stocktake_start").encode() not in resp.content
