@@ -814,10 +814,10 @@ class TestBulkService:
         assert result["transferred"] == 0
         assert len(result["skipped"]) == 1
 
-    def test_bulk_status_change(self, asset, user):
+    def test_bulk_status_change(self, asset, admin_user):
         from assets.services.bulk import bulk_status_change
 
-        count, failures = bulk_status_change([asset.pk], "retired", user)
+        count, failures = bulk_status_change([asset.pk], "retired", admin_user)
         assert count == 1
         assert failures == []
         asset.refresh_from_db()

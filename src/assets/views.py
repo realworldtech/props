@@ -4269,12 +4269,20 @@ def bulk_actions(request):
         if not new_status:
             messages.error(request, "Please select a status.")
             return redirect("assets:asset_list")
-        from .services.bulk import bulk_status_change
+        from .services.bulk import (
+            BULK_LOST_STOLEN_MESSAGE,
+            bulk_status_change,
+        )
+
+        if new_status in ("lost", "stolen"):
+            messages.error(request, BULK_LOST_STOLEN_MESSAGE)
+            return redirect("assets:asset_list")
 
         count, failures = bulk_status_change(
             [int(i) for i in asset_ids], new_status, request.user
         )
-        messages.success(request, f"{count} asset(s) updated.")
+        if count:
+            messages.success(request, f"{count} asset(s) updated.")
         if failures:
             fail_summary = "; ".join(failures[:5])
             if len(failures) > 5:

@@ -616,7 +616,7 @@ class TestBulkStatusChangeKeepsManualStatusRules:
 
         count, failures = bulk_status_change([asset.pk], "missing", admin_user)
         assert count == 0
-        assert "Status menu" in failures[0]
+        assert "asset page" in failures[0]
         asset.refresh_from_db()
         assert asset.status == "active"
 
@@ -643,6 +643,108 @@ class TestBulkStatusChangeKeepsManualStatusRules:
         )
         count, failures = bulk_status_change([draft.pk], "active", admin_user)
         assert (count, failures) == (1, [])
+
+    @pytest.mark.parametrize("new_status", ["lost", "stolen"])
+    def test_bulk_lost_or_stolen_is_rejected_with_spec_message(
+        self, asset, admin_user, new_status
+    ):
+        """S7.17.5: the exact rejection message."""
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], new_status, admin_user
+        )
+        assert count == 0
+        assert failures == [
+            "Lost and stolen transitions require individual notes for "
+            "each asset and cannot be performed in bulk."
+        ]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_dispose_is_rejected(self, asset, admin_user):
+        """Disposal records the last location (S2.2.3-13); bulk only
+        offers active and retired."""
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], "disposed", admin_user
+        )
+        assert count == 0
+        assert "asset page" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_activate_draft_without_location_is_rejected(
+        self, category, admin_user
+    ):
+        """S2.8.3-03: the transition rules apply to each asset."""
+        from assets.services.bulk import bulk_status_change
+
+        draft = AssetFactory(
+            status="draft", category=category, current_location=None
+        )
+        count, failures = bulk_status_change([draft.pk], "active", admin_user)
+        assert count == 0
+        assert "Location is required" in failures[0]
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="get_user_role gives the manager role for every department "
+        "when the user has can_merge_assets (S2.8.3-05)",
+    )
+    def test_bulk_retire_excludes_other_department_assets(
+        self, asset, dept_manager_user
+    ):
+        """S2.8.3-05: assets the manager does not manage are excluded."""
+        from assets.services.bulk import bulk_status_change
+
+        other = AssetFactory(
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+        count, failures = bulk_status_change(
+            [asset.pk, other.pk], "retired", dept_manager_user
+        )
+        assert count == 1
+        assert failures == [
+            f"{other.name}: You do not have permission to change this asset."
+        ]
+        other.refresh_from_db()
+        assert other.status == "active"
+
+    def test_bulk_retire_by_member_changes_nothing(self, asset, member_user):
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], "retired", member_user
+        )
+        assert count == 0
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_view_shows_spec_message_and_no_success_for_lost(
+        self, admin_client, asset
+    ):
+        # Hardcoded POST: the bulk form does not offer lost, so this
+        # probes direct view input (S7.17.5).
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk],
+                "bulk_action": "status_change",
+                "new_status": "lost",
+            },
+            follow=True,
+        )
+        texts = [str(m) for m in resp.context["messages"]]
+        assert (
+            "Lost and stolen transitions require individual notes for "
+            "each asset and cannot be performed in bulk." in texts
+        )
+        assert not any("updated" in t for t in texts)
 
 
 @pytest.mark.django_db

@@ -1,6 +1,7 @@
 """Bulk operations service for assets."""
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import transaction as db_transaction
 from django.db.models import F
 
@@ -8,6 +9,13 @@ from ..models import Asset, AssetSerial, Category, Location, Transaction
 from .search import build_asset_search
 
 User = get_user_model()
+
+# Other statuses need notes, a location or a transaction per asset.
+BULK_STATUSES = ("active", "retired")
+BULK_LOST_STOLEN_MESSAGE = (
+    "Lost and stolen transitions require individual notes for each "
+    "asset and cannot be performed in bulk."
+)
 
 # V267: Explicit whitelist of allowed filter field names
 ALLOWED_FILTER_FIELDS = {
@@ -205,34 +213,40 @@ def bulk_transfer(asset_ids: list[int], location_id: int, user) -> dict:
 def bulk_status_change(
     asset_ids: list[int], new_status: str, user
 ) -> tuple[int, list[str]]:
-    """Change the status of multiple assets.
+    """Change the status of multiple assets to active or retired.
 
-    Validates each transition individually, then applies all valid
-    status changes in a single bulk_update query.
-
-    S7.17.5: Bulk transition to lost/stolen is explicitly blocked.
+    Each asset must pass the permission check and the transition
+    rules. The valid changes are saved in one bulk_update query.
 
     Returns a tuple of (success_count, list of failure messages).
     """
-    # S7.17.5: Block bulk lost/stolen transitions
     if new_status in ("lost", "stolen"):
-        assets = list(Asset.objects.filter(pk__in=asset_ids))
-        failures = [
-            f"{a.name}: Bulk transition to '{new_status}' is not "
-            f"allowed. Lost/stolen transitions require individual "
-            f"notes and must be performed individually."
-            for a in assets
-        ]
-        return 0, failures
+        return 0, [BULK_LOST_STOLEN_MESSAGE]
 
+    from .permissions import can_edit_asset
     from .state import RECOVERABLE_STATUSES, validate_transition
 
-    assets = list(Asset.objects.filter(pk__in=asset_ids))
+    assets = list(
+        Asset.objects.filter(pk__in=asset_ids).select_related(
+            "category__department"
+        )
+    )
+    if new_status not in BULK_STATUSES:
+        return 0, [
+            f"{a.name}: Use the asset page for this change." for a in assets
+        ]
+
     valid_assets: list[Asset] = []
     failures: list[str] = []
     for asset in assets:
-        # Missing and recovery need notes, a location and a transaction.
-        if new_status == "missing" or asset.status in RECOVERABLE_STATUSES:
+        if not can_edit_asset(user, asset):
+            failures.append(
+                f"{asset.name}: You do not have permission to change "
+                f"this asset."
+            )
+            continue
+        # Recovery needs a location and a transaction (S7.17.3).
+        if asset.status in RECOVERABLE_STATUSES:
             failures.append(
                 f"{asset.name}: Use the Status menu on the asset page "
                 f"for this change."
@@ -241,9 +255,10 @@ def bulk_status_change(
         try:
             validate_transition(asset, new_status)
             asset.status = new_status
+            asset.clean()
             valid_assets.append(asset)
-        except Exception as exc:
-            failures.append(f"{asset.name}: {exc}")
+        except ValidationError as exc:
+            failures.append(f"{asset.name}: {' '.join(exc.messages)}")
 
     if valid_assets:
         Asset.objects.bulk_update(valid_assets, ["status"])
