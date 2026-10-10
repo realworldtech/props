@@ -3751,8 +3751,9 @@ def stocktake_list(request):
 @login_required
 def stocktake_start(request):
     """Start a new stocktake session."""
+    # S2.7.1-05: stocktake is for managers and admins.
     role = get_user_role(request.user)
-    if role == "viewer":
+    if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
     if request.method == "POST":
         location_id = request.POST.get("location")
@@ -3841,8 +3842,9 @@ def stocktake_detail(request, pk):
 @login_required
 def stocktake_confirm(request, pk):
     """Confirm an asset in a stocktake session (HTMX or POST)."""
+    # S2.7.1-05: stocktake is for managers and admins.
     role = get_user_role(request.user)
-    if role == "viewer":
+    if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
     session = get_object_or_404(StocktakeSession, pk=pk, status="in_progress")
 
@@ -3852,6 +3854,8 @@ def stocktake_confirm(request, pk):
         if transfer_id:
             try:
                 transfer_asset = Asset.objects.get(pk=transfer_id)
+                if not can_edit_asset(request.user, transfer_asset):
+                    raise PermissionDenied
                 old_loc = transfer_asset.current_location
                 transfer_asset.current_location = session.location
                 transfer_asset.save(update_fields=["current_location"])
@@ -4058,10 +4062,28 @@ def stocktake_complete(request, pk):
             if mark_missing:
                 missing = session.missing_assets.filter(
                     checked_out_to__isnull=True
+                ).select_related("category__department")
+                # S2.2.3-03: only assets the user can mark missing.
+                excluded = [
+                    a
+                    for a in missing
+                    if not can_change_status(request.user, a)
+                ]
+                if excluded:
+                    messages.warning(
+                        request,
+                        f"{len(excluded)} asset(s) were not marked missing "
+                        f"because you do not manage their department: "
+                        f"{', '.join(a.name for a in excluded)}.",
+                    )
+                excluded_ids = [a.pk for a in excluded]
+                missing_count = missing.exclude(pk__in=excluded_ids).update(
+                    status="missing"
                 )
-                missing_count = missing.update(status="missing")
                 # M7: Update StocktakeItems and create Transactions
-                missing_items = session.items.filter(status="expected")
+                missing_items = session.items.filter(
+                    status="expected"
+                ).exclude(asset_id__in=excluded_ids)
                 for item in missing_items.select_related("asset"):
                     Transaction.objects.create(
                         asset=item.asset,
