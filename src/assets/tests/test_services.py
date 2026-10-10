@@ -2139,6 +2139,13 @@ class TestDisposeAsset:
         asset.current_location = None
         asset.clean()
 
+    def test_disposed_asset_cannot_be_edited(self, asset, admin_user):
+        from assets.services.permissions import can_edit_asset
+
+        asset.status = "disposed"
+        asset.save()
+        assert can_edit_asset(admin_user, asset) is False
+
     def test_merge_disposes_secondary_through_the_rule(
         self, asset, admin_user, category, location
     ):

@@ -516,6 +516,18 @@ def asset_detail(request, pk):
     # V494: conversion and barcode actions for the asset's managers
     can_manage = can_manage_asset(request.user, asset)
 
+    disposal = None
+    if asset.status == "disposed":
+        disposal = (
+            asset.transactions.filter(
+                action="note", notes__startswith="Status:"
+            )
+            .filter(notes__contains="→ Disposed")
+            .select_related("user", "from_location")
+            .order_by("-timestamp")
+            .first()
+        )
+
     member_of_kits = AssetKit.objects.filter(component=asset).select_related(
         "kit"
     )
@@ -587,6 +599,7 @@ def asset_detail(request, pk):
             "status_actions": status_actions,
             "can_convert": can_manage,
             "can_manage_this_asset": can_manage,
+            "disposal": disposal,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,

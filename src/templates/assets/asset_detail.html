@@ -15,6 +15,17 @@
         <span class="text-stage-900 dark:text-cream">{{ asset.name }}</span>
     </div>
 
+    {% if asset.status == 'disposed' %}
+    <!-- Disposed banner (S2.2.3-05, S2.2.3-13) -->
+    <div id="disposed-banner" class="p-4 rounded-xl border border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300">
+        <p class="font-semibold">This asset is disposed.</p>
+        <p class="text-sm mt-1">
+            It is kept as a historical record and cannot be changed.
+            {% if disposal %}Disposed on {{ disposal.timestamp|date:"j M Y" }}{% if disposal.user %} by {{ disposal.user.get_display_name }}{% endif %}.{% if disposal.from_location %} Last location: {{ disposal.from_location.name }}.{% endif %}{% endif %}
+        </p>
+    </div>
+    {% endif %}
+
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
@@ -28,6 +39,7 @@
                     {% elif asset.status == 'missing' %}bg-red-500/20 text-red-400
                     {% elif asset.status == 'lost' %}bg-orange-500/20 text-orange-400
                     {% elif asset.status == 'stolen' %}bg-purple-500/20 text-purple-400
+                    {% elif asset.status == 'disposed' %}bg-red-600 text-white
                     {% else %}bg-stage-200/50 dark:bg-stage-600/50 text-stage-500 dark:text-cream/50{% endif %}">
                     {{ asset.get_status_display }}
                 </span>

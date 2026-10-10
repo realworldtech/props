@@ -43,6 +43,9 @@ def get_user_role(user: User, department: Department = None) -> str:
 
 def can_edit_asset(user: User, asset: Asset) -> bool:
     """Check if the user can edit the given asset."""
+    # A disposed asset is a fixed historical record (S2.2.3-05).
+    if asset.status == "disposed":
+        return False
     role = get_user_role(user, asset.department)
 
     if role == "system_admin":

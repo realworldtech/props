@@ -8432,6 +8432,20 @@ class TestDisposalFrontend:
         assert draft.status == "disposed"
         assert draft.current_location is None
 
+    def test_disposed_asset_page_shows_indicator_and_no_actions(
+        self, admin_client, asset
+    ):
+        self._dispose(admin_client, asset)
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        content = resp.content.decode()
+        assert 'id="disposed-banner"' in content
+        assert "This asset is disposed" in content
+        assert "Last location: Main Store" in content
+        for name in ("asset_edit", "asset_checkout"):
+            assert reverse(f"assets:{name}", args=[asset.pk]) not in content
+
     def test_disposed_asset_history_shows_disposal(
         self, admin_client, asset, location
     ):
