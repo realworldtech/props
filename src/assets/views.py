@@ -65,6 +65,7 @@ from .models import (
     VirtualBarcode,
 )
 from .services.permissions import (
+    can_assign_category,
     can_change_status,
     can_checkout_asset,
     can_delete_asset,
@@ -1022,7 +1023,17 @@ def drafts_bulk_action(request):
             category_id = request.POST.get("category")
             location_id = request.POST.get("location")
             if category_id and location_id:
-                get_object_or_404(Category, pk=category_id)
+                category = get_object_or_404(
+                    Category.objects.select_related("department"),
+                    pk=category_id,
+                )
+                if not can_assign_category(request.user, category):
+                    messages.error(
+                        request,
+                        f"The category '{category.name}' belongs to an "
+                        f"inactive department.",
+                    )
+                    return redirect("assets:drafts_queue")
                 # S7.6.2: an inactive location cannot accept assets.
                 location = get_object_or_404(Location, pk=location_id)
                 if not location.is_active:

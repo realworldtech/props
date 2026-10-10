@@ -281,10 +281,22 @@ def bulk_edit(
     count = 0
 
     if category_id:
-        category = Category.objects.get(pk=category_id)
+        from .permissions import can_assign_category
+
+        category = Category.objects.select_related("department").get(
+            pk=category_id
+        )
         # V259: Only draft assets can have category bulk-assigned
         drafts = [a.pk for a in allowed if a.status == "draft"]
-        count = Asset.objects.filter(pk__in=drafts).update(category=category)
+        if can_assign_category(user, category):
+            count = Asset.objects.filter(pk__in=drafts).update(
+                category=category
+            )
+        else:
+            failures.append(
+                f"The category '{category.name}' belongs to an inactive "
+                f"department."
+            )
 
     if location_id:
         location = Location.objects.get(pk=location_id, is_active=True)

@@ -101,3 +101,12 @@ def can_handover_asset(user: User, asset: Asset) -> bool:
     """Check if the user can hand over a checked-out asset."""
     role = get_user_role(user, asset.department)
     return role in ("system_admin", "department_manager")
+
+
+def can_assign_category(user: User, category) -> bool:
+    """Return False for a non-admin and a category of an inactive
+    department (S7.7.2: a deactivated department is read-only)."""
+    dept = category.department
+    if dept is None or dept.is_active:
+        return True
+    return get_user_role(user, dept) == "system_admin"

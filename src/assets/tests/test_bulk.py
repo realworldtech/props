@@ -981,3 +981,51 @@ class TestBulkOperationsRespectDepartments:
             },
         )
         assert resp.status_code == 404
+
+    @pytest.fixture
+    def closed_category(self):
+        return CategoryFactory(department=DepartmentFactory(is_active=False))
+
+    def test_drafts_activate_rejects_inactive_department_category(
+        self, dept_manager_client, location, closed_category
+    ):
+        """S7.7.2: a deactivated department is read-only."""
+        draft = AssetFactory(status="draft")
+        # Security boundary: posts a category the user cannot use.
+        dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": closed_category.pk,
+                "location": location.pk,
+            },
+        )
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+        assert draft.category != closed_category
+
+    def test_bulk_edit_rejects_inactive_department_category(
+        self, member_user, closed_category
+    ):
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(status="draft")
+        count, failures = bulk_edit(
+            [draft.pk], member_user, category_id=closed_category.pk
+        )
+        assert count == 0
+        assert failures
+        draft.refresh_from_db()
+        assert draft.category != closed_category
+
+    def test_admin_can_assign_inactive_department_category(
+        self, admin_user, closed_category
+    ):
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(status="draft")
+        count, _ = bulk_edit(
+            [draft.pk], admin_user, category_id=closed_category.pk
+        )
+        assert count == 1
