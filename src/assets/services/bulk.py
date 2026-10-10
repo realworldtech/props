@@ -7,6 +7,7 @@ from django.db.models import F
 
 from ..models import Asset, AssetSerial, Category, Location, Transaction
 from .search import build_asset_search
+from .state import recover_on_checkin
 
 User = get_user_model()
 
@@ -455,6 +456,10 @@ def bulk_checkin(
                 checked_out_to=None,
                 current_location=location,
             )
+            for asset in eligible:
+                asset.checked_out_to = None
+                asset.current_location = location
+                recover_on_checkin(asset, performed_by)
 
     return {"checked_in": len(eligible), "skipped": skipped}
 
@@ -525,6 +530,8 @@ def bulk_checkin_to_home(
             Asset.objects.bulk_update(
                 eligible, ["checked_out_to", "current_location"]
             )
+            for asset in eligible:
+                recover_on_checkin(asset, performed_by)
             checked_in += len(eligible)
 
         # --- Serialised assets: per-serial transactions ---

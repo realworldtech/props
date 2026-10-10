@@ -74,6 +74,7 @@ from .services.permissions import (
     get_user_role,
 )
 from .services.search import build_asset_search
+from .services.state import recover_on_checkin
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
@@ -1942,6 +1943,8 @@ def asset_checkin(request, pk):
                 asset.home_location = to_location
                 serial_update_fields.append("home_location")
             asset.save(update_fields=serial_update_fields)
+            if not still_out:
+                recover_on_checkin(asset, request.user)
         else:
             # --- Non-serialised check-in ---
             Transaction.objects.create(
@@ -1964,6 +1967,7 @@ def asset_checkin(request, pk):
                 asset.home_location = to_location
                 update_fields.append("home_location")
             asset.save(update_fields=update_fields)
+            recover_on_checkin(asset, request.user)
 
         messages.success(
             request,

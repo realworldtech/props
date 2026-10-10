@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction as db_transaction
 
 from ..models import Asset, Location, Transaction
+from .state import recover_on_checkin
 
 User = get_user_model()
 
@@ -56,6 +57,7 @@ def create_checkin(
     asset.checked_out_to = None
     asset.current_location = to_location
     asset.save(update_fields=["checked_out_to", "current_location"])
+    recover_on_checkin(asset, performed_by)
     return txn
 
 

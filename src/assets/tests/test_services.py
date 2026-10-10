@@ -1966,3 +1966,118 @@ class TestDashboardCaching:
 
             assert cache.get(admin_key)["total_active"] == 5
             assert cache.get(mgr_key)["total_active"] == 3
+
+
+@pytest.mark.django_db
+class TestRecoverOnCheckin:
+    """S2.2.3-12: a check-in is the record that the asset is found."""
+
+    @pytest.mark.parametrize("status", ["missing", "lost", "stolen"])
+    def test_checkin_service_recovers_asset(
+        self, asset, admin_user, member_user, location, status
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.status = status
+        asset.lost_stolen_notes = (
+            "Left at venue" if status != "missing" else ""
+        )
+        asset.checked_out_to = member_user
+        asset.save()
+        dock = LocationFactory(name="Dock")
+        create_checkin(asset, dock, member_user)
+
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert asset.checked_out_to is None
+        assert asset.current_location == dock
+        note = Transaction.objects.filter(asset=asset, action="note").last()
+        assert note.notes.startswith(f"Status: {status.title()} → Active")
+        assert note.user == member_user
+
+    @pytest.mark.parametrize("status", ["lost", "stolen"])
+    def test_checkin_appends_recovery_to_lost_stolen_notes(
+        self, asset, member_user, location, status
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.status = status
+        asset.lost_stolen_notes = "Left at venue"
+        asset.checked_out_to = member_user
+        asset.save()
+        create_checkin(asset, location, member_user)
+
+        asset.refresh_from_db()
+        assert asset.lost_stolen_notes.startswith("Left at venue\n")
+        assert "Recovered: checked in" in asset.lost_stolen_notes
+
+    def test_checkin_of_active_asset_adds_no_status_note(
+        self, asset, member_user, location
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.checked_out_to = member_user
+        asset.save()
+        create_checkin(asset, location, member_user)
+
+        assert not Transaction.objects.filter(
+            asset=asset, action="note"
+        ).exists()
+
+    def _lost_and_out(self, asset, member_user):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.checked_out_to = member_user
+        asset.save()
+        return asset
+
+    def test_bulk_checkin_recovers_asset(self, asset, member_user, location):
+        from assets.services.bulk import bulk_checkin
+
+        self._lost_and_out(asset, member_user)
+        bulk_checkin([asset.pk], location.pk, member_user)
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)
+
+    def test_bulk_checkin_to_home_recovers_asset(
+        self, asset, member_user, location
+    ):
+        from assets.services.bulk import bulk_checkin_to_home
+
+        self._lost_and_out(asset, member_user)
+        asset.home_location = location
+        asset.save()
+        bulk_checkin_to_home([asset.pk], member_user)
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)
+
+    def test_kit_checkin_recovers_lost_component_and_kit(
+        self, asset, kit_asset, member_user, location
+    ):
+        from assets.services.kits import kit_checkin
+
+        AssetKitFactory(kit=kit_asset, component=asset)
+        self._lost_and_out(asset, member_user)
+        self._lost_and_out(kit_asset, member_user)
+        kit_checkin(kit_asset, member_user, to_location=location)
+        asset.refresh_from_db()
+        kit_asset.refresh_from_db()
+        assert asset.status == "active"
+        assert kit_asset.status == "active"
+
+    def test_checkin_page_round_trip_recovers_asset(
+        self, client_logged_in, user, asset, location
+    ):
+        """Anyone who can check in can recover the asset (S2.2.3-12)."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        self._lost_and_out(asset, user)
+        url = reverse("assets:asset_checkin", args=[asset.pk])
+        resp = client_logged_in.get(url)
+        assert resp.status_code == 200
+        fields = collect_form_fields(resp.content.decode(), "checkin-form")
+        fields["location"] = str(location.pk)
+        client_logged_in.post(url, fields)
+
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)

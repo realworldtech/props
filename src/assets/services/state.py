@@ -213,3 +213,32 @@ def change_status(
             notes=f"{summary} {notes}".strip(),
         )
     return asset
+
+
+def recover_on_checkin(asset: Asset, user) -> None:
+    """Make a checked-in missing, lost or stolen asset active (S2.2.3-12).
+
+    Call this after the check-in has set the new location.
+    """
+    if asset.status not in RECOVERABLE_STATUSES:
+        return
+    old_status = asset.status
+    location = asset.current_location
+    where = f" at {location.name}" if location else ""
+    if old_status in ("lost", "stolen"):
+        asset.lost_stolen_notes = _append_note(
+            asset.lost_stolen_notes, f"Recovered: checked in{where}."
+        )
+    asset.status = "active"
+    asset.save(update_fields=["status", "lost_stolen_notes"])
+    labels = dict(Asset.STATUS_CHOICES)
+    Transaction.objects.create(
+        asset=asset,
+        user=user,
+        action="note",
+        to_location=location,
+        notes=(
+            f"Status: {labels[old_status]} → Active. "
+            f"Recovered on check-in{where}."
+        ),
+    )
