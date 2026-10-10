@@ -4385,7 +4385,10 @@ class TestSharedFilterQueryset:
 
 @pytest.mark.django_db
 class TestV32AssetFormFields:
-    """V32: AssetForm MUST include home_location and lost_stolen_notes."""
+    """V32: AssetForm includes home_location.
+
+    Lost/stolen notes are written only by the Status menu (S2.2.3-07).
+    """
 
     def test_home_location_in_form_fields(self):
         from assets.forms import AssetForm
@@ -4393,11 +4396,11 @@ class TestV32AssetFormFields:
         form = AssetForm()
         assert "home_location" in form.fields
 
-    def test_lost_stolen_notes_in_form_fields(self):
+    def test_lost_stolen_notes_not_in_form_fields(self):
         from assets.forms import AssetForm
 
         form = AssetForm()
-        assert "lost_stolen_notes" in form.fields
+        assert "lost_stolen_notes" not in form.fields
 
     def test_home_location_saved_via_form(
         self, admin_client, admin_user, category, location
@@ -8293,3 +8296,24 @@ class TestAssetStatusChangeView:
         asset.refresh_from_db()
         assert asset.name == "Renamed Prop"
         assert asset.status == "missing"
+
+    @pytest.mark.parametrize("status", ["lost", "active"])
+    def test_edit_form_keeps_lost_stolen_notes(
+        self, admin_client, asset, status
+    ):
+        """S7.17.3: the loss history stays after a later edit."""
+        asset.status = status
+        asset.lost_stolen_notes = "Left at venue\nRecovered: In the van"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["name"] = "Renamed Prop"
+        resp = admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.name == "Renamed Prop"
+        assert (
+            asset.lost_stolen_notes == "Left at venue\nRecovered: In the van"
+        )

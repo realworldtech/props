@@ -54,7 +54,6 @@ class AssetForm(forms.ModelForm):
             "estimated_value",
             "is_public",
             "public_description",
-            "lost_stolen_notes",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -130,13 +129,6 @@ class AssetForm(forms.ModelForm):
                     "rows": 3,
                     "placeholder": "Public-facing description",
                     "x-show": "isPublic",
-                }
-            ),
-            "lost_stolen_notes": forms.Textarea(
-                attrs={
-                    "class": _CSS,
-                    "rows": 2,
-                    "placeholder": "Notes about lost/stolen status",
                 }
             ),
         }
