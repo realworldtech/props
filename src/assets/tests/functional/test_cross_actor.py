@@ -2068,15 +2068,16 @@ class TestUS_XA_035_AIAnalysisEdgeCases:
         )
         assert resp.status_code in (302, 403)
 
-    def test_ai_analyse_accessible_to_authenticated_user(
-        self, client_logged_in, active_asset
+    def test_ai_analyse_accessible_to_member_on_own_draft(
+        self, client_logged_in, user
     ):
-        """AI analysis endpoint is accessible to authenticated users."""
-        image = AssetImageFactory(asset=active_asset)
+        """US-MB-029: a member can analyse images of their own drafts."""
+        draft = AssetFactory(status="draft", created_by=user)
+        image = AssetImageFactory(asset=draft)
         resp = client_logged_in.get(
             reverse(
                 "assets:ai_analyse",
-                args=[active_asset.pk, image.pk],
+                args=[draft.pk, image.pk],
             )
         )
         assert resp.status_code in (200, 302, 405)

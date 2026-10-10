@@ -968,7 +968,8 @@ class TestQueryCounts:
         # Permission-based roles use has_perm cache, fewer queries
         # Status actions: +1 manager check, -2 for the removed
         # checkout warning (is_checked_out sums)
-        with django_assert_num_queries(24):
+        # can_manage_asset: +1 manager check for convert/barcode actions
+        with django_assert_num_queries(25):
             response = client_logged_in.get(
                 reverse("assets:asset_detail", args=[asset.pk])
             )

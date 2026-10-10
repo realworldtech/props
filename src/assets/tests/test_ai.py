@@ -428,7 +428,7 @@ class TestAISuggestionsPanel:
             ai_ocr_text="SERIAL-123",
         )
 
-    def test_apply_description_replaces(self, client_logged_in, asset, user):
+    def test_apply_description_replaces(self, admin_client, asset, user):
         asset.description = "Old description"
         asset.save()
         img = self._create_image_with_ai(asset, user)
@@ -436,11 +436,11 @@ class TestAISuggestionsPanel:
             "assets:ai_apply_suggestions",
             args=[asset.pk, img.pk],
         )
-        client_logged_in.post(url, {"apply_description": "1"})
+        admin_client.post(url, {"apply_description": "1"})
         asset.refresh_from_db()
         assert asset.description == "A wooden chair"
 
-    def test_append_description(self, client_logged_in, asset, user):
+    def test_append_description(self, admin_client, asset, user):
         asset.description = "Existing notes"
         asset.save()
         img = self._create_image_with_ai(asset, user)
@@ -448,14 +448,12 @@ class TestAISuggestionsPanel:
             "assets:ai_apply_suggestions",
             args=[asset.pk, img.pk],
         )
-        client_logged_in.post(url, {"append_description": "1"})
+        admin_client.post(url, {"append_description": "1"})
         asset.refresh_from_db()
         assert "Existing notes" in asset.description
         assert "A wooden chair" in asset.description
 
-    def test_append_description_empty_asset(
-        self, client_logged_in, asset, user
-    ):
+    def test_append_description_empty_asset(self, admin_client, asset, user):
         asset.description = ""
         asset.save()
         img = self._create_image_with_ai(asset, user)
@@ -463,11 +461,11 @@ class TestAISuggestionsPanel:
             "assets:ai_apply_suggestions",
             args=[asset.pk, img.pk],
         )
-        client_logged_in.post(url, {"append_description": "1"})
+        admin_client.post(url, {"append_description": "1"})
         asset.refresh_from_db()
         assert asset.description == "A wooden chair"
 
-    def test_copy_ocr_to_notes(self, client_logged_in, asset, user):
+    def test_copy_ocr_to_notes(self, admin_client, asset, user):
         asset.notes = ""
         asset.save()
         img = self._create_image_with_ai(asset, user)
@@ -475,12 +473,12 @@ class TestAISuggestionsPanel:
             "assets:ai_apply_suggestions",
             args=[asset.pk, img.pk],
         )
-        client_logged_in.post(url, {"copy_ocr_to_notes": "1"})
+        admin_client.post(url, {"copy_ocr_to_notes": "1"})
         asset.refresh_from_db()
         assert asset.notes == "SERIAL-123"
 
     def test_copy_ocr_appends_to_existing_notes(
-        self, client_logged_in, asset, user
+        self, admin_client, asset, user
     ):
         asset.notes = "Existing notes"
         asset.save()
@@ -489,7 +487,7 @@ class TestAISuggestionsPanel:
             "assets:ai_apply_suggestions",
             args=[asset.pk, img.pk],
         )
-        client_logged_in.post(url, {"copy_ocr_to_notes": "1"})
+        admin_client.post(url, {"copy_ocr_to_notes": "1"})
         asset.refresh_from_db()
         assert "Existing notes" in asset.notes
         assert "SERIAL-123" in asset.notes

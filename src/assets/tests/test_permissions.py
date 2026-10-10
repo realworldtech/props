@@ -388,6 +388,143 @@ class TestManagerRoleIsScopedToManagedDepartments:
         )
         assert dept_manager_client.get(url).status_code == 403
 
+    @pytest.mark.parametrize(
+        "url_name,extra",
+        [
+            ("image_upload", None),
+            ("image_delete", "image"),
+            ("nfc_add", None),
+            ("nfc_remove", "nfc"),
+            ("clear_barcode", None),
+            ("asset_convert_serialisation", None),
+            ("kit_add_component", None),
+            ("kit_remove_component", "kit_component"),
+        ],
+    )
+    def test_manager_cannot_change_other_department_asset_parts(
+        self, dept_manager_client, other_asset, url_name, extra
+    ):
+        """S2.10.3-01: edit, kit management and labels of an asset are
+        for the managers of its department."""
+        other_asset.is_kit = True
+        other_asset.save()
+        args = [other_asset.pk]
+        if extra == "image":
+            args.append(AssetImageFactory(asset=other_asset).pk)
+        elif extra == "nfc":
+            args.append(NFCTagFactory(asset=other_asset).pk)
+        elif extra == "kit_component":
+            args.append(AssetKitFactory(kit=other_asset).pk)
+        # Security boundary: empty payload on purpose.
+        resp = dept_manager_client.post(
+            reverse(f"assets:{url_name}", args=args)
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.parametrize(
+        "url_name,extra",
+        [
+            ("image_upload", None),
+            ("image_delete", "image"),
+            ("nfc_add", None),
+            ("nfc_remove", "nfc"),
+        ],
+    )
+    def test_member_cannot_change_parts_of_asset_they_do_not_own(
+        self, member_client, asset, url_name, extra
+    ):
+        """S2.10.3-04: Members edit only their own drafts."""
+        args = [asset.pk]
+        if extra == "image":
+            args.append(AssetImageFactory(asset=asset).pk)
+        elif extra == "nfc":
+            args.append(NFCTagFactory(asset=asset).pk)
+        # Security boundary: empty payload on purpose.
+        resp = member_client.post(reverse(f"assets:{url_name}", args=args))
+        assert resp.status_code == 403
+
+    @pytest.mark.parametrize(
+        "url_name",
+        [
+            "image_set_primary",
+            "ai_analyse",
+            "ai_apply_suggestions",
+            "ai_reanalyse",
+        ],
+    )
+    @pytest.mark.parametrize("who", ["viewer", "other_manager"])
+    def test_image_and_ai_writes_need_edit_permission(
+        self,
+        viewer_client,
+        dept_manager_client,
+        asset,
+        other_asset,
+        url_name,
+        who,
+    ):
+        """S2.10.3-05: every view checks permissions. US-MB-030: AI
+        suggestions are applied by users who can edit the asset."""
+        client, target = (
+            (viewer_client, asset)
+            if who == "viewer"
+            else (dept_manager_client, other_asset)
+        )
+        image = AssetImageFactory(asset=target)
+        # Security boundary: empty payload on purpose.
+        resp = client.post(
+            reverse(f"assets:{url_name}", args=[target.pk, image.pk])
+        )
+        assert resp.status_code == 403
+
+    def _detail(self, client, asset):
+        return client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+
+    def test_viewer_sees_no_image_or_nfc_actions(self, viewer_client, asset):
+        image = AssetImageFactory(asset=asset)
+        content = self._detail(viewer_client, asset)
+        for url in (
+            reverse("assets:image_upload", args=[asset.pk]),
+            reverse("assets:image_delete", args=[asset.pk, image.pk]),
+            reverse("assets:image_set_primary", args=[asset.pk, image.pk]),
+            reverse("assets:nfc_add", args=[asset.pk]),
+        ):
+            assert url not in content
+
+    def test_manager_sees_image_and_nfc_actions_in_own_department(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        assert reverse("assets:image_upload", args=[asset.pk]) in content
+        assert reverse("assets:nfc_add", args=[asset.pk]) in content
+
+    def test_manager_sees_no_convert_or_clear_barcode_in_other_department(
+        self, dept_manager_client, other_asset
+    ):
+        content = self._detail(dept_manager_client, other_asset)
+        for name in ("asset_convert_serialisation", "clear_barcode"):
+            assert reverse(f"assets:{name}", args=[other_asset.pk]) not in (
+                content
+            )
+
+    def test_manager_sees_convert_and_clear_barcode_in_own_department(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        for name in ("asset_convert_serialisation", "clear_barcode"):
+            assert reverse(f"assets:{name}", args=[asset.pk]) in content
+
+    def test_kit_contents_hides_manage_controls_for_other_department(
+        self, dept_manager_client, other_asset
+    ):
+        other_asset.is_kit = True
+        other_asset.save()
+        resp = dept_manager_client.get(
+            reverse("assets:kit_contents", args=[other_asset.pk])
+        )
+        assert resp.context["can_manage"] is False
+
     def test_manager_sees_no_edit_link_on_other_department_asset(
         self, dept_manager_client, other_asset
     ):

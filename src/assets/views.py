@@ -70,6 +70,7 @@ from .services.permissions import (
     can_delete_asset,
     can_edit_asset,
     can_handover_asset,
+    can_manage_asset,
     get_user_role,
 )
 from .services.search import build_asset_search
@@ -511,9 +512,8 @@ def asset_detail(request, pk):
 
     active_holds = get_active_hold_items(asset)
 
-    # V494: Conversion link for managers/admins
-    role = get_user_role(request.user)
-    can_convert = role in ("system_admin", "department_manager")
+    # V494: conversion and barcode actions for the asset's managers
+    can_manage = can_manage_asset(request.user, asset)
 
     member_of_kits = AssetKit.objects.filter(component=asset).select_related(
         "kit"
@@ -584,7 +584,8 @@ def asset_detail(request, pk):
             "active_holds": active_holds,
             "member_of_kits": member_of_kits,
             "status_actions": status_actions,
-            "can_convert": can_convert,
+            "can_convert": can_manage,
+            "can_manage": can_manage,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,
@@ -1360,9 +1361,6 @@ def _convert_to_jpeg(uploaded_file):
 @login_required
 def image_upload(request, pk):
     """Upload an image to an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        raise PermissionDenied
     # V899: Configurable via MAX_IMAGE_SIZE_MB env var
     import os
 
@@ -1378,6 +1376,8 @@ def image_upload(request, pk):
     }
 
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
+        raise PermissionDenied
     if request.method == "POST":
         form = AssetImageForm(request.POST, request.FILES)
         if form.is_valid():
@@ -1428,8 +1428,8 @@ def image_upload(request, pk):
 @login_required
 def image_delete(request, pk, image_pk):
     """Delete an asset image."""
-    role = get_user_role(request.user)
-    if role == "viewer":
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
         raise PermissionDenied
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
     if request.method == "POST":
@@ -1449,6 +1449,8 @@ def image_delete(request, pk, image_pk):
 def image_set_primary(request, pk, image_pk):
     """Set an image as primary."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
     if request.method == "POST":
         image.is_primary = True
         image.save()
@@ -2744,10 +2746,9 @@ def remote_print_submit(request, pk):
 @login_required
 def clear_barcode(request, pk):
     """Clear an asset's barcode (V163 — S2.4.2-05)."""
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
-        raise PermissionDenied
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_manage_asset(request.user, asset):
+        raise PermissionDenied
     if request.method == "POST" and asset.barcode:
         old_barcode = asset.barcode
         # Use queryset.update() to bypass save() override which
@@ -2923,10 +2924,9 @@ def virtual_barcode_list(request):
 @login_required
 def nfc_add(request, pk):
     """Assign an NFC tag to an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        raise PermissionDenied
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
+        raise PermissionDenied
 
     if request.method == "POST":
         tag_id = request.POST.get("tag_id", "").strip()
@@ -2975,8 +2975,8 @@ def nfc_add(request, pk):
 @login_required
 def nfc_remove(request, pk, nfc_pk):
     """Remove an NFC tag from an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
         raise PermissionDenied
     # Verify the tag exists (raises 404 if not found)
     get_object_or_404(NFCTag, pk=nfc_pk, asset_id=pk, removed_at__isnull=True)
@@ -4683,6 +4683,8 @@ def asset_merge_execute(request):
 def ai_analyse(request, pk, image_pk):
     """Trigger AI analysis for an asset image."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
 
     from props.context_processors import is_ai_analysis_enabled
 
@@ -4706,6 +4708,8 @@ def ai_analyse(request, pk, image_pk):
 def ai_apply_suggestions(request, pk, image_pk):
     """Apply AI suggestions to the asset."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
     asset = image.asset
 
     if request.method == "POST":
@@ -4849,6 +4853,8 @@ def ai_status(request, pk, image_pk):
 def ai_reanalyse(request, pk, image_pk):
     """Retry AI analysis for a failed image."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
 
     from props.context_processors import is_ai_analysis_enabled
 
@@ -5053,8 +5059,7 @@ def asset_handover(request, pk):
 def asset_convert_serialisation(request, pk):
     """Show conversion impact and handle confirmation."""
     asset = get_object_or_404(Asset, pk=pk)
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    if not can_manage_asset(request.user, asset):
         raise PermissionDenied
 
     if request.method == "POST":
@@ -5796,8 +5801,7 @@ def kit_contents(request, pk):
     components = AssetKit.objects.filter(kit=asset).select_related(
         "component", "serial"
     )
-    role = get_user_role(request.user)
-    can_manage = role in ("system_admin", "department_manager")
+    can_manage = can_manage_asset(request.user, asset)
     return render(
         request,
         "assets/kit_contents.html",
@@ -5813,8 +5817,7 @@ def kit_contents(request, pk):
 def kit_add_component(request, pk):
     """Add a component to a kit."""
     asset = get_object_or_404(Asset, pk=pk)
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    if not can_manage_asset(request.user, asset):
         raise PermissionDenied
     if not asset.is_kit:
         messages.error(request, "This asset is not a kit.")
@@ -5847,8 +5850,8 @@ def kit_add_component(request, pk):
 @login_required
 def kit_remove_component(request, pk, component_pk):
     """Remove a component from a kit."""
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    kit = get_object_or_404(Asset, pk=pk)
+    if not can_manage_asset(request.user, kit):
         raise PermissionDenied
     if request.method == "POST":
         AssetKit.objects.filter(kit_id=pk, pk=component_pk).delete()

@@ -65,15 +65,23 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
     return False
 
 
-def can_change_status(user: User, asset: Asset) -> bool:
-    """Check if the user can mark the asset missing, lost, stolen or found.
+def can_manage_asset(user: User, asset: Asset) -> bool:
+    """Return True for System Admins and the asset's Department Managers.
 
-    S2.2.3-03: only Department Managers and System Admins.
+    S2.10.3-01: kits, barcodes and serialisation are not for Members.
     """
     role = get_user_role(user, asset.department)
     return role in ("system_admin", "department_manager") and can_edit_asset(
         user, asset
     )
+
+
+def can_change_status(user: User, asset: Asset) -> bool:
+    """Check if the user can mark the asset missing, lost, stolen or found.
+
+    S2.2.3-03: only Department Managers and System Admins.
+    """
+    return can_manage_asset(user, asset)
 
 
 def can_delete_asset(user: User, asset: Asset) -> bool:

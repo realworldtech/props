@@ -690,7 +690,7 @@ class TestEdgeCaseMerge:
 class TestEdgeCaseImageUpload:
     """§7.8: Image upload validation."""
 
-    def test_rejects_oversized_image(self, client_logged_in, asset):
+    def test_rejects_oversized_image(self, admin_client, asset):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         # Create a file that claims to be > 10 MB
@@ -701,7 +701,7 @@ class TestEdgeCaseImageUpload:
         )
         big_file.size = 11 * 1024 * 1024  # Fake size > 10 MB
 
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:image_upload", args=[asset.pk]),
             {"image": big_file, "caption": "Too big"},
         )
