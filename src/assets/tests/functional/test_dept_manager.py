@@ -151,13 +151,6 @@ class TestUS_DM_002_EditDraftAssetsInMyDept:
         # DM should be able to edit drafts in their department
         assert resp.status_code in (200, 403)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: DM cross-department edit restriction not enforced"
-            " (US-DM-002, S10B)"
-        ),
-    )
     def test_dm_cannot_edit_other_dept_draft(
         self, dept_manager_client, tech_dept, member_user
     ):
@@ -419,13 +412,6 @@ class TestUS_DM_007_ViewButNotEditOtherDeptAssets:
         )
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: DM cross-department edit restriction not enforced"
-            " (US-DM-007, S10B)"
-        ),
-    )
     def test_dm_cannot_edit_other_dept_asset(
         self,
         dept_manager_client,
@@ -788,13 +774,6 @@ class TestUS_DM_014_CheckOutFromAnotherDept:
         # Spec names this field performed_by; model uses user (gap: field name)
         assert tx.user == dept_manager_user
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: DM cross-department edit restriction not enforced"
-            " (US-DM-014, S10B)"
-        ),
-    )
     def test_dm_cannot_edit_other_dept_asset_after_checkout(
         self,
         dept_manager_client,
@@ -2302,14 +2281,6 @@ class TestUS_DM_002_ManageDraftsQueue_CrossDept:
     Spec refs: S2.1.4a-01, S2.10.3-07
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: DM can currently edit drafts in other departments "
-            "(returns 200). Should return 302/403. "
-            "(S2.1.4a-01, S2.10.3-07)"
-        ),
-    )
     def test_dm_cannot_edit_draft_from_other_department(
         self,
         dept_manager_client,

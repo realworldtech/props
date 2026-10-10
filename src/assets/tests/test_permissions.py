@@ -328,6 +328,77 @@ class TestCanChangeStatusPermission:
 
 
 @pytest.mark.django_db
+class TestManagerRoleIsScopedToManagedDepartments:
+    """S2.8.3-05, S2.2.3-03: a Department Manager has the manager role
+    only in the departments they manage."""
+
+    @pytest.fixture
+    def other_asset(self):
+        return AssetFactory(
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+
+    def test_role_in_managed_department_is_manager(
+        self, dept_manager_user, department
+    ):
+        from assets.services.permissions import get_user_role
+
+        role = get_user_role(dept_manager_user, department)
+        assert role == "department_manager"
+
+    def test_role_in_other_department_is_member(self, dept_manager_user):
+        from assets.services.permissions import get_user_role
+
+        role = get_user_role(dept_manager_user, DepartmentFactory())
+        assert role == "member"
+
+    def test_role_without_department_is_manager(self, dept_manager_user):
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(dept_manager_user) == "department_manager"
+
+    def test_manager_cannot_write_other_department_asset(
+        self, dept_manager_user, other_asset
+    ):
+        from assets.services.permissions import (
+            can_change_status,
+            can_delete_asset,
+            can_edit_asset,
+            can_handover_asset,
+        )
+
+        assert can_edit_asset(dept_manager_user, other_asset) is False
+        assert can_delete_asset(dept_manager_user, other_asset) is False
+        assert can_handover_asset(dept_manager_user, other_asset) is False
+        assert can_change_status(dept_manager_user, other_asset) is False
+
+    def test_manager_can_still_check_out_other_department_asset(
+        self, dept_manager_user, other_asset
+    ):
+        from assets.services.permissions import can_checkout_asset
+
+        assert can_checkout_asset(dept_manager_user, other_asset) is True
+
+    def test_manager_gets_403_on_other_department_status_page(
+        self, dept_manager_client, other_asset
+    ):
+        url = reverse(
+            "assets:asset_change_status", args=[other_asset.pk, "missing"]
+        )
+        assert dept_manager_client.get(url).status_code == 403
+
+    def test_manager_sees_no_edit_link_on_other_department_asset(
+        self, dept_manager_client, other_asset
+    ):
+        resp = dept_manager_client.get(
+            reverse("assets:asset_detail", args=[other_asset.pk])
+        )
+        edit_url = reverse("assets:asset_edit", args=[other_asset.pk])
+        assert edit_url.encode() not in resp.content
+
+
+@pytest.mark.django_db
 class TestDeptManagerDeactivation:
     """S7.7 — Permission edge cases for deactivated departments."""
 

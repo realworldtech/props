@@ -690,11 +690,6 @@ class TestBulkStatusChangeKeepsManualStatusRules:
         draft.refresh_from_db()
         assert draft.status == "draft"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="get_user_role gives the manager role for every department "
-        "when the user has can_merge_assets (S2.8.3-05)",
-    )
     def test_bulk_retire_excludes_other_department_assets(
         self, asset, dept_manager_user
     ):

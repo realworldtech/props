@@ -8,14 +8,17 @@ User = get_user_model()
 
 
 def get_user_role(user: User, department: Department = None) -> str:
-    """Determine the user's highest role.
+    """Return the user's highest role.
 
     Returns one of: 'system_admin', 'department_manager', 'member',
     'viewer', or 'borrower'.
 
-    Uses permission-based checks rather than group names, so
-    deployments that rename groups (e.g. "Member" → "Team Member")
-    continue to work correctly.
+    With a department, the manager role applies only if the user
+    manages that department (S2.8.3-05). Without a department, any
+    user with the manager permissions has the manager role.
+
+    The checks use permissions, not group names, so deployments can
+    rename the groups (e.g. "Member" → "Team Member").
     """
     if user.is_superuser:
         return "system_admin"
@@ -23,10 +26,10 @@ def get_user_role(user: User, department: Department = None) -> str:
     if user.has_perm("accounts.can_approve_users"):
         return "system_admin"
 
-    if department and department.managers.filter(pk=user.pk).exists():
-        return "department_manager"
-
-    if user.has_perm("assets.can_merge_assets"):
+    if department is not None:
+        if department.managers.filter(pk=user.pk).exists():
+            return "department_manager"
+    elif user.has_perm("assets.can_merge_assets"):
         return "department_manager"
 
     if user.has_perm("assets.can_checkout_asset"):
