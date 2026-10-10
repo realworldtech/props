@@ -1,8 +1,12 @@
 """Asset state machine and transition validation."""
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 
-from ..models import Asset
+from ..models import Asset, Location, Transaction
+from .permissions import can_change_status
+
+RECOVERABLE_STATUSES = ("missing", "lost", "stolen")
 
 
 def validate_transition(asset: Asset, new_status: str) -> None:
@@ -70,4 +74,90 @@ def transition_asset(asset: Asset, new_status: str) -> Asset:
     asset.status = new_status
     asset.full_clean()
     asset.save(update_fields=["status"])
+    return asset
+
+
+def _append_note(existing: str, entry: str) -> str:
+    return f"{existing}\n---\n{entry}" if existing else entry
+
+
+def change_status(
+    asset: Asset,
+    new_status: str,
+    user,
+    *,
+    notes: str = "",
+    location: Location | None = None,
+    confirm_checked_out: bool = False,
+) -> Asset:
+    """Mark an asset missing, lost or stolen, or recover it to active.
+
+    Records the change as a note transaction (S7.17.1, S7.17.3).
+    Raises PermissionDenied or ValidationError.
+    """
+    if not can_change_status(user, asset):
+        raise PermissionDenied
+    if not asset.can_transition_to(new_status):
+        raise ValidationError(
+            f"Cannot transition from '{asset.get_status_display()}' to "
+            f"'{new_status}'."
+        )
+
+    notes = notes.strip()
+    old_status = asset.status
+    old_location = asset.current_location
+    is_recovery = old_status in RECOVERABLE_STATUSES and new_status == "active"
+
+    # S2.2.3-07: each loss needs its own notes, not old ones.
+    if new_status in ("lost", "stolen") and not notes:
+        raise ValidationError(
+            f"Notes are required when marking an asset as "
+            f"'{new_status}'. Please provide details about "
+            f"the circumstances."
+        )
+
+    # S7.5.4: explicit confirmation for a checked-out asset.
+    if (
+        new_status == "missing"
+        and asset.is_checked_out
+        and not confirm_checked_out
+    ):
+        raise ValidationError(
+            "This asset is checked out. Confirm that you want to mark "
+            "it as missing."
+        )
+
+    # S2.2.3-04, S7.17.3: recovery places the asset somewhere.
+    if is_recovery and (location is None or not location.is_active):
+        raise ValidationError(
+            "A location must be set when an asset is found or recovered."
+        )
+
+    with transaction.atomic():
+        if new_status in ("lost", "stolen"):
+            asset.lost_stolen_notes = _append_note(
+                asset.lost_stolen_notes, notes
+            )
+        elif is_recovery and old_status in ("lost", "stolen") and notes:
+            asset.lost_stolen_notes = _append_note(
+                asset.lost_stolen_notes, f"Recovered: {notes}"
+            )
+        if is_recovery:
+            asset.current_location = location
+        validate_transition(asset, new_status)
+        asset.status = new_status
+        asset.save(
+            update_fields=["status", "lost_stolen_notes", "current_location"]
+        )
+
+        labels = dict(Asset.STATUS_CHOICES)
+        summary = f"Status: {labels[old_status]} → {labels[new_status]}."
+        Transaction.objects.create(
+            asset=asset,
+            user=user,
+            action="note",
+            from_location=old_location,
+            to_location=location if is_recovery else None,
+            notes=f"{summary} {notes}".strip(),
+        )
     return asset

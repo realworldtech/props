@@ -283,6 +283,50 @@ class TestCanHandoverPermission:
         assert can_handover_asset(user, asset) is True
 
 
+class TestCanChangeStatusPermission:
+    """S2.2.3-03: only managers and admins change status manually."""
+
+    def test_admin_can_change_status(self, admin_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(admin_user, asset) is True
+
+    def test_department_manager_can_change_status(
+        self, dept_manager_user, asset
+    ):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(dept_manager_user, asset) is True
+
+    def test_manager_of_inactive_department_cannot_change_status(
+        self, dept_manager_user, asset, department
+    ):
+        from assets.services.permissions import can_change_status
+
+        department.is_active = False
+        department.save()
+        assert can_change_status(dept_manager_user, asset) is False
+
+    def test_member_cannot_change_status(self, member_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(member_user, asset) is False
+
+    def test_member_cannot_change_status_of_own_draft(
+        self, member_user, draft_asset
+    ):
+        from assets.services.permissions import can_change_status
+
+        draft_asset.created_by = member_user
+        draft_asset.save()
+        assert can_change_status(member_user, draft_asset) is False
+
+    def test_viewer_cannot_change_status(self, viewer_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(viewer_user, asset) is False
+
+
 @pytest.mark.django_db
 class TestDeptManagerDeactivation:
     """S7.7 — Permission edge cases for deactivated departments."""
