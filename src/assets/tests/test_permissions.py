@@ -515,6 +515,13 @@ class TestManagerRoleIsScopedToManagedDepartments:
         for name in ("asset_convert_serialisation", "clear_barcode"):
             assert reverse(f"assets:{name}", args=[asset.pk]) in content
 
+    def test_manager_keeps_manage_menu_on_other_department_asset(
+        self, dept_manager_client, other_asset
+    ):
+        """The per-asset flag must not hide the global Manage menu."""
+        content = self._detail(dept_manager_client, other_asset)
+        assert reverse("assets:stocktake_list") in content
+
     def test_kit_contents_hides_manage_controls_for_other_department(
         self, dept_manager_client, other_asset
     ):

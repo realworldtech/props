@@ -662,7 +662,7 @@
                 </form>
                 <a href="{% url 'assets:print_history' asset.pk %}" class="block text-center text-brand-400 text-xs mt-1 hover:text-brand-600 dark:text-brand-300 transition-colors">Print History</a>
                 {% endif %}
-                {% if can_manage %}
+                {% if can_manage_this_asset %}
                 <form method="post" action="{% url 'assets:clear_barcode' asset.pk %}"
                       onsubmit="return confirm('Are you sure you want to clear the barcode? This cannot be undone.');"
                       class="mt-2">

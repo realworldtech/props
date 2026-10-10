@@ -585,7 +585,7 @@ def asset_detail(request, pk):
             "member_of_kits": member_of_kits,
             "status_actions": status_actions,
             "can_convert": can_manage,
-            "can_manage": can_manage,
+            "can_manage_this_asset": can_manage,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,
