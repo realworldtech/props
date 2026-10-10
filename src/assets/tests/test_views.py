@@ -8075,6 +8075,43 @@ class TestAssetStatusChangeView:
         for status in ("missing", "lost", "stolen"):
             assert self._url(asset, status) not in content
 
+    def test_department_manager_sees_status_links(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) in content
+
+    def test_borrower_sees_no_status_links(self, client, asset):
+        from assets.factories import UserFactory
+        from conftest import _ensure_group_permissions
+
+        borrower = UserFactory()
+        borrower.groups.add(_ensure_group_permissions("Borrower"))
+        client.force_login(borrower)
+        resp = client.get(reverse("assets:asset_detail", args=[asset.pk]))
+        for status in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, status).encode() not in resp.content
+
+    def test_lost_asset_shows_only_found_link(self, admin_client, asset):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        content = self._detail(admin_client, asset)
+        assert self._url(asset, "active") in content
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) not in content
+
+    @pytest.mark.parametrize("status", ["draft", "disposed"])
+    def test_draft_and_disposed_assets_show_no_status_links(
+        self, admin_client, asset, status
+    ):
+        asset.status = status
+        asset.save()
+        content = self._detail(admin_client, asset)
+        for target in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, target) not in content
+
     # --- Permission and input checks ---
 
     def test_member_get_is_forbidden(self, member_client, asset):
@@ -8121,6 +8158,33 @@ class TestAssetStatusChangeView:
         assert resp.status_code == 200
         content = resp.content.decode()
         return collect_form_fields(content, "status-change-form"), content
+
+    def test_round_trip_mark_stolen(self, admin_client, asset):
+        fields, _ = self._form_fields(admin_client, asset, "stolen")
+        fields["notes"] = "Taken from the loading dock"
+        resp = admin_client.post(self._url(asset, "stolen"), fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+        assert "Taken from the loading dock" in asset.lost_stolen_notes
+
+    def test_recovery_to_inactive_location_is_rejected(
+        self, admin_client, asset
+    ):
+        """S7.6.2: an inactive location cannot accept assets."""
+        from assets.factories import LocationFactory
+
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._form_fields(admin_client, asset, "active")
+        # The form does not offer inactive locations; post one directly.
+        fields["location"] = str(LocationFactory(is_active=False).pk)
+        resp = admin_client.post(self._url(asset, "active"), fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "missing"
 
     def test_round_trip_mark_missing(self, admin_client, asset):
         from assets.models import Transaction

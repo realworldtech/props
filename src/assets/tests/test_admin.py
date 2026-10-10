@@ -564,6 +564,36 @@ class TestAdminChangeFormStatusRules:
         assert asset.status == "missing"
         assert asset.checked_out_to == member_user
 
+    def test_missing_to_active_without_location_is_rejected(
+        self, admin_client, asset
+    ):
+        """S2.2.3-04: recovery needs a location."""
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "active"
+        fields["current_location"] = ""
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_missing_to_active_with_location_recovers(
+        self, admin_client, asset, location
+    ):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "active"
+        fields["current_location"] = str(location.pk)
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert asset.current_location == location
+
     def test_lost_without_notes_is_rejected(self, admin_client, asset):
         fields, _ = self._fields(admin_client, asset)
         assert "status_notes" in fields
