@@ -54,10 +54,11 @@ def create_checkin(
         notes=notes,
         **extra,
     )
+    was_checked_out = asset.checked_out_to_id is not None
     asset.checked_out_to = None
     asset.current_location = to_location
     asset.save(update_fields=["checked_out_to", "current_location"])
-    recover_on_checkin(asset, performed_by)
+    recover_on_checkin(asset, performed_by, was_checked_out=was_checked_out)
     return txn
 
 

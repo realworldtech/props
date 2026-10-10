@@ -1944,9 +1944,13 @@ def asset_checkin(request, pk):
                 serial_update_fields.append("home_location")
             asset.save(update_fields=serial_update_fields)
             if not still_out:
-                recover_on_checkin(asset, request.user)
+                # bool() reads the cached serials from before the check-in.
+                recover_on_checkin(
+                    asset, request.user, was_checked_out=bool(checked_out)
+                )
         else:
             # --- Non-serialised check-in ---
+            was_checked_out = asset.checked_out_to_id is not None
             Transaction.objects.create(
                 asset=asset,
                 user=request.user,
@@ -1967,7 +1971,9 @@ def asset_checkin(request, pk):
                 asset.home_location = to_location
                 update_fields.append("home_location")
             asset.save(update_fields=update_fields)
-            recover_on_checkin(asset, request.user)
+            recover_on_checkin(
+                asset, request.user, was_checked_out=was_checked_out
+            )
 
         messages.success(
             request,

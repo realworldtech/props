@@ -459,7 +459,7 @@ def bulk_checkin(
             for asset in eligible:
                 asset.checked_out_to = None
                 asset.current_location = location
-                recover_on_checkin(asset, performed_by)
+                recover_on_checkin(asset, performed_by, was_checked_out=True)
 
     return {"checked_in": len(eligible), "skipped": skipped}
 
@@ -531,7 +531,7 @@ def bulk_checkin_to_home(
                 eligible, ["checked_out_to", "current_location"]
             )
             for asset in eligible:
-                recover_on_checkin(asset, performed_by)
+                recover_on_checkin(asset, performed_by, was_checked_out=True)
             checked_in += len(eligible)
 
         # --- Serialised assets: per-serial transactions ---

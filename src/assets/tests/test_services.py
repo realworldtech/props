@@ -2031,6 +2031,26 @@ class TestRecoverOnCheckin:
         asset.save()
         return asset
 
+    def test_checkin_page_does_not_recover_asset_that_is_not_out(
+        self, client_logged_in, asset, location
+    ):
+        """S2.2.3-12 covers checked-out assets only. Recovery of other
+        assets stays with managers (S2.2.3-03, S7.17.3)."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        url = reverse("assets:asset_checkin", args=[asset.pk])
+        fields = collect_form_fields(
+            client_logged_in.get(url).content.decode(), "checkin-form"
+        )
+        fields["location"] = str(location.pk)
+        client_logged_in.post(url, fields)
+
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
     def test_bulk_checkin_recovers_asset(self, asset, member_user, location):
         from assets.services.bulk import bulk_checkin
 

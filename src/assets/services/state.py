@@ -215,12 +215,13 @@ def change_status(
     return asset
 
 
-def recover_on_checkin(asset: Asset, user) -> None:
+def recover_on_checkin(asset: Asset, user, *, was_checked_out: bool) -> None:
     """Make a checked-in missing, lost or stolen asset active (S2.2.3-12).
 
-    Call this after the check-in has set the new location.
+    Call this after the check-in has set the new location. Only an asset
+    that was checked out is recovered; managers recover the others.
     """
-    if asset.status not in RECOVERABLE_STATUSES:
+    if not was_checked_out or asset.status not in RECOVERABLE_STATUSES:
         return
     old_status = asset.status
     location = asset.current_location
