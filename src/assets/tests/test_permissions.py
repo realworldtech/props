@@ -921,3 +921,16 @@ class TestAnyoneCanEditDrafts:
             reverse("assets:nfc_add", args=[others_draft.pk])
         )
         assert resp.status_code == 200
+
+    def test_no_one_but_admins_edits_drafts_of_inactive_department(
+        self, member_user, dept_manager_user, admin_user, others_draft
+    ):
+        """S7.7.2: a deactivated department is read-only."""
+        from assets.services.permissions import can_edit_asset
+
+        dept = others_draft.category.department
+        dept.is_active = False
+        dept.save()
+        assert can_edit_asset(member_user, others_draft) is False
+        assert can_edit_asset(dept_manager_user, others_draft) is False
+        assert can_edit_asset(admin_user, others_draft) is True

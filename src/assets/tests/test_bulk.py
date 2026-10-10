@@ -941,3 +941,43 @@ class TestBulkOperationsRespectDepartments:
         )
         own.refresh_from_db()
         assert own.status == "draft"
+
+    def test_drafts_activate_rejects_inactive_location(
+        self, dept_manager_client, category
+    ):
+        """S7.6.2: an inactive location cannot accept assets."""
+        draft = AssetFactory(status="draft", category=category)
+        closed = LocationFactory(name="Closed Store", is_active=False)
+        # Security boundary: posts a location the form does not offer.
+        resp = dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": category.pk,
+                "location": closed.pk,
+            },
+            follow=True,
+        )
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+        assert (
+            "The selected location is inactive and cannot accept assets."
+            in [str(m) for m in resp.context["messages"]]
+        )
+
+    def test_drafts_activate_unknown_category_is_404(
+        self, dept_manager_client, location
+    ):
+        draft = AssetFactory(status="draft")
+        # Security boundary: posts a category id that does not exist.
+        resp = dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": 999999,
+                "location": location.pk,
+            },
+        )
+        assert resp.status_code == 404

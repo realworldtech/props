@@ -51,17 +51,16 @@ def can_edit_asset(user: User, asset: Asset) -> bool:
     if role == "system_admin":
         return True
 
+    # S7.7.2: a deactivated department is read-only for non-admins.
+    dept = asset.department
+    if dept and not dept.is_active:
+        return False
+
     # S2.10.3-04: drafts are shared work in progress.
     if asset.status == "draft" and role in ("department_manager", "member"):
         return True
 
     if role == "department_manager":
-        # Block write access if the asset's department is inactive.
-        # No need to re-check superuser/can_approve_users — those
-        # users are already classified as system_admin by get_user_role().
-        dept = asset.department
-        if dept and not dept.is_active:
-            return False
         return True
 
     return False

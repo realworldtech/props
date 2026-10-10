@@ -1022,6 +1022,16 @@ def drafts_bulk_action(request):
             category_id = request.POST.get("category")
             location_id = request.POST.get("location")
             if category_id and location_id:
+                get_object_or_404(Category, pk=category_id)
+                # S7.6.2: an inactive location cannot accept assets.
+                location = get_object_or_404(Location, pk=location_id)
+                if not location.is_active:
+                    messages.error(
+                        request,
+                        "The selected location is inactive and cannot "
+                        "accept assets.",
+                    )
+                    return redirect("assets:drafts_queue")
                 count = drafts.update(
                     status="active",
                     category_id=category_id,
