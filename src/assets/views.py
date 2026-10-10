@@ -5339,7 +5339,7 @@ def holdlist_detail(request, pk):
             items_by_location[loc_name] = []
         items_by_location[loc_name].append(item)
 
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     can_write = role in HOLD_LIST_WRITE_ROLES
     # Edit requires ownership for members (mirrors holdlist_edit)
     can_edit = role in ("system_admin", "department_manager") or (
@@ -5420,7 +5420,7 @@ def holdlist_edit(request, pk):
     from assets.models import Department, HoldList, HoldListStatus, Project
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5762,7 +5762,7 @@ def holdlist_delete(request, pk):
     from assets.models import HoldList
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5784,7 +5784,7 @@ def holdlist_lock(request, pk):
     from assets.services.holdlists import lock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5804,7 +5804,7 @@ def holdlist_unlock(request, pk):
     from assets.services.holdlists import unlock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
