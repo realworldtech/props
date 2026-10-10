@@ -102,7 +102,7 @@ def _append_note(existing: str, entry: str) -> str:
     return f"{existing}\n---\n{entry}" if existing else entry
 
 
-def change_status(
+def check_status_change(
     asset: Asset,
     new_status: str,
     user,
@@ -110,12 +110,9 @@ def change_status(
     notes: str = "",
     location: Location | None = None,
     confirm_checked_out: bool = False,
-) -> Asset:
-    """Mark an asset missing, lost or stolen, or recover it to active.
-
-    Records the change as a note transaction (S7.17.1, S7.17.3).
-    Raises PermissionDenied or ValidationError.
-    """
+) -> None:
+    """Raise PermissionDenied or ValidationError if the change is not
+    allowed. Changes nothing."""
     if not can_change_status(user, asset):
         raise PermissionDenied
     if not asset.can_transition_to(new_status):
@@ -124,13 +121,8 @@ def change_status(
             f"'{new_status}'."
         )
 
-    notes = notes.strip()
-    old_status = asset.status
-    old_location = asset.current_location
-    is_recovery = old_status in RECOVERABLE_STATUSES and new_status == "active"
-
     # S2.2.3-07: each loss needs its own notes, not old ones.
-    if new_status in ("lost", "stolen") and not notes:
+    if new_status in ("lost", "stolen") and not notes.strip():
         raise ValidationError(
             f"Notes are required when marking an asset as "
             f"'{new_status}'. Please provide details about "
@@ -149,10 +141,42 @@ def change_status(
         )
 
     # S2.2.3-04, S7.17.3: recovery places the asset somewhere.
+    is_recovery = (
+        asset.status in RECOVERABLE_STATUSES and new_status == "active"
+    )
     if is_recovery and (location is None or not location.is_active):
         raise ValidationError(
             "A location must be set when an asset is found or recovered."
         )
+
+
+def change_status(
+    asset: Asset,
+    new_status: str,
+    user,
+    *,
+    notes: str = "",
+    location: Location | None = None,
+    confirm_checked_out: bool = False,
+) -> Asset:
+    """Mark an asset missing, lost or stolen, or recover it to active.
+
+    Records the change as a note transaction (S7.17.1, S7.17.3).
+    Raises PermissionDenied or ValidationError.
+    """
+    check_status_change(
+        asset,
+        new_status,
+        user,
+        notes=notes,
+        location=location,
+        confirm_checked_out=confirm_checked_out,
+    )
+
+    notes = notes.strip()
+    old_status = asset.status
+    old_location = asset.current_location
+    is_recovery = old_status in RECOVERABLE_STATUSES and new_status == "active"
 
     with transaction.atomic():
         if new_status in ("lost", "stolen"):

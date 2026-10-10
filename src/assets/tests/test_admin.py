@@ -351,7 +351,12 @@ class TestAdminMarkLostRequiresNotes:
         assert response.status_code == 200
         asset.refresh_from_db()
         assert asset.status == "lost"
-        assert "Lost at venue after show" in asset.notes
+        # S2.2.3-07: notes belong in lost_stolen_notes, with a
+        # note transaction (S7.17.1).
+        assert "Lost at venue after show" in asset.lost_stolen_notes
+        assert asset.transactions.filter(
+            action="note", notes__contains="Lost at venue after show"
+        ).exists()
 
 
 @pytest.mark.django_db
@@ -387,7 +392,180 @@ class TestAdminMarkStolenRequiresNotes:
         assert response.status_code == 200
         asset.refresh_from_db()
         assert asset.status == "stolen"
-        assert "Stolen from loading dock" in asset.notes
+        # S2.2.3-07: notes belong in lost_stolen_notes, with a
+        # note transaction (S7.17.1).
+        assert "Stolen from loading dock" in asset.lost_stolen_notes
+        assert asset.transactions.filter(
+            action="note", notes__contains="Stolen from loading dock"
+        ).exists()
+
+
+@pytest.mark.django_db
+class TestAdminStatusActionsUseStatusRules:
+    """Admin status actions follow the same rules as the asset page
+    (S4.6.3.4, S2.2.3, S7.17.3)."""
+
+    def _post_action(self, client, action, assets, **extra):
+        data = {"action": action, "_selected_action": [a.pk for a in assets]}
+        data.update(extra)
+        return client.post(
+            reverse("admin:assets_asset_changelist"), data, follow=True
+        )
+
+    def _messages(self, response):
+        return [str(m) for m in response.context["messages"]]
+
+    def test_bulk_mark_lost_skips_ineligible_asset_with_warning(
+        self, admin_client, asset, category, location
+    ):
+        retired = AssetFactory(
+            name="Old Cloak",
+            status="retired",
+            category=category,
+            current_location=location,
+        )
+        resp = self._post_action(
+            admin_client,
+            "mark_lost",
+            [asset, retired],
+            apply="1",
+            notes="Truck broke down",
+        )
+
+        asset.refresh_from_db()
+        retired.refresh_from_db()
+        assert asset.status == "lost"
+        assert retired.status == "retired"
+        assert any("Old Cloak" in m for m in self._messages(resp))
+
+    def test_bulk_mark_lost_records_transaction_per_asset(
+        self, admin_client, asset, category, location
+    ):
+        second = AssetFactory(
+            status="active", category=category, current_location=location
+        )
+        self._post_action(
+            admin_client,
+            "mark_lost",
+            [asset, second],
+            apply="1",
+            notes="Truck broke down",
+        )
+
+        for a in (asset, second):
+            assert a.transactions.filter(
+                action="note", notes__contains="Active → Lost"
+            ).exists()
+
+    def test_mark_active_does_not_recover_lost_asset(
+        self, admin_client, asset
+    ):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        resp = self._post_action(admin_client, "mark_active", [asset])
+
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+        assert any("Status menu" in m for m in self._messages(resp))
+
+    def test_mark_retired_respects_transition_rules(self, admin_client, asset):
+        asset.status = "stolen"
+        asset.lost_stolen_notes = "Taken"
+        asset.save()
+        self._post_action(admin_client, "mark_retired", [asset])
+
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+
+
+@pytest.mark.django_db
+class TestAdminChangeFormStatusRules:
+    """US-SA-014: the admin Status field follows the status rules
+    (S2.2.3-07, S7.17.1, S7.17.3). Round trip per Issue #5."""
+
+    def _url(self, asset):
+        return reverse("admin:assets_asset_change", args=[asset.pk])
+
+    def _fields(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        resp = client.get(self._url(asset))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        return collect_form_fields(content, "asset_form"), content
+
+    def _post(self, client, asset, fields):
+        return client.post(self._url(asset), fields)
+
+    def test_lost_without_notes_is_rejected(self, admin_client, asset):
+        fields, _ = self._fields(admin_client, asset)
+        assert "status_notes" in fields
+        fields["status"] = "lost"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 200
+        assert "Notes are required" in resp.content.decode()
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_lost_with_notes_records_notes_and_transaction(
+        self, admin_client, asset
+    ):
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "lost"
+        fields["status_notes"] = "Left in the orchestra pit"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+        assert "Left in the orchestra pit" in asset.lost_stolen_notes
+        assert asset.transactions.filter(
+            action="note", notes__contains="Active → Lost"
+        ).exists()
+
+    def test_recovery_records_transaction_and_keeps_notes(
+        self, admin_client, asset
+    ):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left in the orchestra pit"
+        asset.save()
+        fields, content = self._fields(admin_client, asset)
+        assert "Left in the orchestra pit" in content  # notes visible
+        fields["status"] = "active"
+        fields["status_notes"] = "Found under the stage"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert "Left in the orchestra pit" in asset.lost_stolen_notes
+        assert "Found under the stage" in asset.lost_stolen_notes
+        assert asset.transactions.filter(
+            action="note", notes__contains="Lost → Active"
+        ).exists()
+
+    def test_invalid_transition_is_rejected(self, admin_client, asset):
+        asset.status = "retired"
+        asset.save()
+        fields, _ = self._fields(admin_client, asset)
+        fields["status"] = "missing"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "retired"
+
+    def test_edit_without_status_change_still_saves(self, admin_client, asset):
+        fields, _ = self._fields(admin_client, asset)
+        fields["name"] = "Renamed in admin"
+        resp = self._post(admin_client, asset, fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.name == "Renamed in admin"
+        assert not asset.transactions.filter(action="note").exists()
 
 
 @pytest.mark.django_db
