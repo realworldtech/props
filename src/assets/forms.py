@@ -3,6 +3,7 @@
 from django import forms
 
 from .models import Asset, AssetImage, Category, Location, Tag
+from .services.state import RECOVERABLE_STATUSES, status_action_label
 
 _CSS = (
     "form-input w-full rounded-lg"
@@ -33,7 +34,7 @@ class AssetForm(forms.ModelForm):
                 "class": _CSS,
             }
         ),
-        help_text="Draft assets can be saved without category or location.",
+        help_text="Draft assets don't require category or location.",
     )
 
     class Meta:
@@ -53,7 +54,6 @@ class AssetForm(forms.ModelForm):
             "estimated_value",
             "is_public",
             "public_description",
-            "lost_stolen_notes",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -131,13 +131,6 @@ class AssetForm(forms.ModelForm):
                     "x-show": "isPublic",
                 }
             ),
-            "lost_stolen_notes": forms.Textarea(
-                attrs={
-                    "class": _CSS,
-                    "rows": 2,
-                    "placeholder": "Notes about lost/stolen status",
-                }
-            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -159,7 +152,16 @@ class AssetForm(forms.ModelForm):
         # draft/active
         if self.instance and self.instance.pk:
             current = self.instance.status
-            if current not in dict(FORM_STATUS_CHOICES):
+            if current in RECOVERABLE_STATUSES:
+                # Recovery needs a location and a transaction (S7.17.3).
+                status = self.fields["status"]
+                status.choices = [
+                    (current, self.instance.get_status_display())
+                ]
+                status.disabled = True
+                label = status_action_label(self.instance, "active")
+                status.help_text = f"Use {label} on the asset page."
+            elif current not in dict(FORM_STATUS_CHOICES):
                 self.fields["status"].choices = FORM_STATUS_CHOICES + [
                     (current, current.title())
                 ]
@@ -192,6 +194,33 @@ class AssetForm(forms.ModelForm):
                     "Location is required for non-draft assets.",
                 )
         return cleaned
+
+
+class AssetStatusChangeForm(forms.Form):
+    """Mark an asset missing, lost, stolen or found."""
+
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": _CSS, "rows": 3}),
+    )
+
+    def __init__(self, *args, asset, new_status, **kwargs):
+        super().__init__(*args, **kwargs)
+        if new_status in ("lost", "stolen"):
+            self.fields["notes"].required = True
+            self.fields["notes"].help_text = (
+                "Required. Describe what happened."
+            )
+        if new_status == "active":
+            self.fields["location"] = forms.ModelChoiceField(
+                queryset=Location.objects.filter(is_active=True),
+                widget=forms.Select(attrs={"class": _CSS}),
+                help_text="Where is the asset now?",
+            )
+        if new_status == "missing" and asset.is_checked_out:
+            self.fields["confirm_checked_out"] = forms.BooleanField(
+                label="I understand that this asset is checked out",
+            )
 
 
 class AssetImageForm(forms.ModelForm):

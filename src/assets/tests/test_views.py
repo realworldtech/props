@@ -690,7 +690,7 @@ class TestEdgeCaseMerge:
 class TestEdgeCaseImageUpload:
     """§7.8: Image upload validation."""
 
-    def test_rejects_oversized_image(self, client_logged_in, asset):
+    def test_rejects_oversized_image(self, admin_client, asset):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         # Create a file that claims to be > 10 MB
@@ -701,7 +701,7 @@ class TestEdgeCaseImageUpload:
         )
         big_file.size = 11 * 1024 * 1024  # Fake size > 10 MB
 
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:image_upload", args=[asset.pk]),
             {"image": big_file, "caption": "Too big"},
         )
@@ -3007,29 +3007,34 @@ class TestRetireDisposeEdgeCases:
     def test_marking_checked_out_asset_missing_shows_warning(
         self, admin_client, admin_user, asset, user
     ):
-        """VV719: Marking checked-out asset as missing SHOULD display a
-        warning with explicit confirmation (S7.5.4)."""
-        asset.checked_out_to = user
-        asset.status = "active"
-        asset.save()
-        # Per spec: "The system MUST display a warning explaining the
-        # ambiguity" and "MUST require explicit confirmation
-        # acknowledging that the asset is checked out."
-        # The asset edit/status-change view should warn when marking
-        # a checked-out asset as missing.
-        url = reverse("assets:asset_detail", args=[asset.pk])
-        response = admin_client.get(url)
-        content = response.content.decode()
-        # There should be context about the checked-out state warning
-        # for missing status changes
-        assert "checked out" in content.lower() and (
-            "warning" in content.lower() or "confirm" in content.lower()
-        ), (
-            "VV719: Asset detail/edit must display a warning when the "
-            "asset is checked out and could be marked as missing. The "
-            "spec requires explicit confirmation. Currently no warning "
-            "is displayed."
+        """VV719: Marking a checked-out asset as missing MUST display
+        the S7.5.4 warning and require explicit confirmation."""
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, user, admin_user)
+        url = reverse("assets:asset_change_status", args=[asset.pk, "missing"])
+        content = admin_client.get(url).content.decode()
+
+        assert (
+            "This asset is currently checked out. Marking it as missing "
+            "will preserve the checkout record. You may check it in first "
+            "if the asset is known to be at a location, or proceed to mark "
+            "it as missing if its whereabouts are unknown." in content
         )
+        assert 'name="confirm_checked_out"' in content
+
+    def test_detail_page_has_no_unbacked_confirmation_claim(
+        self, admin_client, admin_user, asset, user
+    ):
+        """The detail page must not claim a confirmation step; the real
+        warning is on the mark-as-missing page (S7.5.4)."""
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, user, admin_user)
+        url = reverse("assets:asset_detail", args=[asset.pk])
+        content = admin_client.get(url).content.decode()
+
+        assert "requires explicit confirmation" not in content
 
 
 @pytest.mark.django_db
@@ -4380,7 +4385,10 @@ class TestSharedFilterQueryset:
 
 @pytest.mark.django_db
 class TestV32AssetFormFields:
-    """V32: AssetForm MUST include home_location and lost_stolen_notes."""
+    """V32: AssetForm includes home_location.
+
+    Lost/stolen notes are written only by the Status menu (S2.2.3-07).
+    """
 
     def test_home_location_in_form_fields(self):
         from assets.forms import AssetForm
@@ -4388,11 +4396,11 @@ class TestV32AssetFormFields:
         form = AssetForm()
         assert "home_location" in form.fields
 
-    def test_lost_stolen_notes_in_form_fields(self):
+    def test_lost_stolen_notes_not_in_form_fields(self):
         from assets.forms import AssetForm
 
         form = AssetForm()
-        assert "lost_stolen_notes" in form.fields
+        assert "lost_stolen_notes" not in form.fields
 
     def test_home_location_saved_via_form(
         self, admin_client, admin_user, category, location
@@ -8003,3 +8011,446 @@ class TestLocationCreateInline:
         )
         assert resp.status_code == 200
         assert resp.json()["created"] is False
+
+
+@pytest.mark.django_db
+class TestAssetStatusChangeView:
+    """Mark as missing/lost/stolen/found from the asset page.
+
+    Spec: S2.2.3-03, S2.2.3-04, S2.2.3-07, S7.5.4, S7.17.1, S7.17.3,
+    US-XA-030.
+    """
+
+    def _url(self, asset, status):
+        return reverse("assets:asset_change_status", args=[asset.pk, status])
+
+    def _detail(self, client, asset):
+        resp = client.get(reverse("assets:asset_detail", args=[asset.pk]))
+        assert resp.status_code == 200
+        return resp.content.decode()
+
+    # --- Affordance on the detail page ---
+
+    def test_admin_sees_missing_lost_stolen_links_on_active_asset(
+        self, admin_client, asset
+    ):
+        content = self._detail(admin_client, asset)
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) in content
+        assert self._url(asset, "active") not in content
+
+    def test_missing_asset_shows_found_lost_stolen_links(
+        self, admin_client, asset
+    ):
+        asset.status = "missing"
+        asset.save()
+        content = self._detail(admin_client, asset)
+        for status in ("active", "lost", "stolen"):
+            assert self._url(asset, status) in content
+        assert self._url(asset, "missing") not in content
+        assert "Mark as found" in content
+
+    def test_stolen_asset_shows_mark_as_recovered(self, admin_client, asset):
+        asset.status = "stolen"
+        asset.lost_stolen_notes = "Taken from van"
+        asset.save()
+        content = self._detail(admin_client, asset)
+        assert self._url(asset, "active") in content
+        assert "Mark as recovered" in content
+
+    def test_member_sees_no_status_links(self, member_client, asset):
+        content = self._detail(member_client, asset)
+        for status in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, status) not in content
+
+    def test_viewer_sees_no_status_links(self, viewer_client, asset):
+        content = self._detail(viewer_client, asset)
+        for status in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, status) not in content
+
+    def test_retired_asset_shows_no_status_links(self, admin_client, asset):
+        asset.status = "retired"
+        asset.save()
+        content = self._detail(admin_client, asset)
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) not in content
+
+    def test_department_manager_sees_status_links(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) in content
+
+    def test_borrower_sees_no_status_links(self, client, asset):
+        from assets.factories import UserFactory
+        from conftest import _ensure_group_permissions
+
+        borrower = UserFactory()
+        borrower.groups.add(_ensure_group_permissions("Borrower"))
+        client.force_login(borrower)
+        resp = client.get(reverse("assets:asset_detail", args=[asset.pk]))
+        for status in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, status).encode() not in resp.content
+
+    def test_lost_asset_shows_only_found_link(self, admin_client, asset):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        content = self._detail(admin_client, asset)
+        assert self._url(asset, "active") in content
+        for status in ("missing", "lost", "stolen"):
+            assert self._url(asset, status) not in content
+
+    @pytest.mark.parametrize("status", ["draft", "disposed"])
+    def test_draft_and_disposed_assets_show_no_status_links(
+        self, admin_client, asset, status
+    ):
+        asset.status = status
+        asset.save()
+        content = self._detail(admin_client, asset)
+        for target in ("missing", "lost", "stolen", "active"):
+            assert self._url(asset, target) not in content
+
+    # --- Permission and input checks ---
+
+    def test_member_get_is_forbidden(self, member_client, asset):
+        resp = member_client.get(self._url(asset, "missing"))
+        assert resp.status_code == 403
+
+    def test_member_post_is_forbidden_and_status_unchanged(
+        self, member_client, asset
+    ):
+        # Security boundary: hardcoded payload on purpose (no form is
+        # shown to members).
+        resp = member_client.post(self._url(asset, "missing"), {})
+        assert resp.status_code == 403
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_department_manager_can_open_page(
+        self, dept_manager_client, asset
+    ):
+        resp = dept_manager_client.get(self._url(asset, "missing"))
+        assert resp.status_code == 200
+
+    def test_unknown_status_in_url_is_404(self, admin_client, asset):
+        resp = admin_client.get(self._url(asset, "retired"))
+        assert resp.status_code == 404
+
+    def test_invalid_transition_redirects_without_change(
+        self, admin_client, asset
+    ):
+        asset.status = "retired"
+        asset.save()
+        resp = admin_client.get(self._url(asset, "missing"))
+        assert resp.status_code == 302
+        assert resp.url == reverse("assets:asset_detail", args=[asset.pk])
+        asset.refresh_from_db()
+        assert asset.status == "retired"
+
+    # --- Round trip: GET the form, POST the parsed fields ---
+
+    def _form_fields(self, client, asset, status):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        resp = client.get(self._url(asset, status))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        return collect_form_fields(content, "status-change-form"), content
+
+    def test_round_trip_mark_stolen(self, admin_client, asset):
+        fields, _ = self._form_fields(admin_client, asset, "stolen")
+        fields["notes"] = "Taken from the loading dock"
+        resp = admin_client.post(self._url(asset, "stolen"), fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+        assert "Taken from the loading dock" in asset.lost_stolen_notes
+
+    def test_recovery_to_inactive_location_is_rejected(
+        self, admin_client, asset
+    ):
+        """S7.6.2: an inactive location cannot accept assets."""
+        from assets.factories import LocationFactory
+
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._form_fields(admin_client, asset, "active")
+        # The form does not offer inactive locations; post one directly.
+        fields["location"] = str(LocationFactory(is_active=False).pk)
+        resp = admin_client.post(self._url(asset, "active"), fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_round_trip_mark_missing(self, admin_client, asset):
+        from assets.models import Transaction
+
+        fields, _ = self._form_fields(admin_client, asset, "missing")
+        resp = admin_client.post(self._url(asset, "missing"), fields)
+
+        assert resp.status_code == 302
+        assert resp.url == reverse("assets:asset_detail", args=[asset.pk])
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+        assert Transaction.objects.filter(
+            asset=asset, action="note", notes__contains="Active → Missing"
+        ).exists()
+
+    def test_round_trip_mark_lost_with_notes_shows_notes(
+        self, admin_client, asset
+    ):
+        fields, content = self._form_fields(admin_client, asset, "lost")
+        assert "notes" in fields
+        fields["notes"] = "Left at the Civic Theatre"
+        resp = admin_client.post(self._url(asset, "lost"), fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+        assert "Left at the Civic Theatre" in self._detail(admin_client, asset)
+
+    def test_round_trip_mark_lost_without_notes_is_rejected(
+        self, admin_client, asset
+    ):
+        fields, _ = self._form_fields(admin_client, asset, "lost")
+        resp = admin_client.post(self._url(asset, "lost"), fields)
+
+        assert resp.status_code == 200
+        assert "This field is required" in resp.content.decode()
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_checked_out_missing_page_shows_spec_warning_and_checkbox(
+        self, admin_client, admin_user, asset, second_user
+    ):
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        fields, content = self._form_fields(admin_client, asset, "missing")
+
+        assert (
+            "This asset is currently checked out. Marking it as missing "
+            "will preserve the checkout record." in content
+        )
+        assert "confirm_checked_out" in fields
+
+    def test_round_trip_checked_out_missing_with_confirmation(
+        self, admin_client, admin_user, asset, second_user
+    ):
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        fields, _ = self._form_fields(admin_client, asset, "missing")
+        fields["confirm_checked_out"] = "on"  # user ticks the box
+        resp = admin_client.post(self._url(asset, "missing"), fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+        assert asset.checked_out_to == second_user
+
+    def test_round_trip_checked_out_missing_without_confirmation(
+        self, admin_client, admin_user, asset, second_user
+    ):
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        fields, _ = self._form_fields(admin_client, asset, "missing")
+        fields.pop("confirm_checked_out")  # user leaves the box clear
+        resp = admin_client.post(self._url(asset, "missing"), fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_found_page_offers_only_active_locations(
+        self, admin_client, asset
+    ):
+        closed = LocationFactory(name="Closed Store", is_active=False)
+        asset.status = "missing"
+        asset.save()
+        _, content = self._form_fields(admin_client, asset, "active")
+        assert 'name="location"' in content
+        assert "Closed Store" not in content
+        assert closed.name not in content
+
+    def test_round_trip_found_with_location(self, admin_client, asset):
+        shelf = LocationFactory(name="Shelf C")
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._form_fields(admin_client, asset, "active")
+        fields["location"] = str(shelf.pk)
+        resp = admin_client.post(self._url(asset, "active"), fields)
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert asset.current_location == shelf
+
+    def test_round_trip_found_without_location_is_rejected(
+        self, admin_client, asset
+    ):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._form_fields(admin_client, asset, "active")
+        fields["location"] = ""
+        resp = admin_client.post(self._url(asset, "active"), fields)
+
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_detail_page_shows_lost_stolen_notes(self, admin_client, asset):
+        """S2.2.3-07: the recorded reason is visible on the asset page,
+        not only in the transaction history."""
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Last seen in the scene dock"
+        asset.save()
+
+        content = self._detail(admin_client, asset)
+        assert "Last seen in the scene dock" in content
+
+    # --- Edit form must not bypass the status rules ---
+
+    def _edit_fields(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        resp = client.get(reverse("assets:asset_edit", args=[asset.pk]))
+        assert resp.status_code == 200
+        content = resp.content.decode()
+        return collect_form_fields(content, "asset-form"), content
+
+    def test_edit_form_cannot_recover_missing_asset(self, admin_client, asset):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["status"] = "active"  # user picks Active if offered
+        admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_edit_form_of_lost_asset_points_to_status_menu(
+        self, admin_client, asset
+    ):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        _, content = self._edit_fields(admin_client, asset)
+        assert "Use Mark as found on the asset page" in content
+
+    def test_edit_form_still_saves_other_fields_of_missing_asset(
+        self, admin_client, asset
+    ):
+        asset.status = "missing"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["name"] = "Renamed Prop"
+        resp = admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.name == "Renamed Prop"
+        assert asset.status == "missing"
+
+    @pytest.mark.parametrize("status", ["lost", "active"])
+    def test_edit_form_keeps_lost_stolen_notes(
+        self, admin_client, asset, status
+    ):
+        """S7.17.3: the loss history stays after a later edit."""
+        asset.status = status
+        asset.lost_stolen_notes = "Left at venue\nRecovered: In the van"
+        asset.save()
+        fields, _ = self._edit_fields(admin_client, asset)
+        fields["name"] = "Renamed Prop"
+        resp = admin_client.post(
+            reverse("assets:asset_edit", args=[asset.pk]), fields
+        )
+
+        assert resp.status_code == 302
+        asset.refresh_from_db()
+        assert asset.name == "Renamed Prop"
+        assert (
+            asset.lost_stolen_notes == "Left at venue\nRecovered: In the van"
+        )
+
+
+@pytest.mark.django_db
+class TestDisposalFrontend:
+    """S2.2.3-13 and the disposed-asset story (S2.2.3-05): disposal
+    clears the location, and the asset page shows that it is disposed."""
+
+    def _dispose(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        url = reverse("assets:asset_delete", args=[asset.pk])
+        resp = client.get(url)
+        assert resp.status_code == 200
+        fields = collect_form_fields(resp.content.decode(), "dispose-form")
+        return client.post(url, fields)
+
+    def test_dispose_page_clears_location_and_records_it(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+
+        asset.refresh_from_db()
+        assert asset.status == "disposed"
+        assert asset.current_location is None
+        assert asset.transactions.filter(
+            action="note", from_location=location
+        ).exists()
+
+    def test_location_can_be_deleted_after_its_asset_is_disposed(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+        admin_client.post(
+            reverse("admin:assets_location_delete", args=[location.pk]),
+            {"post": "yes"},
+        )
+        assert not Location.objects.filter(pk=location.pk).exists()
+
+    def test_drafts_queue_disposal_clears_location(
+        self, admin_client, location
+    ):
+        draft = AssetFactory(status="draft", current_location=location)
+        # Permission boundary style: the queue form is JS-driven.
+        admin_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "delete", "selected": [draft.pk]},
+        )
+        draft.refresh_from_db()
+        assert draft.status == "disposed"
+        assert draft.current_location is None
+
+    def test_disposed_asset_page_shows_indicator_and_no_actions(
+        self, admin_client, asset
+    ):
+        self._dispose(admin_client, asset)
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        content = resp.content.decode()
+        assert 'id="disposed-banner"' in content
+        assert "This asset is disposed" in content
+        assert "Last location: Main Store" in content
+        for name in ("asset_edit", "asset_checkout"):
+            assert reverse(f"assets:{name}", args=[asset.pk]) not in content
+
+    def test_disposed_asset_history_shows_disposal(
+        self, admin_client, asset, location
+    ):
+        self._dispose(admin_client, asset)
+        resp = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        )
+        assert "Status: Active → Disposed" in resp.content.decode()

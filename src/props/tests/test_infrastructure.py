@@ -548,3 +548,13 @@ class TestBuildOnceImages:
         images = content.count("${PROPS_IMAGE:-ghcr.io/realworldtech/props}")
         assert images >= 5
         assert content.count("APP_VERSION: ${PROPS_VERSION:-latest}") == images
+
+
+@pytest.mark.django_db
+def test_logged_in_client_fixtures_are_independent(
+    admin_client, member_client, admin_user, member_user
+):
+    """Two client fixtures in one test must stay logged in as their own
+    users. They shared one Client, so the last login won."""
+    assert int(admin_client.session["_auth_user_id"]) == admin_user.pk
+    assert int(member_client.session["_auth_user_id"]) == member_user.pk

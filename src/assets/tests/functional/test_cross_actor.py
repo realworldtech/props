@@ -642,34 +642,83 @@ class TestUS_XA_015_PreserveCheckoutWhenLostOrStolen:
     MoSCoW: MUST
     """
 
-    def test_checked_out_to_preserved_when_marked_lost(
-        self, admin_client, active_asset, borrower_user, location
-    ):
-        # Check out first
-        admin_client.post(
-            reverse("assets:asset_checkout", args=[active_asset.pk]),
-            {
-                "borrower": borrower_user.pk,
-                "destination_location": location.pk,
-            },
+    def _mark_lost(self, client, asset):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        url = reverse("assets:asset_change_status", args=[asset.pk, "lost"])
+        resp = client.get(url)
+        fields = collect_form_fields(
+            resp.content.decode(), "status-change-form"
         )
+        fields["notes"] = "Not returned after the tour"
+        return client.post(url, fields)
+
+    def _checked_out(self, asset, borrower):
+        asset.checked_out_to = borrower
+        asset.save()
+        return asset
+
+    def test_checked_out_to_preserved_when_marked_lost(
+        self, admin_client, active_asset, borrower_user
+    ):
+        """US-XA-015-1 (S2.2.3-11)."""
+        self._checked_out(active_asset, borrower_user)
+        self._mark_lost(admin_client, active_asset)
+
         active_asset.refresh_from_db()
+        assert active_asset.status == "lost"
         assert active_asset.checked_out_to == borrower_user
 
-        # Mark as lost
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "status": "lost",
-                "category": active_asset.category.pk,
-                "current_location": location.pk,
-            },
-        )
+    def test_no_checkin_transaction_when_marked_lost(
+        self, admin_client, active_asset, borrower_user
+    ):
+        """US-XA-015-3 (S2.2.3-11)."""
+        self._checked_out(active_asset, borrower_user)
+        self._mark_lost(admin_client, active_asset)
+
+        assert not active_asset.transactions.filter(action="checkin").exists()
+
+    def test_checkin_recovers_lost_asset(
+        self, admin_client, client_logged_in, user, active_asset, location
+    ):
+        """US-XA-015-4 (S2.2.3-12): a check-in sets the asset active and
+        clears the borrower."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        self._checked_out(active_asset, user)
+        self._mark_lost(admin_client, active_asset)
+        url = reverse("assets:asset_checkin", args=[active_asset.pk])
+        resp = client_logged_in.get(url)
+        fields = collect_form_fields(resp.content.decode(), "checkin-form")
+        fields["location"] = str(location.pk)
+        client_logged_in.post(url, fields)
+
         active_asset.refresh_from_db()
-        if active_asset.status == "lost":
-            # checked_out_to should still be set
-            assert active_asset.checked_out_to == borrower_user
+        assert active_asset.status == "active"
+        assert active_asset.checked_out_to is None
+        assert active_asset.current_location == location
+
+    def test_admin_found_keeps_asset_checked_out(
+        self, admin_client, active_asset, borrower_user, location
+    ):
+        """US-XA-015-5 (S7.17.3): "found" without a check-in."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        self._checked_out(active_asset, borrower_user)
+        self._mark_lost(admin_client, active_asset)
+        url = reverse(
+            "assets:asset_change_status", args=[active_asset.pk, "active"]
+        )
+        resp = admin_client.get(url)
+        fields = collect_form_fields(
+            resp.content.decode(), "status-change-form"
+        )
+        fields["location"] = str(location.pk)
+        admin_client.post(url, fields)
+
+        active_asset.refresh_from_db()
+        assert active_asset.status == "active"
+        assert active_asset.checked_out_to == borrower_user
 
 
 # ---------------------------------------------------------------------------
@@ -1219,29 +1268,27 @@ class TestUS_XA_015_LostStolenPreservesLocation_NoCheckinTransaction:
             asset=active_asset, action="checkin"
         ).count()
 
-        # Mark as lost (requires lost_stolen_notes per state machine)
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "category": active_asset.category.pk,
-                "current_location": location.pk,
-                "condition": active_asset.condition,
-                "quantity": active_asset.quantity,
-                "status": "lost",
-                "lost_stolen_notes": "Lost during show",
-            },
+        # Mark as lost through the Status menu (round trip).
+        from assets.tests.functional.helpers import collect_form_fields
+
+        url = reverse(
+            "assets:asset_change_status", args=[active_asset.pk, "lost"]
         )
+        fields = collect_form_fields(
+            admin_client.get(url).content.decode(), "status-change-form"
+        )
+        fields["notes"] = "Lost during show"
+        admin_client.post(url, fields)
         active_asset.refresh_from_db()
 
-        if active_asset.status == "lost":
-            checkin_count_after = Transaction.objects.filter(
-                asset=active_asset, action="checkin"
-            ).count()
-            assert checkin_count_after == checkin_count_before, (
-                "Marking an asset as lost must not create a checkin "
-                "transaction — the asset remains with the borrower"
-            )
+        assert active_asset.status == "lost"
+        checkin_count_after = Transaction.objects.filter(
+            asset=active_asset, action="checkin"
+        ).count()
+        assert checkin_count_after == checkin_count_before, (
+            "Marking an asset as lost must not create a checkin "
+            "transaction — the asset remains with the borrower"
+        )
 
 
 @pytest.mark.django_db
@@ -1901,6 +1948,63 @@ class TestUS_XA_030_LostStolenTransitionEdgeCases:
         assert active_asset.status == "active"
         assert other.status == "active"
 
+    # US-XA-030-2 (S7.5.4): marking a checked-out asset as missing.
+
+    def _checked_out_missing_form(self, client, asset, admin_user, borrower):
+        from assets.services.transactions import create_checkout
+        from assets.tests.functional.helpers import collect_form_fields
+
+        create_checkout(asset, borrower, admin_user)
+        url = reverse("assets:asset_change_status", args=[asset.pk, "missing"])
+        content = client.get(url).content.decode()
+        return url, collect_form_fields(content, "status-change-form"), content
+
+    def test_checked_out_missing_shows_ambiguity_warning(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): the page explains the ambiguity."""
+        _, _, content = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        assert (
+            "This asset is currently checked out. Marking it as missing "
+            "will preserve the checkout record. You may check it in first "
+            "if the asset is known to be at a location, or proceed to mark "
+            "it as missing if its whereabouts are unknown." in content
+        )
+
+    def test_checked_out_missing_requires_explicit_confirmation(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): without the confirmation the change is
+        rejected."""
+        url, fields, _ = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        assert "confirm_checked_out" in fields
+        fields.pop("confirm_checked_out")  # box left clear
+        resp = admin_client.post(url, fields)
+
+        assert resp.status_code == 200
+        active_asset.refresh_from_db()
+        assert active_asset.status == "active"
+
+    def test_checked_out_missing_preserves_borrower(
+        self, admin_client, admin_user, active_asset, borrower_user
+    ):
+        """US-XA-030-2 (S7.5.4): with the confirmation the asset is
+        missing and checked_out_to is unchanged."""
+        url, fields, _ = self._checked_out_missing_form(
+            admin_client, active_asset, admin_user, borrower_user
+        )
+        fields["confirm_checked_out"] = "on"  # user ticks the box
+        resp = admin_client.post(url, fields)
+
+        assert resp.status_code == 302
+        active_asset.refresh_from_db()
+        assert active_asset.status == "missing"
+        assert active_asset.checked_out_to == borrower_user
+
 
 @pytest.mark.django_db
 class TestUS_XA_031_LocationHierarchyEdgeCases:
@@ -2011,15 +2115,16 @@ class TestUS_XA_035_AIAnalysisEdgeCases:
         )
         assert resp.status_code in (302, 403)
 
-    def test_ai_analyse_accessible_to_authenticated_user(
-        self, client_logged_in, active_asset
+    def test_ai_analyse_accessible_to_member_on_own_draft(
+        self, client_logged_in, user
     ):
-        """AI analysis endpoint is accessible to authenticated users."""
-        image = AssetImageFactory(asset=active_asset)
+        """US-MB-029: a member can analyse images of their own drafts."""
+        draft = AssetFactory(status="draft", created_by=user)
+        image = AssetImageFactory(asset=draft)
         resp = client_logged_in.get(
             reverse(
                 "assets:ai_analyse",
-                args=[active_asset.pk, image.pk],
+                args=[draft.pk, image.pk],
             )
         )
         assert resp.status_code in (200, 302, 405)

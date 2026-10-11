@@ -59,7 +59,7 @@
                     <div>
                         <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Status</label>
                         {{ form.status }}
-                        <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                        <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">{{ form.status.help_text }}</p>
                     </div>
                 </div>
             </div>
@@ -78,7 +78,7 @@
                 <div>
                     <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-stage-600 dark:text-cream/70 mb-1.5">Status</label>
                     {{ form.status }}
-                    <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">Draft assets don't require category or location.</p>
+                    <p class="text-xs text-stage-500 dark:text-cream/40 mt-1">{{ form.status.help_text }}</p>
                 </div>
             </div>
             {% endif %}

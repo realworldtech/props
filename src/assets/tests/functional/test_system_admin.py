@@ -803,40 +803,54 @@ class TestUS_SA_014_MarkAssetLostOrStolen:
 
     MoSCoW: MUST
     Spec refs: S2.2.3-07, S2.2.3-08, S2.2.3-11
-    UI Surface: /assets/<pk>/edit/
+    UI Surface: Status menu on /assets/<pk>/
     """
 
-    def test_mark_asset_as_lost(self, admin_client, active_asset):
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "category": active_asset.category.pk,
-                "current_location": active_asset.current_location.pk,
-                "condition": active_asset.condition,
-                "quantity": active_asset.quantity,
-                "status": "lost",
-                "notes": "Lost during transport",
-            },
+    def _status_page(self, client, asset, status):
+        from assets.tests.functional.helpers import collect_form_fields
+
+        url = reverse("assets:asset_change_status", args=[asset.pk, status])
+        resp = client.get(url)
+        assert resp.status_code == 200
+        return url, collect_form_fields(
+            resp.content.decode(), "status-change-form"
         )
+
+    @pytest.mark.parametrize("status", ["lost", "stolen"])
+    def test_mark_asset_lost_or_stolen_with_notes(
+        self, admin_client, active_asset, status
+    ):
+        url, fields = self._status_page(admin_client, active_asset, status)
+        fields["notes"] = "Gone after the show"
+        admin_client.post(url, fields)
+
+        active_asset.refresh_from_db()
+        assert active_asset.status == status
+        assert "Gone after the show" in active_asset.lost_stolen_notes
+
+    def test_mark_as_lost_requires_notes(self, admin_client, active_asset):
+        """S2.2.3-07: without notes the change is refused."""
+        url, fields = self._status_page(admin_client, active_asset, "lost")
+        fields["notes"] = ""
+        admin_client.post(url, fields)
+
+        active_asset.refresh_from_db()
+        assert active_asset.status == "active"
+
+    def test_mark_as_lost_allowed_when_checked_out(
+        self, admin_client, active_asset, borrower_user
+    ):
+        """S2.2.3-11: a checked-out asset can be marked lost, and the
+        borrower is kept."""
+        active_asset.checked_out_to = borrower_user
+        active_asset.save()
+        url, fields = self._status_page(admin_client, active_asset, "lost")
+        fields["notes"] = "Lost while checked out"
+        admin_client.post(url, fields)
+
         active_asset.refresh_from_db()
         assert active_asset.status == "lost"
-
-    def test_mark_asset_as_stolen(self, admin_client, active_asset):
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "category": active_asset.category.pk,
-                "current_location": active_asset.current_location.pk,
-                "condition": active_asset.condition,
-                "quantity": active_asset.quantity,
-                "status": "stolen",
-                "notes": "Stolen from venue",
-            },
-        )
-        active_asset.refresh_from_db()
-        assert active_asset.status == "stolen"
+        assert active_asset.checked_out_to == borrower_user
 
     def test_lost_asset_hidden_from_default_search(
         self, admin_client, category, location, admin_user
@@ -855,7 +869,9 @@ class TestUS_SA_014_MarkAssetLostOrStolen:
             {"q": "Lost Asset Unique"},
         )
         assert resp.status_code == 200
-        assert b"Lost Asset Unique" not in resp.content
+        # The search box repeats the query, so look for the asset link.
+        detail_url = reverse("assets:asset_detail", args=[lost.pk])
+        assert detail_url.encode() not in resp.content
 
 
 @pytest.mark.django_db
@@ -864,7 +880,7 @@ class TestUS_SA_015_RecoverLostOrStolenAsset:
 
     MoSCoW: MUST
     Spec refs: S2.2.3-08, S3.3.2
-    UI Surface: /assets/<pk>/edit/
+    UI Surface: /assets/<pk>/status/active/ (Mark as found)
     """
 
     def test_recover_lost_asset_to_active(
@@ -879,19 +895,20 @@ class TestUS_SA_015_RecoverLostOrStolenAsset:
             current_location=location,
             created_by=admin_user,
         )
-        resp = admin_client.post(
-            reverse("assets:asset_edit", args=[lost_asset.pk]),
-            {
-                "name": lost_asset.name,
-                "category": lost_asset.category.pk,
-                "current_location": lost_asset.current_location.pk,
-                "condition": lost_asset.condition,
-                "quantity": lost_asset.quantity,
-                "status": "active",
-            },
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[lost_asset.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(location.pk)
+        admin_client.post(recover_url, fields)
         lost_asset.refresh_from_db()
         assert lost_asset.status == "active"
+        assert lost_asset.current_location == location
 
     def test_recovered_asset_visible_in_default_search(
         self, admin_client, category, location, admin_user
@@ -2829,88 +2846,6 @@ class TestUS_SA_013_DisposeAsset:
         assert (
             active_asset.status != "disposed"
         ), "Checked-out asset was disposed — disposal should be blocked"
-
-
-@pytest.mark.django_db
-class TestUS_SA_014_MarkAssetLostOrStolen:
-    """US-SA-014 additional criteria: lost allowed when checked out;
-    notes required.
-
-    MoSCoW: MUST
-    Spec refs: S2.2.3-07, S2.2.3-08, S2.2.3-11
-    """
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP: Asset edit form FORM_STATUS_CHOICES excludes 'lost' and"
-            " 'stolen', so the edit form silently ignores the status change"
-            " request — a checked-out asset cannot be marked lost via the"
-            " edit form (S2.2.3-11). A dedicated lost/stolen workflow or"
-            " form choice is missing."
-        ),
-    )
-    def test_mark_as_lost_allowed_when_checked_out(
-        self,
-        admin_client,
-        active_asset,
-        borrower_user,
-        location,
-        admin_user,
-    ):
-        """S2.2.3-11: Marking an asset as lost must be allowed even if
-        it is currently checked out."""
-        Transaction.objects.create(
-            asset=active_asset,
-            action="checkout",
-            user=admin_user,
-            borrower=borrower_user,
-            from_location=active_asset.current_location,
-            to_location=location,
-        )
-        active_asset.checked_out_to = borrower_user
-        active_asset.save()
-
-        admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "category": active_asset.category.pk,
-                "current_location": active_asset.current_location.pk,
-                "condition": active_asset.condition,
-                "quantity": active_asset.quantity,
-                "status": "lost",
-                "notes": "Lost while checked out",
-            },
-        )
-        active_asset.refresh_from_db()
-        assert active_asset.status == "lost", (
-            "Marking a checked-out asset as lost was blocked — should be"
-            " allowed (S2.2.3-11)"
-        )
-
-    def test_mark_as_lost_requires_notes(self, admin_client, active_asset):
-        """S2.2.3-08: Transitioning to lost status must require notes
-        (lost_stolen_notes or notes field). Without notes the transition
-        should be rejected."""
-        admin_client.post(
-            reverse("assets:asset_edit", args=[active_asset.pk]),
-            {
-                "name": active_asset.name,
-                "category": active_asset.category.pk,
-                "current_location": active_asset.current_location.pk,
-                "condition": active_asset.condition,
-                "quantity": active_asset.quantity,
-                "status": "lost",
-                # Deliberately omit notes
-            },
-        )
-        active_asset.refresh_from_db()
-        # If the spec requires notes, the asset should remain active
-        assert active_asset.status == "active", (
-            "Asset was marked as lost without notes — notes should be"
-            " required (S2.2.3-08)"
-        )
 
 
 @pytest.mark.django_db

@@ -82,6 +82,187 @@ class TestStateService:
         assert asset.status == "retired"
 
 
+class TestChangeStatus:
+    """Manual missing/lost/stolen/found changes (S2.2.3, S7.5.4, S7.17)."""
+
+    def _status_notes(self, asset):
+        from assets.models import Transaction
+
+        return list(
+            Transaction.objects.filter(asset=asset, action="note").values_list(
+                "notes", flat=True
+            )
+        )
+
+    def test_admin_marks_active_asset_missing(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        change_status(asset, "missing", admin_user)
+
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+        notes = self._status_notes(asset)
+        assert len(notes) == 1
+        assert "Active → Missing" in notes[0]
+
+    def test_member_cannot_mark_asset_missing(self, asset, member_user):
+        from django.core.exceptions import PermissionDenied
+
+        from assets.services.state import change_status
+
+        with pytest.raises(PermissionDenied):
+            change_status(asset, "missing", member_user)
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_viewer_cannot_mark_asset_missing(self, asset, viewer_user):
+        from django.core.exceptions import PermissionDenied
+
+        from assets.services.state import change_status
+
+        with pytest.raises(PermissionDenied):
+            change_status(asset, "missing", viewer_user)
+
+    def test_checked_out_asset_missing_without_confirmation_rejected(
+        self, asset, admin_user, second_user
+    ):
+        from assets.services.state import change_status
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        with pytest.raises(ValidationError, match="checked out"):
+            change_status(asset, "missing", admin_user)
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_checked_out_asset_missing_with_confirmation_keeps_borrower(
+        self, asset, admin_user, second_user
+    ):
+        from assets.services.state import change_status
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        change_status(asset, "missing", admin_user, confirm_checked_out=True)
+
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+        assert asset.checked_out_to == second_user
+
+    def test_lost_without_notes_rejected(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        with pytest.raises(ValidationError, match="Notes are required"):
+            change_status(asset, "lost", admin_user)
+
+    def test_lost_with_blank_notes_rejected(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        with pytest.raises(ValidationError, match="Notes are required"):
+            change_status(asset, "lost", admin_user, notes="   ")
+
+    def test_lost_with_only_old_notes_rejected(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        asset.lost_stolen_notes = "Lost at last year's show."
+        asset.save()
+        with pytest.raises(ValidationError, match="Notes are required"):
+            change_status(asset, "lost", admin_user)
+
+    def test_lost_with_notes_stores_reason(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        change_status(asset, "lost", admin_user, notes="Left at venue")
+
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+        assert "Left at venue" in asset.lost_stolen_notes
+        notes = self._status_notes(asset)
+        assert "Active → Lost" in notes[0]
+        assert "Left at venue" in notes[0]
+
+    def test_checked_out_asset_stolen_keeps_borrower_without_checkin(
+        self, asset, admin_user, second_user
+    ):
+        from assets.models import Transaction
+        from assets.services.state import change_status
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        change_status(asset, "stolen", admin_user, notes="Taken from van")
+
+        asset.refresh_from_db()
+        assert asset.status == "stolen"
+        assert asset.checked_out_to == second_user
+        assert not Transaction.objects.filter(
+            asset=asset, action="checkin"
+        ).exists()
+
+    def test_invalid_transition_rejected(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        asset.status = "retired"
+        asset.save()
+        with pytest.raises(ValidationError, match="Cannot transition"):
+            change_status(asset, "missing", admin_user)
+
+    def test_same_status_rejected_without_transaction(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        asset.status = "missing"
+        asset.save()
+        with pytest.raises(ValidationError, match="Cannot transition"):
+            change_status(asset, "missing", admin_user)
+        assert self._status_notes(asset) == []
+
+    def test_found_without_location_rejected(self, asset, admin_user):
+        from assets.services.state import change_status
+
+        asset.status = "missing"
+        asset.save()
+        with pytest.raises(ValidationError, match="location"):
+            change_status(asset, "active", admin_user)
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_found_with_location_sets_current_location(
+        self, asset, admin_user
+    ):
+        from assets.services.state import change_status
+
+        shelf = LocationFactory(name="Shelf B")
+        asset.status = "missing"
+        asset.save()
+        change_status(asset, "active", admin_user, location=shelf)
+
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert asset.current_location == shelf
+        assert "Missing → Active" in self._status_notes(asset)[0]
+
+    def test_recovered_lost_asset_appends_notes_and_keeps_borrower(
+        self, asset, admin_user, second_user, location
+    ):
+        from assets.services.state import change_status
+        from assets.services.transactions import create_checkout
+
+        create_checkout(asset, second_user, admin_user)
+        change_status(asset, "lost", admin_user, notes="Left at venue")
+        change_status(
+            asset,
+            "active",
+            admin_user,
+            notes="Venue returned it",
+            location=location,
+        )
+
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert "Left at venue" in asset.lost_stolen_notes
+        assert "Venue returned it" in asset.lost_stolen_notes
+        assert asset.checked_out_to == second_user
+        assert len(self._status_notes(asset)) == 2
+
+
 class TestTransactionService:
     def test_create_checkout(self, asset, second_user, user):
         from assets.services.transactions import create_checkout
@@ -153,10 +334,11 @@ class TestPermissionsService:
         a.save()
         assert can_edit_asset(member_user, a)
 
-    def test_member_cannot_edit_others_draft(self, member_user, draft_asset):
+    def test_member_can_edit_others_draft(self, member_user, draft_asset):
+        """S2.10.3-04: drafts are shared work in progress."""
         from assets.services.permissions import can_edit_asset
 
-        assert not can_edit_asset(member_user, draft_asset)
+        assert can_edit_asset(member_user, draft_asset)
 
     def test_can_delete_asset(self, admin_user, asset):
         from assets.services.permissions import can_delete_asset
@@ -614,11 +796,11 @@ class TestBarcodeService:
 
 
 class TestBulkService:
-    def test_bulk_transfer(self, asset, user):
+    def test_bulk_transfer(self, asset, admin_user):
         from assets.services.bulk import bulk_transfer
 
         new_loc = Location.objects.create(name="Bulk Dest")
-        result = bulk_transfer([asset.pk], new_loc.pk, user)
+        result = bulk_transfer([asset.pk], new_loc.pk, admin_user)
         assert result["transferred"] == 1
         asset.refresh_from_db()
         assert asset.current_location == new_loc
@@ -633,10 +815,10 @@ class TestBulkService:
         assert result["transferred"] == 0
         assert len(result["skipped"]) == 1
 
-    def test_bulk_status_change(self, asset, user):
+    def test_bulk_status_change(self, asset, admin_user):
         from assets.services.bulk import bulk_status_change
 
-        count, failures = bulk_status_change([asset.pk], "retired", user)
+        count, failures = bulk_status_change([asset.pk], "retired", admin_user)
         assert count == 1
         assert failures == []
         asset.refresh_from_db()
@@ -785,6 +967,9 @@ class TestQueryCounts:
         # V492: +2 for serial queries
         # S2.4.5: +1 for remote print client query
         # Permission-based roles use has_perm cache, fewer queries
+        # Status actions: +1 manager check, -2 for the removed
+        # checkout warning (is_checked_out sums)
+        # can_manage_asset: +1 manager check for convert/barcode actions
         with django_assert_num_queries(25):
             response = client_logged_in.get(
                 reverse("assets:asset_detail", args=[asset.pk])
@@ -1782,3 +1967,223 @@ class TestDashboardCaching:
 
             assert cache.get(admin_key)["total_active"] == 5
             assert cache.get(mgr_key)["total_active"] == 3
+
+
+@pytest.mark.django_db
+class TestRecoverOnCheckin:
+    """S2.2.3-12: a check-in is the record that the asset is found."""
+
+    @pytest.mark.parametrize("status", ["missing", "lost", "stolen"])
+    def test_checkin_service_recovers_asset(
+        self, asset, admin_user, member_user, location, status
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.status = status
+        asset.lost_stolen_notes = (
+            "Left at venue" if status != "missing" else ""
+        )
+        asset.checked_out_to = member_user
+        asset.save()
+        dock = LocationFactory(name="Dock")
+        create_checkin(asset, dock, member_user)
+
+        asset.refresh_from_db()
+        assert asset.status == "active"
+        assert asset.checked_out_to is None
+        assert asset.current_location == dock
+        note = Transaction.objects.filter(asset=asset, action="note").last()
+        assert note.notes.startswith(f"Status: {status.title()} → Active")
+        assert note.user == member_user
+
+    @pytest.mark.parametrize("status", ["lost", "stolen"])
+    def test_checkin_appends_recovery_to_lost_stolen_notes(
+        self, asset, member_user, location, status
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.status = status
+        asset.lost_stolen_notes = "Left at venue"
+        asset.checked_out_to = member_user
+        asset.save()
+        create_checkin(asset, location, member_user)
+
+        asset.refresh_from_db()
+        assert asset.lost_stolen_notes.startswith("Left at venue\n")
+        assert "Recovered: checked in" in asset.lost_stolen_notes
+
+    def test_checkin_of_active_asset_adds_no_status_note(
+        self, asset, member_user, location
+    ):
+        from assets.services.transactions import create_checkin
+
+        asset.checked_out_to = member_user
+        asset.save()
+        create_checkin(asset, location, member_user)
+
+        assert not Transaction.objects.filter(
+            asset=asset, action="note"
+        ).exists()
+
+    def _lost_and_out(self, asset, member_user):
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.checked_out_to = member_user
+        asset.save()
+        return asset
+
+    def test_checkin_page_does_not_recover_asset_that_is_not_out(
+        self, client_logged_in, asset, location
+    ):
+        """S2.2.3-12 covers checked-out assets only. Recovery of other
+        assets stays with managers (S2.2.3-03, S7.17.3)."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
+        asset.save()
+        url = reverse("assets:asset_checkin", args=[asset.pk])
+        fields = collect_form_fields(
+            client_logged_in.get(url).content.decode(), "checkin-form"
+        )
+        fields["location"] = str(location.pk)
+        client_logged_in.post(url, fields)
+
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+    def test_bulk_checkin_recovers_asset(self, asset, member_user, location):
+        from assets.services.bulk import bulk_checkin
+
+        self._lost_and_out(asset, member_user)
+        bulk_checkin([asset.pk], location.pk, member_user)
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)
+
+    def test_bulk_checkin_to_home_recovers_asset(
+        self, asset, member_user, location
+    ):
+        from assets.services.bulk import bulk_checkin_to_home
+
+        self._lost_and_out(asset, member_user)
+        asset.home_location = location
+        asset.save()
+        bulk_checkin_to_home([asset.pk], member_user)
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)
+
+    def test_kit_checkin_recovers_lost_component_and_kit(
+        self, asset, kit_asset, member_user, location
+    ):
+        from assets.services.kits import kit_checkin
+
+        AssetKitFactory(kit=kit_asset, component=asset)
+        self._lost_and_out(asset, member_user)
+        self._lost_and_out(kit_asset, member_user)
+        kit_checkin(kit_asset, member_user, to_location=location)
+        asset.refresh_from_db()
+        kit_asset.refresh_from_db()
+        assert asset.status == "active"
+        assert kit_asset.status == "active"
+
+    def test_checkin_page_round_trip_recovers_asset(
+        self, client_logged_in, user, asset, location
+    ):
+        """Anyone who can check in can recover the asset (S2.2.3-12)."""
+        from assets.tests.functional.helpers import collect_form_fields
+
+        self._lost_and_out(asset, user)
+        url = reverse("assets:asset_checkin", args=[asset.pk])
+        resp = client_logged_in.get(url)
+        assert resp.status_code == 200
+        fields = collect_form_fields(resp.content.decode(), "checkin-form")
+        fields["location"] = str(location.pk)
+        client_logged_in.post(url, fields)
+
+        asset.refresh_from_db()
+        assert (asset.status, asset.checked_out_to) == ("active", None)
+
+
+@pytest.mark.django_db
+class TestDisposeAsset:
+    """S2.2.3-13: disposal records the last location, then clears it."""
+
+    def test_dispose_records_last_location_and_clears_it(
+        self, asset, admin_user, location
+    ):
+        from assets.services.state import dispose_asset
+
+        dispose_asset(asset, admin_user, notes="Water damage")
+
+        asset.refresh_from_db()
+        assert asset.status == "disposed"
+        assert asset.current_location is None
+        note = Transaction.objects.get(asset=asset, action="note")
+        assert note.from_location == location
+        assert note.user == admin_user
+        assert note.notes == "Status: Active → Disposed. Water damage"
+
+    def test_dispose_refuses_checked_out_asset(
+        self, asset, admin_user, member_user
+    ):
+        from assets.services.state import dispose_asset
+
+        asset.checked_out_to = member_user
+        asset.save()
+        with pytest.raises(ValidationError):
+            dispose_asset(asset, admin_user)
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_disposed_asset_without_location_is_valid(self, asset):
+        asset.status = "disposed"
+        asset.current_location = None
+        asset.clean()
+
+    def test_disposed_asset_cannot_be_edited(self, asset, admin_user):
+        from assets.services.permissions import can_edit_asset
+
+        asset.status = "disposed"
+        asset.save()
+        assert can_edit_asset(admin_user, asset) is False
+
+    def test_merge_disposes_secondary_through_the_rule(
+        self, asset, admin_user, category, location
+    ):
+        from assets.services.merge import merge_assets
+
+        dup = AssetFactory(
+            name="Duplicate", category=category, current_location=location
+        )
+        merge_assets(asset, [dup], admin_user)
+
+        dup.refresh_from_db()
+        assert dup.status == "disposed"
+        assert dup.current_location is None
+        assert Transaction.objects.filter(
+            asset=dup, action="note", from_location=location
+        ).exists()
+
+    def test_migration_clears_location_of_already_disposed_assets(
+        self, asset, location
+    ):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module(
+            "assets.migrations.0040_clear_disposed_asset_locations"
+        )
+        asset.status = "disposed"
+        asset.save()
+        kept = AssetFactory(status="active", current_location=location)
+
+        migration.clear_disposed_locations(apps, None)
+
+        asset.refresh_from_db()
+        kept.refresh_from_db()
+        assert asset.current_location is None
+        assert kept.current_location == location
+        note = Transaction.objects.get(asset=asset, action="note")
+        assert note.from_location == location
+        assert "→ Disposed" in note.notes

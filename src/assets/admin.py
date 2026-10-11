@@ -12,7 +12,9 @@ from unfold.contrib.filters.admin import (
 )
 from unfold.decorators import action, display
 from unfold.enums import ActionVariant
+from unfold.widgets import UnfoldAdminTextareaWidget, UnfoldBooleanWidget
 
+from django import forms
 from django.contrib import admin, messages
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
@@ -45,6 +47,7 @@ from .models import (
     Tag,
     Transaction,
 )
+from .services.state import CHECKED_OUT_MISSING_WARNING
 
 
 class AssetImageInline(TabularInline):
@@ -241,6 +244,81 @@ class OnHoldListFilter(admin.SimpleListFilter):
         return queryset
 
 
+class AssetAdminForm(forms.ModelForm):
+    """Asset change form that applies the status rules (US-SA-014)."""
+
+    status_notes = forms.CharField(
+        required=False,
+        widget=UnfoldAdminTextareaWidget(attrs={"rows": 2}),
+        help_text=(
+            "Required to mark the asset lost or stolen. Added to the "
+            "lost/stolen notes."
+        ),
+    )
+    confirm_checked_out = forms.BooleanField(
+        required=False,
+        widget=UnfoldBooleanWidget,
+        label="I understand that this asset is checked out",
+        help_text=CHECKED_OUT_MISSING_WARNING,
+    )
+    user = None
+
+    class Meta:
+        model = Asset
+        fields = "__all__"
+
+    def status_change(self):
+        """Return the new status when it needs the status rules."""
+        from .services.state import RECOVERABLE_STATUSES
+
+        old = getattr(self, "old_status", None)
+        new = self.cleaned_data.get("status")
+        if old is None or new == old:
+            return None
+        if new in ("missing", "lost", "stolen", "disposed"):
+            return new
+        if old in RECOVERABLE_STATUSES:
+            return new
+        return None
+
+    def clean(self):
+        from django.core.exceptions import PermissionDenied, ValidationError
+
+        from .services.state import check_status_change
+
+        # self.instance still holds the saved values here.
+        if self.instance.pk:
+            self.old_status = self.instance.status
+            self.old_location = self.instance.current_location
+        cleaned = super().clean()
+        new_status = self.status_change()
+        if new_status == "disposed":
+            # S2.2.3-13: disposal clears the location in save_model.
+            from .services.state import validate_transition
+
+            try:
+                validate_transition(self.instance, "disposed")
+            except ValidationError as exc:
+                self.add_error("status", exc)
+        elif new_status:
+            try:
+                check_status_change(
+                    self.instance,
+                    new_status,
+                    self.user,
+                    notes=cleaned.get("status_notes", ""),
+                    location=cleaned.get("current_location"),
+                    confirm_checked_out=cleaned.get(
+                        "confirm_checked_out", False
+                    ),
+                )
+            except PermissionDenied:
+                self.add_error("status", "You cannot make this status change.")
+            except ValidationError as exc:
+                self.add_error("status", exc)
+        return cleaned
+
+
 @admin.register(Asset)
 class AssetAdmin(ModelAdmin):
     list_display = [
@@ -266,11 +344,13 @@ class AssetAdmin(ModelAdmin):
     ]
     list_filter_submit = True
     search_fields = ["name", "barcode", "description"]
+    form = AssetAdminForm
     readonly_fields = [
         "barcode",
         "barcode_image_preview",
         "created_at",
         "updated_at",
+        "lost_stolen_notes",
     ]
     autocomplete_fields = ["category", "current_location", "checked_out_to"]
     filter_horizontal = ["tags"]
@@ -281,6 +361,24 @@ class AssetAdmin(ModelAdmin):
         NFCTagInline,
     ]
 
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if obj is not None and obj.is_checked_out:
+            return fieldsets
+        # S7.5.4: the confirmation applies only to checked-out assets.
+        return [
+            (
+                name,
+                {
+                    **opts,
+                    "fields": tuple(
+                        f for f in opts["fields"] if f != "confirm_checked_out"
+                    ),
+                },
+            )
+            for name, opts in fieldsets
+        ]
+
     fieldsets = (
         (
             None,
@@ -289,6 +387,9 @@ class AssetAdmin(ModelAdmin):
                     "name",
                     "description",
                     "status",
+                    "status_notes",
+                    "confirm_checked_out",
+                    "lost_stolen_notes",
                     "category",
                     "current_location",
                     "home_location",
@@ -337,6 +438,49 @@ class AssetAdmin(ModelAdmin):
 
     actions_detail = ["print_label_action"]
     actions = ["bulk_remote_print"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.user = request.user
+        return form
+
+    def save_model(self, request, obj, form, change):
+        new_status = form.status_change() if change else None
+        if not new_status:
+            super().save_model(request, obj, form, change)
+            return
+
+        from .services.state import (
+            RECOVERABLE_STATUSES,
+            change_status,
+            dispose_asset,
+        )
+
+        # Save the other fields first, then apply the status change
+        # with the same rules and transaction as the asset page.
+        new_location = obj.current_location
+        obj.status = form.old_status
+        if new_status == "disposed":
+            super().save_model(request, obj, form, change)
+            dispose_asset(
+                obj,
+                request.user,
+                notes=form.cleaned_data.get("status_notes", ""),
+            )
+            return
+        if form.old_status in RECOVERABLE_STATUSES:
+            obj.current_location = form.old_location
+        super().save_model(request, obj, form, change)
+        change_status(
+            obj,
+            new_status,
+            request.user,
+            notes=form.cleaned_data.get("status_notes", ""),
+            location=new_location,
+            confirm_checked_out=form.cleaned_data.get(
+                "confirm_checked_out", False
+            ),
+        )
 
     # --- Display methods ---
 
@@ -419,85 +563,90 @@ class AssetAdmin(ModelAdmin):
 
     export_selected_xlsx.short_description = "Export selected to Excel"
 
+    def _bulk_status(self, request, queryset, new_status):
+        from .services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            list(queryset.values_list("pk", flat=True)),
+            new_status,
+            request.user,
+        )
+        if count:
+            messages.success(
+                request, f"{count} asset(s) marked as {new_status}."
+            )
+        for failure in failures:
+            messages.warning(request, failure)
+
     @action(description="Mark as active")
     def mark_active(self, request, queryset):
-        updated = queryset.exclude(status="disposed").update(status="active")
-        messages.success(request, f"{updated} asset(s) marked as active.")
+        self._bulk_status(request, queryset, "active")
 
     mark_active.short_description = "Mark as active"
 
     @action(description="Mark as retired")
     def mark_retired(self, request, queryset):
-        updated = queryset.exclude(status="disposed").update(status="retired")
-        messages.success(request, f"{updated} asset(s) marked as retired.")
+        self._bulk_status(request, queryset, "retired")
 
     mark_retired.short_description = "Mark as retired"
 
-    @action(description="Mark as lost (requires notes)")
-    def mark_lost(self, request, queryset):
-        if "apply" in request.POST:
-            notes = request.POST.get("notes", "").strip()
-            if notes:
-                qs = queryset.exclude(status__in=["disposed", "lost"])
-                count = 0
-                for asset in qs:
-                    asset.status = "lost"
-                    if asset.notes:
-                        asset.notes += f"\n---\n{notes}"
-                    else:
-                        asset.notes = notes
-                    asset.save(update_fields=["status", "notes"])
+    def _mark_with_notes(self, request, queryset, new_status):
+        """S4.6.3.4: each asset goes through the status rules; assets
+        that cannot change are skipped with a warning."""
+        from django.core.exceptions import PermissionDenied, ValidationError
+
+        from .services.state import change_status
+
+        notes = request.POST.get("notes", "").strip()
+        if "apply" in request.POST and notes:
+            count = 0
+            for asset in queryset:
+                try:
+                    # The notes page lists the assets; applying it is
+                    # the admin's confirmation (S7.5.4).
+                    change_status(
+                        asset,
+                        new_status,
+                        request.user,
+                        notes=notes,
+                        confirm_checked_out=True,
+                    )
                     count += 1
+                except PermissionDenied:
+                    messages.warning(
+                        request,
+                        f"{asset.name}: you cannot change this asset.",
+                    )
+                except ValidationError as exc:
+                    messages.warning(
+                        request, f"{asset.name}: {' '.join(exc.messages)}"
+                    )
+            if count:
                 messages.success(
-                    request,
-                    f"{count} asset(s) marked as lost.",
+                    request, f"{count} asset(s) marked as {new_status}."
                 )
-                return None
+            return None
         return TemplateResponse(
             request,
             "admin/assets/mark_with_notes.html",
             {
                 "assets": queryset,
-                "action": "mark_lost",
-                "target_status": "lost",
+                "action": f"mark_{new_status}",
+                "target_status": new_status,
                 "opts": self.model._meta,
-                "title": "Mark assets as lost",
+                "title": f"Mark assets as {new_status}",
             },
         )
+
+    @action(description="Mark as lost (requires notes)")
+    def mark_lost(self, request, queryset):
+        return self._mark_with_notes(request, queryset, "lost")
 
     mark_lost.short_description = "Mark as lost (requires notes)"
 
     @action(description="Mark as stolen (requires notes)")
     def mark_stolen(self, request, queryset):
-        if "apply" in request.POST:
-            notes = request.POST.get("notes", "").strip()
-            if notes:
-                qs = queryset.exclude(status__in=["disposed", "stolen"])
-                count = 0
-                for asset in qs:
-                    asset.status = "stolen"
-                    if asset.notes:
-                        asset.notes += f"\n---\n{notes}"
-                    else:
-                        asset.notes = notes
-                    asset.save(update_fields=["status", "notes"])
-                    count += 1
-                messages.success(
-                    request,
-                    f"{count} asset(s) marked as stolen.",
-                )
-                return None
-        return TemplateResponse(
-            request,
-            "admin/assets/mark_with_notes.html",
-            {
-                "assets": queryset,
-                "action": "mark_stolen",
-                "target_status": "stolen",
-                "opts": self.model._meta,
-                "title": "Mark assets as stolen",
-            },
-        )
+        return self._mark_with_notes(request, queryset, "stolen")
 
     mark_stolen.short_description = "Mark as stolen (requires notes)"
 

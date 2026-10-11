@@ -1226,20 +1226,36 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
             asset.status != "lost"
         ), "Bulk lost transition should be blocked per S7.17.5"
 
-    def test_lost_asset_can_be_recovered_to_active_via_bulk_action(
+    def test_lost_asset_is_recovered_via_status_menu_not_bulk_action(
         self, admin_client, asset
     ):
+        """Recovery needs a location and a transaction (S7.17.3), so bulk
+        status change rejects it; the asset page action recovers it."""
         asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
         asset.save()
-        url = reverse("assets:bulk_actions")
         admin_client.post(
-            url,
+            reverse("assets:bulk_actions"),
             {
                 "bulk_action": "status_change",
                 "asset_ids": [asset.pk],
                 "new_status": "active",
             },
         )
+        asset.refresh_from_db()
+        assert asset.status == "lost"
+
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[asset.pk, "active"]
+        )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(asset.current_location.pk)
+        admin_client.post(recover_url, fields)
         asset.refresh_from_db()
         assert asset.status == "active"
 
@@ -1280,89 +1296,53 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
         resp = admin_client.get(url)
         assert resp.status_code == 200
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #31a: No dedicated mark-lost form with required notes"
-            " field (S2.2.3-08). mark-as-lost is only available via"
-            " the edit form status field — there is no dedicated surface"
-            " with a mandatory reason/notes field."
-        ),
-    )
     def test_mark_as_lost_requires_notes_field(self, admin_client, asset):
-        """S2.2.3-08: A dedicated 'mark as lost' surface must require
-        a notes/reason field before accepting the transition."""
-        from django.urls import NoReverseMatch
+        """S2.2.3-08: the mark-as-lost page requires notes before it
+        accepts the change. Closes GAP #31a."""
+        from assets.tests.functional.helpers import collect_form_fields
 
-        # Try to find a dedicated mark-lost URL
-        url = None
-        for url_name in ["assets:asset_mark_lost", "assets:mark_lost"]:
-            try:
-                url = reverse(url_name, args=[asset.pk])
-                break
-            except NoReverseMatch:
-                continue
+        url = reverse("assets:asset_change_status", args=[asset.pk, "lost"])
+        detail = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+        assert url in detail  # affordance on the asset page
 
-        if url is None:
-            # Try the asset detail page which may have an inline form
-            resp = admin_client.get(
-                reverse("assets:asset_detail", args=[asset.pk])
-            )
-            content = resp.content.decode().lower()
-            # Either a dedicated URL exists or the detail has a notes field
-            assert (
-                "lost" in content and "notes" in content
-            ), "No dedicated mark-lost surface with notes field found"
-        else:
-            resp = admin_client.get(url)
-            assert resp.status_code == 200
-            content = resp.content.decode().lower()
-            assert (
-                "notes" in content or "reason" in content
-            ), "mark-lost form must include a notes/reason field"
+        fields = collect_form_fields(
+            admin_client.get(url).content.decode(), "status-change-form"
+        )
+        assert "notes" in fields
+        resp = admin_client.post(url, fields)  # notes left empty
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "GAP #31b: No dedicated recover-from-lost surface with"
-            " location selection (S2.2.3-08). Recovery only available"
-            " via bulk_actions status_change which doesn't require"
-            " location selection."
-        ),
-    )
+        assert resp.status_code == 200
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
     def test_recover_from_lost_requires_location_selection(
         self, admin_client, asset
     ):
-        """S2.2.3-08: Recover-from-lost must require selecting a
-        location where the asset was found."""
-        from django.urls import NoReverseMatch
+        """S2.2.3-08: recovering a lost asset requires a location.
+        Closes GAP #31b."""
+        from assets.tests.functional.helpers import collect_form_fields
 
         asset.status = "lost"
+        asset.lost_stolen_notes = "Left at venue"
         asset.save()
+        url = reverse("assets:asset_change_status", args=[asset.pk, "active"])
+        detail = admin_client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+        assert url in detail  # affordance on the asset page
 
-        url = None
-        for url_name in [
-            "assets:asset_recover",
-            "assets:recover_asset",
-            "assets:asset_mark_found",
-        ]:
-            try:
-                url = reverse(url_name, args=[asset.pk])
-                break
-            except NoReverseMatch:
-                continue
+        fields = collect_form_fields(
+            admin_client.get(url).content.decode(), "status-change-form"
+        )
+        assert "location" in fields
+        fields["location"] = ""
+        resp = admin_client.post(url, fields)
 
-        if url is None:
-            pytest.xfail(
-                "GAP #31b: No dedicated recover-from-lost URL exists."
-            )
-
-        resp = admin_client.get(url)
         assert resp.status_code == 200
-        content = resp.content.decode().lower()
-        assert (
-            "location" in content
-        ), "Recover-from-lost form must include a location selection field"
+        asset.refresh_from_db()
+        assert asset.status == "lost"
 
     def test_checkin_form_has_condition_field(
         self, admin_client, active_asset, borrower_user
@@ -1469,15 +1449,18 @@ class TestScenario_11_9_AssetLifecycleCaptureToDisposal:
         draft.refresh_from_db()
         assert draft.status == "lost"
 
-        # Recover via bulk_actions (active recovery is allowed in bulk)
-        admin_client.post(
-            reverse("assets:bulk_actions"),
-            {
-                "bulk_action": "status_change",
-                "asset_ids": [draft.pk],
-                "new_status": "active",
-            },
+        # Recover via Mark as found on the asset page (S7.17.3)
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[draft.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(location.pk)
+        admin_client.post(recover_url, fields)
         draft.refresh_from_db()
         assert draft.status == "active"
 
@@ -3361,15 +3344,10 @@ class TestScenario_11_9_RecoveryFromLost:
     def test_recovery_from_lost_sets_location(
         self, admin_client, asset, location
     ):
-        """Mark an asset as lost, then recover it via bulk_actions
-        status_change. Assert status becomes 'active' and location is
-        set (not null).
-
-        The bulk recovery path via status_change to 'active' is the
-        documented recovery route (GAP #31b: no dedicated recover URL
-        exists with location selection). This test verifies the basic
-        state machine: lost → active is permitted by bulk_actions and
-        the asset retains its current_location.
+        """Mark an asset as lost, then recover it with Mark as found on
+        the asset page. Assert status becomes 'active' and the location
+        is set (not null). GAP #31b (no recover action with location
+        selection) is closed by the asset page Status menu.
         """
         from assets.services.state import transition_asset
 
@@ -3383,16 +3361,18 @@ class TestScenario_11_9_RecoveryFromLost:
         # Ensure there is a location set (it should still be the original one)
         original_location = asset.current_location
 
-        # Recover via bulk_actions (status_change to active)
-        url = reverse("assets:bulk_actions")
-        resp = admin_client.post(
-            url,
-            {
-                "bulk_action": "status_change",
-                "asset_ids": [asset.pk],
-                "new_status": "active",
-            },
+        # Recover via Mark as found on the asset page
+        from assets.tests.functional.helpers import collect_form_fields
+
+        recover_url = reverse(
+            "assets:asset_change_status", args=[asset.pk, "active"]
         )
+        fields = collect_form_fields(
+            admin_client.get(recover_url).content.decode(),
+            "status-change-form",
+        )
+        fields["location"] = str(original_location.pk)
+        resp = admin_client.post(recover_url, fields)
         assert resp.status_code in (200, 302)
         asset.refresh_from_db()
         assert (

@@ -62,3 +62,19 @@ class FormFieldCollector(HTMLParser):
         elif tag == "textarea" and self._in_textarea:
             self.fields[self._in_textarea] = "".join(self._textarea_content)
             self._in_textarea = None
+
+
+def collect_form_fields(html, form_id):
+    """Return name -> value for the fields of one form in a page.
+
+    Drops the CSRF token and formset ``__prefix__`` templates.
+    """
+    start = html.index(f'id="{form_id}"')
+    end = html.index("</form>", start)
+    parser = FormFieldCollector()
+    parser.feed("<form " + html[start:end])
+    return {
+        name: value
+        for name, value in parser.fields.items()
+        if name != "csrfmiddlewaretoken" and "__prefix__" not in name
+    }

@@ -163,9 +163,8 @@ class TestUS_MB_003_EditOwnDraft:
         )
         assert resp.status_code == 200
 
-    def test_member_cannot_edit_others_draft(
-        self, client_logged_in, admin_user
-    ):
+    def test_member_can_edit_others_draft(self, client_logged_in, admin_user):
+        """S2.10.3-04: drafts are shared work in progress."""
         other_draft = AssetFactory(
             name="Other Draft",
             status="draft",
@@ -176,8 +175,7 @@ class TestUS_MB_003_EditOwnDraft:
         resp = client_logged_in.get(
             reverse("assets:asset_edit", args=[other_draft.pk])
         )
-        # Should be forbidden
-        assert resp.status_code in (302, 403)
+        assert resp.status_code == 200
 
 
 @pytest.mark.django_db

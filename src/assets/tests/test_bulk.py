@@ -499,7 +499,7 @@ class TestBulkTransferEfficiency:
     """Bulk transfer should use bulk_create for efficiency."""
 
     def test_bulk_transfer_creates_transactions(
-        self, user, category, location
+        self, admin_user, category, location
     ):
         """Verify bulk transfer works correctly with multiple assets."""
         assets = []
@@ -509,7 +509,7 @@ class TestBulkTransferEfficiency:
                 category=category,
                 current_location=location,
                 status="active",
-                created_by=user,
+                created_by=admin_user,
             )
             a.save()
             assets.append(a)
@@ -517,13 +517,13 @@ class TestBulkTransferEfficiency:
         from assets.services.bulk import bulk_transfer
 
         new_loc = Location.objects.create(name="Bulk Dest Efficient")
-        result = bulk_transfer([a.pk for a in assets], new_loc.pk, user)
+        result = bulk_transfer([a.pk for a in assets], new_loc.pk, admin_user)
         assert result["transferred"] == 5
         for a in assets:
             a.refresh_from_db()
             assert a.current_location == new_loc
 
-    def test_bulk_transfer_efficiency(self, user, category, location):
+    def test_bulk_transfer_efficiency(self, admin_user, category, location):
         """Verify fewer queries with bulk operations."""
         assets = []
         for i in range(5):
@@ -532,7 +532,7 @@ class TestBulkTransferEfficiency:
                 category=category,
                 current_location=location,
                 status="active",
-                created_by=user,
+                created_by=admin_user,
             )
             a.save()
             assets.append(a)
@@ -545,7 +545,7 @@ class TestBulkTransferEfficiency:
         from django.test.utils import CaptureQueriesContext
 
         with CaptureQueriesContext(connection) as ctx:
-            bulk_transfer([a.pk for a in assets], new_loc.pk, user)
+            bulk_transfer([a.pk for a in assets], new_loc.pk, admin_user)
 
         # With bulk_create + filter().update(), the query count
         # should be constant regardless of asset count (setup +
@@ -563,7 +563,7 @@ class TestBulkEditDraftOnly:
     """V259 — S2.8.3-01: Bulk category edit restricted to drafts."""
 
     def test_bulk_category_edit_only_updates_drafts(
-        self, admin_client, asset, draft_asset, category
+        self, admin_user, asset, draft_asset, category
     ):
         """Category assignment only applies to draft assets."""
         from assets.services.bulk import bulk_edit
@@ -572,8 +572,9 @@ class TestBulkEditDraftOnly:
             name="New Cat",
             department=category.department,
         )
-        count = bulk_edit(
+        count, _ = bulk_edit(
             [asset.pk, draft_asset.pk],
+            admin_user,
             category_id=new_cat.pk,
         )
         # Only draft should be updated
@@ -584,14 +585,15 @@ class TestBulkEditDraftOnly:
         assert asset.category == category  # unchanged
 
     def test_bulk_location_edit_applies_to_all(
-        self, admin_client, asset, draft_asset, location
+        self, admin_user, asset, draft_asset, location
     ):
         """Location assignment applies to all assets."""
         from assets.services.bulk import bulk_edit
 
         new_loc = Location.objects.create(name="New Loc")
-        count = bulk_edit(
+        count, _ = bulk_edit(
             [asset.pk, draft_asset.pk],
+            admin_user,
             location_id=new_loc.pk,
         )
         assert count == 2
@@ -604,6 +606,142 @@ class TestBulkEditDraftOnly:
 # ============================================================
 # V264 (S2.8.2-01): Bulk status change
 # ============================================================
+
+
+@pytest.mark.django_db
+class TestBulkStatusChangeKeepsManualStatusRules:
+    """Bulk status must not bypass the missing/lost/stolen/found rules
+    (S2.8.3-03: all transition rules apply; S2.2.3-03, S7.17.3)."""
+
+    def test_bulk_change_to_missing_is_rejected(self, asset, admin_user):
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change([asset.pk], "missing", admin_user)
+        assert count == 0
+        assert "asset page" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_recovery_of_missing_asset_is_rejected(
+        self, asset, admin_user
+    ):
+        from assets.services.bulk import bulk_status_change
+
+        asset.status = "missing"
+        asset.save()
+        count, failures = bulk_status_change([asset.pk], "active", admin_user)
+        assert count == 0
+        assert "Status menu" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "missing"
+
+    def test_bulk_activate_draft_still_works(
+        self, category, location, admin_user
+    ):
+        from assets.services.bulk import bulk_status_change
+
+        draft = AssetFactory(
+            status="draft", category=category, current_location=location
+        )
+        count, failures = bulk_status_change([draft.pk], "active", admin_user)
+        assert (count, failures) == (1, [])
+
+    @pytest.mark.parametrize("new_status", ["lost", "stolen"])
+    def test_bulk_lost_or_stolen_is_rejected_with_spec_message(
+        self, asset, admin_user, new_status
+    ):
+        """S7.17.5: the exact rejection message."""
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], new_status, admin_user
+        )
+        assert count == 0
+        assert failures == [
+            "Lost and stolen transitions require individual notes for "
+            "each asset and cannot be performed in bulk."
+        ]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_dispose_is_rejected(self, asset, admin_user):
+        """Disposal records the last location (S2.2.3-13); bulk only
+        offers active and retired."""
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], "disposed", admin_user
+        )
+        assert count == 0
+        assert "asset page" in failures[0]
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_bulk_activate_draft_without_location_is_rejected(
+        self, category, admin_user
+    ):
+        """S2.8.3-03: the transition rules apply to each asset."""
+        from assets.services.bulk import bulk_status_change
+
+        draft = AssetFactory(
+            status="draft", category=category, current_location=None
+        )
+        count, failures = bulk_status_change([draft.pk], "active", admin_user)
+        assert count == 0
+        assert "Location is required" in failures[0]
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+
+    def test_bulk_retire_excludes_other_department_assets(
+        self, asset, dept_manager_user
+    ):
+        """S2.8.3-05: assets the manager does not manage are excluded."""
+        from assets.services.bulk import bulk_status_change
+
+        other = AssetFactory(
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+        count, failures = bulk_status_change(
+            [asset.pk, other.pk], "retired", dept_manager_user
+        )
+        assert count == 1
+        assert failures == [
+            f"{other.name}: You do not have permission to change this asset."
+        ]
+        other.refresh_from_db()
+        assert other.status == "active"
+
+    def test_bulk_retire_by_member_changes_nothing(self, asset, member_user):
+        from assets.services.bulk import bulk_status_change
+
+        count, failures = bulk_status_change(
+            [asset.pk], "retired", member_user
+        )
+        assert count == 0
+        asset.refresh_from_db()
+        assert asset.status == "active"
+
+    def test_view_shows_spec_message_and_no_success_for_lost(
+        self, admin_client, asset
+    ):
+        # Hardcoded POST: the bulk form does not offer lost, so this
+        # probes direct view input (S7.17.5).
+        resp = admin_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk],
+                "bulk_action": "status_change",
+                "new_status": "lost",
+            },
+            follow=True,
+        )
+        texts = [str(m) for m in resp.context["messages"]]
+        assert (
+            "Lost and stolen transitions require individual notes for "
+            "each asset and cannot be performed in bulk." in texts
+        )
+        assert not any("updated" in t for t in texts)
 
 
 @pytest.mark.django_db
@@ -679,3 +817,215 @@ class TestV265BulkLocationTransfer:
         asset2.refresh_from_db()
         assert asset.current_location == new_location
         assert asset2.current_location == new_location
+
+
+@pytest.mark.django_db
+class TestBulkOperationsRespectDepartments:
+    """S2.8.3-05: bulk operations exclude assets the user cannot edit and
+    list them in a warning. S2.10.3-04: members edit their own drafts."""
+
+    @pytest.fixture
+    def other_asset(self, location):
+        return AssetFactory(
+            name="Other Dept Prop",
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+            current_location=location,
+        )
+
+    @pytest.fixture
+    def new_location(self):
+        return LocationFactory(name="Bulk Target")
+
+    def test_transfer_excludes_other_department_asset(
+        self, asset, other_asset, dept_manager_user, new_location
+    ):
+        from assets.services.bulk import bulk_transfer
+
+        result = bulk_transfer(
+            [asset.pk, other_asset.pk], new_location.pk, dept_manager_user
+        )
+        assert result["transferred"] == 1
+        assert result["excluded"] == ["Other Dept Prop"]
+        other_asset.refresh_from_db()
+        assert other_asset.current_location != new_location
+
+    def test_transfer_by_member_moves_nothing(
+        self, asset, member_user, new_location
+    ):
+        from assets.services.bulk import bulk_transfer
+
+        result = bulk_transfer([asset.pk], new_location.pk, member_user)
+        assert result["transferred"] == 0
+        asset.refresh_from_db()
+        assert asset.current_location != new_location
+
+    def test_view_warns_about_excluded_transfer(
+        self, dept_manager_client, asset, other_asset, new_location
+    ):
+        # Permission boundary: direct view input on purpose.
+        resp = dept_manager_client.post(
+            reverse("assets:bulk_actions"),
+            {
+                "asset_ids": [asset.pk, other_asset.pk],
+                "bulk_action": "transfer",
+                "location": new_location.pk,
+            },
+            follow=True,
+        )
+        texts = [str(m) for m in resp.context["messages"]]
+        assert any("Other Dept Prop" in t and "permission" in t for t in texts)
+
+    def test_edit_location_excludes_other_department_asset(
+        self, asset, other_asset, dept_manager_user, new_location
+    ):
+        from assets.services.bulk import bulk_edit
+
+        count, failures = bulk_edit(
+            [asset.pk, other_asset.pk],
+            dept_manager_user,
+            location_id=new_location.pk,
+        )
+        assert count == 1
+        assert failures == [
+            "Other Dept Prop: You do not have permission to change "
+            "this asset."
+        ]
+        other_asset.refresh_from_db()
+        assert other_asset.current_location != new_location
+
+    def test_member_edits_any_draft_but_not_active_assets(
+        self, member_user, asset, new_location
+    ):
+        """S2.10.3-04: drafts are shared; active assets are not."""
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(status="draft")
+        count, _ = bulk_edit(
+            [draft.pk, asset.pk], member_user, location_id=new_location.pk
+        )
+        assert count == 1
+        draft.refresh_from_db()
+        asset.refresh_from_db()
+        assert draft.current_location == new_location
+        assert asset.current_location != new_location
+
+    def test_drafts_activate_includes_other_department_draft(
+        self, dept_manager_client, category, location
+    ):
+        """S2.10.3-04: any manager can work on any draft."""
+        own = AssetFactory(
+            status="draft", category=category, current_location=location
+        )
+        other = AssetFactory(
+            status="draft",
+            category=CategoryFactory(department=DepartmentFactory()),
+            current_location=location,
+        )
+        # Permission boundary: direct view input on purpose.
+        dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "activate", "selected": [own.pk, other.pk]},
+        )
+        own.refresh_from_db()
+        other.refresh_from_db()
+        assert own.status == "active"
+        assert other.status == "active"
+
+    def test_member_cannot_dispose_drafts(self, member_client, member_user):
+        own = AssetFactory(status="draft", created_by=member_user)
+        # Permission boundary: direct view input on purpose.
+        member_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {"action": "delete", "selected": [own.pk]},
+        )
+        own.refresh_from_db()
+        assert own.status == "draft"
+
+    def test_drafts_activate_rejects_inactive_location(
+        self, dept_manager_client, category
+    ):
+        """S7.6.2: an inactive location cannot accept assets."""
+        draft = AssetFactory(status="draft", category=category)
+        closed = LocationFactory(name="Closed Store", is_active=False)
+        # Security boundary: posts a location the form does not offer.
+        resp = dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": category.pk,
+                "location": closed.pk,
+            },
+            follow=True,
+        )
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+        assert (
+            "The selected location is inactive and cannot accept assets."
+            in [str(m) for m in resp.context["messages"]]
+        )
+
+    def test_drafts_activate_unknown_category_is_404(
+        self, dept_manager_client, location
+    ):
+        draft = AssetFactory(status="draft")
+        # Security boundary: posts a category id that does not exist.
+        resp = dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": 999999,
+                "location": location.pk,
+            },
+        )
+        assert resp.status_code == 404
+
+    @pytest.fixture
+    def closed_category(self):
+        return CategoryFactory(department=DepartmentFactory(is_active=False))
+
+    def test_drafts_activate_rejects_inactive_department_category(
+        self, dept_manager_client, location, closed_category
+    ):
+        """S7.7.2: a deactivated department is read-only."""
+        draft = AssetFactory(status="draft")
+        # Security boundary: posts a category the user cannot use.
+        dept_manager_client.post(
+            reverse("assets:drafts_bulk_action"),
+            {
+                "action": "activate",
+                "selected": [draft.pk],
+                "category": closed_category.pk,
+                "location": location.pk,
+            },
+        )
+        draft.refresh_from_db()
+        assert draft.status == "draft"
+        assert draft.category != closed_category
+
+    def test_bulk_edit_rejects_inactive_department_category(
+        self, member_user, closed_category
+    ):
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(status="draft")
+        count, failures = bulk_edit(
+            [draft.pk], member_user, category_id=closed_category.pk
+        )
+        assert count == 0
+        assert failures
+        draft.refresh_from_db()
+        assert draft.category != closed_category
+
+    def test_admin_can_assign_inactive_department_category(
+        self, admin_user, closed_category
+    ):
+        from assets.services.bulk import bulk_edit
+
+        draft = AssetFactory(status="draft")
+        count, _ = bulk_edit(
+            [draft.pk], admin_user, category_id=closed_category.pk
+        )
+        assert count == 1

@@ -45,12 +45,14 @@ class TestStocktakeViews:
         response = client_logged_in.get(reverse("assets:stocktake_list"))
         assert response.status_code == 200
 
-    def test_stocktake_start_renders(self, client_logged_in, location):
-        response = client_logged_in.get(reverse("assets:stocktake_start"))
+    def test_stocktake_start_renders(self, dept_manager_client, location):
+        response = dept_manager_client.get(reverse("assets:stocktake_start"))
         assert response.status_code == 200
 
-    def test_stocktake_start_creates_session(self, client_logged_in, location):
-        response = client_logged_in.post(
+    def test_stocktake_start_creates_session(
+        self, dept_manager_client, location
+    ):
+        response = dept_manager_client.post(
             reverse("assets:stocktake_start"),
             {"location": location.pk},
         )
@@ -58,12 +60,12 @@ class TestStocktakeViews:
         assert StocktakeSession.objects.filter(location=location).exists()
 
     def test_stocktake_start_resumes_existing(
-        self, client_logged_in, location, user
+        self, dept_manager_client, location, user
     ):
         session = StocktakeSession.objects.create(
             location=location, started_by=user
         )
-        response = client_logged_in.post(
+        response = dept_manager_client.post(
             reverse("assets:stocktake_start"),
             {"location": location.pk},
         )
@@ -80,12 +82,12 @@ class TestStocktakeViews:
         assert response.status_code == 200
 
     def test_stocktake_confirm_by_id(
-        self, client_logged_in, asset, location, user
+        self, dept_manager_client, asset, location, user
     ):
         session = StocktakeSession.objects.create(
             location=location, started_by=user
         )
-        response = client_logged_in.post(
+        response = dept_manager_client.post(
             reverse("assets:stocktake_confirm", args=[session.pk]),
             {"asset_id": asset.pk},
         )
@@ -93,12 +95,12 @@ class TestStocktakeViews:
         assert asset in session.confirmed_assets.all()
 
     def test_stocktake_confirm_by_barcode(
-        self, client_logged_in, asset, location, user
+        self, dept_manager_client, asset, location, user
     ):
         session = StocktakeSession.objects.create(
             location=location, started_by=user
         )
-        response = client_logged_in.post(
+        response = dept_manager_client.post(
             reverse("assets:stocktake_confirm", args=[session.pk]),
             {"code": asset.barcode},
         )
@@ -1002,3 +1004,113 @@ class TestV240StocktakeSummary:
         assert location.name in content
         # Should show counts or summary data
         assert "confirmed" in content.lower() or "1" in content
+
+
+@pytest.mark.django_db
+class TestStocktakeRespectsRolesAndDepartments:
+    """S2.7.1-05, S2.10.3-01: stocktake is for System Admins and for
+    Department Managers in their own departments."""
+
+    @pytest.fixture
+    def other_asset(self, location):
+        return AssetFactory(
+            name="Other Dept Prop",
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+            current_location=location,
+        )
+
+    def test_member_cannot_start_stocktake(self, member_client, location):
+        # Permission boundary: direct view input on purpose.
+        resp = member_client.post(
+            reverse("assets:stocktake_start"), {"location": location.pk}
+        )
+        assert resp.status_code == 403
+        assert not StocktakeSession.objects.exists()
+
+    def test_member_cannot_confirm_in_stocktake(
+        self, member_client, location, admin_user, asset
+    ):
+        session = StocktakeSession.objects.create(
+            location=location, started_by=admin_user
+        )
+        # Permission boundary: direct view input on purpose.
+        resp = member_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"asset_id": asset.pk},
+        )
+        assert resp.status_code == 403
+
+    def test_manager_cannot_transfer_other_department_asset(
+        self, dept_manager_client, dept_manager_user, other_asset
+    ):
+        target = LocationFactory(name="Stocktake Room")
+        session = StocktakeSession.objects.create(
+            location=target, started_by=dept_manager_user
+        )
+        # Permission boundary: direct view input on purpose.
+        dept_manager_client.post(
+            reverse("assets:stocktake_confirm", args=[session.pk]),
+            {"transfer_asset_id": other_asset.pk},
+        )
+        other_asset.refresh_from_db()
+        assert other_asset.current_location != target
+
+    def test_complete_marks_only_own_department_assets_missing(
+        self,
+        dept_manager_client,
+        dept_manager_user,
+        asset,
+        other_asset,
+        location,
+    ):
+        session = StocktakeSession.objects.create(
+            location=location, started_by=dept_manager_user
+        )
+        resp = dept_manager_client.post(
+            reverse("assets:stocktake_complete", args=[session.pk]),
+            {"action": "complete", "mark_missing": "1"},
+            follow=True,
+        )
+        asset.refresh_from_db()
+        other_asset.refresh_from_db()
+        assert asset.status == "missing"
+        assert other_asset.status == "active"
+        texts = [str(m) for m in resp.context["messages"]]
+        assert any("Other Dept Prop" in t for t in texts)
+
+    def test_complete_leaves_other_department_items_alone(
+        self,
+        dept_manager_client,
+        dept_manager_user,
+        other_asset,
+        location,
+        member_user,
+    ):
+        """Checked-out assets of other departments get no audit record
+        and their stocktake item stays expected."""
+        other_asset.checked_out_to = member_user
+        other_asset.save()
+        session = StocktakeSession.objects.create(
+            location=location, started_by=dept_manager_user
+        )
+        item = StocktakeItemFactory(
+            session=session, asset=other_asset, status="expected"
+        )
+        dept_manager_client.post(
+            reverse("assets:stocktake_complete", args=[session.pk]),
+            {"action": "complete", "mark_missing": "1"},
+        )
+        item.refresh_from_db()
+        assert item.status == "expected"
+        assert not Transaction.objects.filter(
+            asset=other_asset, action="audit"
+        ).exists()
+
+    def test_member_sees_no_start_button(self, member_client):
+        resp = member_client.get(reverse("assets:stocktake_list"))
+        assert reverse("assets:stocktake_start").encode() not in resp.content
+
+    def test_manager_sees_start_button(self, dept_manager_client):
+        resp = dept_manager_client.get(reverse("assets:stocktake_list"))
+        assert reverse("assets:stocktake_start").encode() in resp.content
