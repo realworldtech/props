@@ -47,14 +47,12 @@ User = get_user_model()
 
 
 class TestNFCViews:
-    def test_nfc_add_renders(self, client_logged_in, asset):
-        response = client_logged_in.get(
-            reverse("assets:nfc_add", args=[asset.pk])
-        )
+    def test_nfc_add_renders(self, admin_client, asset):
+        response = admin_client.get(reverse("assets:nfc_add", args=[asset.pk]))
         assert response.status_code == 200
 
-    def test_nfc_add_creates_tag(self, client_logged_in, asset):
-        response = client_logged_in.post(
+    def test_nfc_add_creates_tag(self, admin_client, asset):
+        response = admin_client.post(
             reverse("assets:nfc_add", args=[asset.pk]),
             {"tag_id": "NFC-NEW-001", "notes": "Test NFC"},
         )
@@ -63,11 +61,11 @@ class TestNFCViews:
             tag_id="NFC-NEW-001", asset=asset
         ).exists()
 
-    def test_nfc_add_conflict(self, client_logged_in, asset, user):
+    def test_nfc_add_conflict(self, admin_client, asset, user):
         NFCTag.objects.create(
             tag_id="NFC-CONFLICT", asset=asset, assigned_by=user
         )
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:nfc_add", args=[asset.pk]),
             {"tag_id": "NFC-CONFLICT"},
         )
@@ -81,11 +79,11 @@ class TestNFCViews:
             == 1
         )
 
-    def test_nfc_remove(self, client_logged_in, asset, user):
+    def test_nfc_remove(self, admin_client, asset, user):
         nfc = NFCTag.objects.create(
             tag_id="NFC-REMOVE", asset=asset, assigned_by=user
         )
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:nfc_remove", args=[asset.pk, nfc.pk]),
         )
         assert response.status_code == 302
@@ -444,11 +442,9 @@ class TestScanLookupSerial:
 class TestNFCSelectForUpdate:
     """M8: NFC reassignment uses select_for_update (S7.4.4)."""
 
-    def test_nfc_add_uses_atomic_transaction(
-        self, client_logged_in, asset, user
-    ):
+    def test_nfc_add_uses_atomic_transaction(self, admin_client, asset, user):
         """Verify NFC add operates within an atomic transaction."""
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:nfc_add", args=[asset.pk]),
             {"tag_id": "NFC-ATOMIC-001", "notes": "Test atomic"},
         )
@@ -456,11 +452,11 @@ class TestNFCSelectForUpdate:
         assert NFCTag.objects.filter(tag_id="NFC-ATOMIC-001").exists()
 
     def test_nfc_add_conflict_check_with_select_for_update(
-        self, client_logged_in, asset, user
+        self, admin_client, asset, user
     ):
         """Verify conflict detection under select_for_update."""
         NFCTag.objects.create(tag_id="NFC-RACE", asset=asset, assigned_by=user)
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:nfc_add", args=[asset.pk]),
             {"tag_id": "NFC-RACE"},
         )
@@ -474,13 +470,13 @@ class TestNFCSelectForUpdate:
         )
 
     def test_nfc_remove_uses_atomic_transaction(
-        self, client_logged_in, asset, user
+        self, admin_client, asset, user
     ):
         """Verify NFC remove operates within an atomic transaction."""
         nfc = NFCTag.objects.create(
             tag_id="NFC-ATOMIC-REM", asset=asset, assigned_by=user
         )
-        response = client_logged_in.post(
+        response = admin_client.post(
             reverse("assets:nfc_remove", args=[asset.pk, nfc.pk]),
         )
         assert response.status_code == 302
@@ -884,16 +880,16 @@ class TestPrintLabelViews:
 class TestNFCViewsExtended:
     """V586 S4.4.2.1: Web NFC API support — NFC add/remove/history."""
 
-    def test_nfc_add_view_renders(self, client_logged_in, asset):
+    def test_nfc_add_view_renders(self, admin_client, asset):
         """NFC add form renders."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.get(url)
+        response = admin_client.get(url)
         assert response.status_code == 200
 
-    def test_nfc_add_creates_tag(self, client_logged_in, asset, user):
+    def test_nfc_add_creates_tag(self, admin_client, asset, user):
         """Posting NFC tag ID creates an NFC tag assignment."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.post(
+        response = admin_client.post(
             url, {"tag_id": "NFC-TEST-001", "notes": "Test tag"}
         )
         assert response.status_code == 302
@@ -901,15 +897,11 @@ class TestNFCViewsExtended:
             tag_id="NFC-TEST-001", asset=asset
         ).exists()
 
-    def test_nfc_add_duplicate_tag_rejected(
-        self, client_logged_in, asset, user
-    ):
+    def test_nfc_add_duplicate_tag_rejected(self, admin_client, asset, user):
         """Cannot assign same NFC tag to two assets."""
         NFCTag.objects.create(tag_id="NFC-DUPE", asset=asset, assigned_by=user)
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.post(
-            url, {"tag_id": "NFC-DUPE", "notes": ""}
-        )
+        response = admin_client.post(url, {"tag_id": "NFC-DUPE", "notes": ""})
         assert response.status_code == 302
         # Only one active tag with this ID
         assert (
@@ -920,13 +912,13 @@ class TestNFCViewsExtended:
             == 1
         )
 
-    def test_nfc_remove(self, client_logged_in, asset, user):
+    def test_nfc_remove(self, admin_client, asset, user):
         """Removing an NFC tag sets removed_at."""
         tag = NFCTag.objects.create(
             tag_id="NFC-RM-001", asset=asset, assigned_by=user
         )
         url = reverse("assets:nfc_remove", args=[asset.pk, tag.pk])
-        response = client_logged_in.post(url, {"notes": "No longer needed"})
+        response = admin_client.post(url, {"notes": "No longer needed"})
         assert response.status_code == 302
         tag.refresh_from_db()
         assert tag.removed_at is not None
@@ -967,32 +959,32 @@ class TestNFCViewsExtended:
 class TestNFCWriteOnAdd:
     """S2.5.4-05: NFC add page includes scan+write flow for Web NFC."""
 
-    def test_nfc_add_includes_nfc_js(self, client_logged_in, asset):
+    def test_nfc_add_includes_nfc_js(self, admin_client, asset):
         """NFC add page includes the nfc.js script."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.get(url)
+        response = admin_client.get(url)
         assert response.status_code == 200
         content = response.content.decode()
         assert "nfc.js" in content
 
-    def test_nfc_add_has_scan_button(self, client_logged_in, asset):
+    def test_nfc_add_has_scan_button(self, admin_client, asset):
         """NFC add page has a scan NFC button (hidden by default)."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.get(url)
+        response = admin_client.get(url)
         content = response.content.decode()
         assert "Scan NFC Tag" in content
 
-    def test_nfc_add_has_write_confirmation(self, client_logged_in, asset):
+    def test_nfc_add_has_write_confirmation(self, admin_client, asset):
         """NFC add page has write confirmation prompt text."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.get(url)
+        response = admin_client.get(url)
         content = response.content.decode()
         assert "Program this tag" in content
 
-    def test_nfc_add_includes_site_url(self, client_logged_in, asset):
+    def test_nfc_add_includes_site_url(self, admin_client, asset):
         """NFC add page includes SITE_URL for NDEF URL generation."""
         url = reverse("assets:nfc_add", args=[asset.pk])
-        response = client_logged_in.get(url)
+        response = admin_client.get(url)
         content = response.content.decode()
         assert "data-site-url" in content
 

@@ -265,7 +265,7 @@ class TestEdgeCaseBulkStateChangePartialFailures:
     """S7.5.5: Bulk state change handles partial failures."""
 
     def test_bulk_state_change_mixed_transitions(
-        self, user, category, location
+        self, user, admin_user, category, location
     ):
         """Bulk status change succeeds for valid assets and reports
         failures for invalid ones."""
@@ -290,7 +290,7 @@ class TestEdgeCaseBulkStateChangePartialFailures:
         )
         disposed_asset.save()
         success_count, failures = bulk_status_change(
-            [active_asset.pk, disposed_asset.pk], "retired", user
+            [active_asset.pk, disposed_asset.pk], "retired", admin_user
         )
         assert success_count == 1
         assert len(failures) == 1
@@ -301,7 +301,7 @@ class TestEdgeCaseBulkStateChangePartialFailures:
         assert disposed_asset.status == "disposed"
 
     def test_bulk_state_change_checked_out_blocked(
-        self, user, second_user, category, location
+        self, user, admin_user, second_user, category, location
     ):
         """Bulk retire on a checked-out asset fails for that asset."""
         from assets.services.bulk import bulk_status_change
@@ -318,13 +318,15 @@ class TestEdgeCaseBulkStateChangePartialFailures:
         checked_out.checked_out_to = second_user
         checked_out.save()
         success_count, failures = bulk_status_change(
-            [checked_out.pk], "retired", user
+            [checked_out.pk], "retired", admin_user
         )
         assert success_count == 0
         assert len(failures) == 1
         assert "Checked Out" in failures[0]
 
-    def test_bulk_state_change_all_succeed(self, user, category, location):
+    def test_bulk_state_change_all_succeed(
+        self, user, admin_user, category, location
+    ):
         """When all assets can transition, all succeed with no failures."""
         from assets.services.bulk import bulk_status_change
 
@@ -347,7 +349,7 @@ class TestEdgeCaseBulkStateChangePartialFailures:
         )
         a2.save()
         success_count, failures = bulk_status_change(
-            [a1.pk, a2.pk], "retired", user
+            [a1.pk, a2.pk], "retired", admin_user
         )
         assert success_count == 2
         assert len(failures) == 0

@@ -5,6 +5,7 @@ from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from assets.models import AssetKit, AssetSerial, Transaction
+from assets.services.state import recover_on_checkin
 
 
 def _check_availability_recursive(kit_asset, path=None):
@@ -292,10 +293,12 @@ def kit_checkin(kit_asset, user, to_location=None):
             transactions.extend(txns)
 
         # Check in kit itself
+        kit_was_out = kit_asset.checked_out_to_id is not None
         kit_asset.checked_out_to = None
         if to_location:
             kit_asset.current_location = to_location
         kit_asset.save(update_fields=["checked_out_to", "current_location"])
+        recover_on_checkin(kit_asset, user, was_checked_out=kit_was_out)
 
         Transaction.objects.create(
             asset=kit_asset,
@@ -358,6 +361,7 @@ def _checkin_component(comp, user, timestamp, kit_ref, to_location):
             if to_location:
                 asset.current_location = to_location
             asset.save(update_fields=["checked_out_to", "current_location"])
+            recover_on_checkin(asset, user, was_checked_out=True)
             txn = Transaction.objects.create(
                 asset=asset,
                 user=user,

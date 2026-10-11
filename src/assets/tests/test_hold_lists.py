@@ -2638,3 +2638,47 @@ class TestHoldListLockUnlockOwnership:
         url = reverse("assets:holdlist_unlock", args=[hl.pk])
         resp = admin_client.post(url)
         assert resp.status_code == 302
+
+
+@pytest.mark.django_db
+class TestHoldListManagerRoleIsScoped:
+    """US-DM-038 to US-DM-040, S2.10.3-01: a manager manages hold lists
+    of their own departments only."""
+
+    @pytest.mark.parametrize(
+        "url_name",
+        [
+            "holdlist_edit",
+            "holdlist_delete",
+            "holdlist_lock",
+            "holdlist_unlock",
+        ],
+    )
+    def test_manager_cannot_manage_other_department_hold_list(
+        self, dept_manager_client, url_name
+    ):
+        hold_list = HoldListFactory(department=DepartmentFactory())
+        # Permission boundary: direct view input on purpose.
+        resp = dept_manager_client.post(
+            reverse(f"assets:{url_name}", args=[hold_list.pk])
+        )
+        assert resp.status_code == 403
+
+    def test_manager_can_lock_own_department_hold_list(
+        self, dept_manager_client, department
+    ):
+        hold_list = HoldListFactory(department=department)
+        dept_manager_client.post(
+            reverse("assets:holdlist_lock", args=[hold_list.pk])
+        )
+        hold_list.refresh_from_db()
+        assert hold_list.is_locked
+
+    def test_detail_hides_edit_for_other_department_manager(
+        self, dept_manager_client
+    ):
+        hold_list = HoldListFactory(department=DepartmentFactory())
+        resp = dept_manager_client.get(
+            reverse("assets:holdlist_detail", args=[hold_list.pk])
+        )
+        assert resp.context["can_edit_holdlist"] is False

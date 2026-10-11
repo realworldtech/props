@@ -4,6 +4,7 @@ from django.db import transaction as db_transaction
 
 from ..models import Asset, AssetImage, AssetSerial, NFCTag, Transaction
 from .permissions import get_user_role
+from .state import dispose_asset
 
 
 def merge_assets(primary: Asset, duplicates: list[Asset], user) -> Asset:
@@ -185,14 +186,11 @@ def merge_assets(primary: Asset, duplicates: list[Asset], user) -> Asset:
             source_barcode = dup.barcode
             transfer_barcode = bool(source_barcode and not primary.barcode)
 
-            # Dispose the duplicate
-            dup.status = "disposed"
-            dup.notes = (
-                f"{dup.notes}\n\nMerged into "
-                f"{primary.barcode or 'primary'} "
-                f"by {user}".strip()
-            )
-            dup.save()
+            # Dispose the duplicate (S2.2.3-13)
+            merged_into = f"Merged into {primary.barcode or 'primary'}"
+            dup.notes = f"{dup.notes}\n\n{merged_into} by {user}".strip()
+            dup.save(update_fields=["notes"])
+            dispose_asset(dup, user, notes=merged_into)
 
             if transfer_barcode:
                 # Transfer barcode: clear source first (to avoid

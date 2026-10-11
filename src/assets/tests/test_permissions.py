@@ -283,6 +283,284 @@ class TestCanHandoverPermission:
         assert can_handover_asset(user, asset) is True
 
 
+class TestCanChangeStatusPermission:
+    """S2.2.3-03: only managers and admins change status manually."""
+
+    def test_admin_can_change_status(self, admin_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(admin_user, asset) is True
+
+    def test_department_manager_can_change_status(
+        self, dept_manager_user, asset
+    ):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(dept_manager_user, asset) is True
+
+    def test_manager_of_inactive_department_cannot_change_status(
+        self, dept_manager_user, asset, department
+    ):
+        from assets.services.permissions import can_change_status
+
+        department.is_active = False
+        department.save()
+        assert can_change_status(dept_manager_user, asset) is False
+
+    def test_member_cannot_change_status(self, member_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(member_user, asset) is False
+
+    def test_member_cannot_change_status_of_own_draft(
+        self, member_user, draft_asset
+    ):
+        from assets.services.permissions import can_change_status
+
+        draft_asset.created_by = member_user
+        draft_asset.save()
+        assert can_change_status(member_user, draft_asset) is False
+
+    def test_viewer_cannot_change_status(self, viewer_user, asset):
+        from assets.services.permissions import can_change_status
+
+        assert can_change_status(viewer_user, asset) is False
+
+
+@pytest.mark.django_db
+class TestManagerRoleIsScopedToManagedDepartments:
+    """S2.8.3-05, S2.2.3-03: a Department Manager has the manager role
+    only in the departments they manage."""
+
+    @pytest.fixture
+    def other_asset(self):
+        return AssetFactory(
+            status="active",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+
+    def test_role_in_managed_department_is_manager(
+        self, dept_manager_user, department
+    ):
+        from assets.services.permissions import get_user_role
+
+        role = get_user_role(dept_manager_user, department)
+        assert role == "department_manager"
+
+    def test_role_in_other_department_is_member(self, dept_manager_user):
+        from assets.services.permissions import get_user_role
+
+        role = get_user_role(dept_manager_user, DepartmentFactory())
+        assert role == "member"
+
+    def test_role_without_department_is_manager(self, dept_manager_user):
+        from assets.services.permissions import get_user_role
+
+        assert get_user_role(dept_manager_user) == "department_manager"
+
+    def test_manager_cannot_write_other_department_asset(
+        self, dept_manager_user, other_asset
+    ):
+        from assets.services.permissions import (
+            can_change_status,
+            can_delete_asset,
+            can_edit_asset,
+            can_handover_asset,
+        )
+
+        assert can_edit_asset(dept_manager_user, other_asset) is False
+        assert can_delete_asset(dept_manager_user, other_asset) is False
+        assert can_handover_asset(dept_manager_user, other_asset) is False
+        assert can_change_status(dept_manager_user, other_asset) is False
+
+    def test_manager_can_still_check_out_other_department_asset(
+        self, dept_manager_user, other_asset
+    ):
+        from assets.services.permissions import can_checkout_asset
+
+        assert can_checkout_asset(dept_manager_user, other_asset) is True
+
+    def test_manager_gets_403_on_other_department_status_page(
+        self, dept_manager_client, other_asset
+    ):
+        url = reverse(
+            "assets:asset_change_status", args=[other_asset.pk, "missing"]
+        )
+        assert dept_manager_client.get(url).status_code == 403
+
+    @pytest.mark.parametrize(
+        "url_name,extra",
+        [
+            ("image_upload", None),
+            ("image_delete", "image"),
+            ("nfc_add", None),
+            ("nfc_remove", "nfc"),
+            ("clear_barcode", None),
+            ("asset_convert_serialisation", None),
+            ("kit_add_component", None),
+            ("kit_remove_component", "kit_component"),
+        ],
+    )
+    def test_manager_cannot_change_other_department_asset_parts(
+        self, dept_manager_client, other_asset, url_name, extra
+    ):
+        """S2.10.3-01: edit, kit management and labels of an asset are
+        for the managers of its department."""
+        other_asset.is_kit = True
+        other_asset.save()
+        args = [other_asset.pk]
+        if extra == "image":
+            args.append(AssetImageFactory(asset=other_asset).pk)
+        elif extra == "nfc":
+            args.append(NFCTagFactory(asset=other_asset).pk)
+        elif extra == "kit_component":
+            args.append(AssetKitFactory(kit=other_asset).pk)
+        # Security boundary: empty payload on purpose.
+        resp = dept_manager_client.post(
+            reverse(f"assets:{url_name}", args=args)
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.parametrize(
+        "url_name,extra",
+        [
+            ("image_upload", None),
+            ("image_delete", "image"),
+            ("nfc_add", None),
+            ("nfc_remove", "nfc"),
+        ],
+    )
+    def test_member_cannot_change_parts_of_asset_they_do_not_own(
+        self, member_client, asset, url_name, extra
+    ):
+        """S2.10.3-04: Members edit only their own drafts."""
+        args = [asset.pk]
+        if extra == "image":
+            args.append(AssetImageFactory(asset=asset).pk)
+        elif extra == "nfc":
+            args.append(NFCTagFactory(asset=asset).pk)
+        # Security boundary: empty payload on purpose.
+        resp = member_client.post(reverse(f"assets:{url_name}", args=args))
+        assert resp.status_code == 403
+
+    @pytest.mark.parametrize(
+        "url_name",
+        [
+            "image_set_primary",
+            "ai_analyse",
+            "ai_apply_suggestions",
+            "ai_reanalyse",
+        ],
+    )
+    @pytest.mark.parametrize("who", ["viewer", "other_manager"])
+    def test_image_and_ai_writes_need_edit_permission(
+        self,
+        viewer_client,
+        dept_manager_client,
+        asset,
+        other_asset,
+        url_name,
+        who,
+    ):
+        """S2.10.3-05: every view checks permissions. US-MB-030: AI
+        suggestions are applied by users who can edit the asset."""
+        client, target = (
+            (viewer_client, asset)
+            if who == "viewer"
+            else (dept_manager_client, other_asset)
+        )
+        image = AssetImageFactory(asset=target)
+        # Security boundary: empty payload on purpose.
+        resp = client.post(
+            reverse(f"assets:{url_name}", args=[target.pk, image.pk])
+        )
+        assert resp.status_code == 403
+
+    def _detail(self, client, asset):
+        return client.get(
+            reverse("assets:asset_detail", args=[asset.pk])
+        ).content.decode()
+
+    def test_viewer_sees_no_image_or_nfc_actions(self, viewer_client, asset):
+        image = AssetImageFactory(asset=asset)
+        content = self._detail(viewer_client, asset)
+        for url in (
+            reverse("assets:image_upload", args=[asset.pk]),
+            reverse("assets:image_delete", args=[asset.pk, image.pk]),
+            reverse("assets:image_set_primary", args=[asset.pk, image.pk]),
+            reverse("assets:nfc_add", args=[asset.pk]),
+        ):
+            assert url not in content
+
+    def test_manager_sees_image_and_nfc_actions_in_own_department(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        assert reverse("assets:image_upload", args=[asset.pk]) in content
+        assert reverse("assets:nfc_add", args=[asset.pk]) in content
+
+    def test_manager_sees_no_convert_or_clear_barcode_in_other_department(
+        self, dept_manager_client, other_asset
+    ):
+        content = self._detail(dept_manager_client, other_asset)
+        for name in ("asset_convert_serialisation", "clear_barcode"):
+            assert reverse(f"assets:{name}", args=[other_asset.pk]) not in (
+                content
+            )
+
+    def test_manager_sees_convert_and_clear_barcode_in_own_department(
+        self, dept_manager_client, asset
+    ):
+        content = self._detail(dept_manager_client, asset)
+        for name in ("asset_convert_serialisation", "clear_barcode"):
+            assert reverse(f"assets:{name}", args=[asset.pk]) in content
+
+    def test_manager_keeps_manage_menu_on_other_department_asset(
+        self, dept_manager_client, other_asset
+    ):
+        """The per-asset flag must not hide the global Manage menu."""
+        content = self._detail(dept_manager_client, other_asset)
+        assert reverse("assets:stocktake_list") in content
+
+    def test_manager_cannot_move_category_to_other_department(
+        self, dept_manager_client, category
+    ):
+        """S2.10.3-03: managers manage categories of their departments."""
+        foreign = DepartmentFactory()
+        # Security boundary: posts a department the user does not manage.
+        resp = dept_manager_client.post(
+            reverse("assets:category_edit", args=[category.pk]),
+            {
+                "name": category.name,
+                "description": "",
+                "icon": "",
+                "department": foreign.pk,
+            },
+        )
+        assert resp.status_code == 403
+        category.refresh_from_db()
+        assert category.department != foreign
+
+    def test_kit_contents_hides_manage_controls_for_other_department(
+        self, dept_manager_client, other_asset
+    ):
+        other_asset.is_kit = True
+        other_asset.save()
+        resp = dept_manager_client.get(
+            reverse("assets:kit_contents", args=[other_asset.pk])
+        )
+        assert resp.context["can_manage"] is False
+
+    def test_manager_sees_no_edit_link_on_other_department_asset(
+        self, dept_manager_client, other_asset
+    ):
+        resp = dept_manager_client.get(
+            reverse("assets:asset_detail", args=[other_asset.pk])
+        )
+        edit_url = reverse("assets:asset_edit", args=[other_asset.pk])
+        assert edit_url.encode() not in resp.content
+
+
 @pytest.mark.django_db
 class TestDeptManagerDeactivation:
     """S7.7 — Permission edge cases for deactivated departments."""
@@ -593,3 +871,66 @@ class TestUserManagementAdmin:
         url = reverse("admin:accounts_customuser_changelist")
         response = client_logged_in.get(url)
         assert response.status_code == 302
+
+
+@pytest.mark.django_db
+class TestAnyoneCanEditDrafts:
+    """S2.10.3-04: drafts are shared work in progress."""
+
+    @pytest.fixture
+    def others_draft(self):
+        return AssetFactory(
+            status="draft",
+            category=CategoryFactory(department=DepartmentFactory()),
+        )
+
+    def test_member_can_edit_draft_made_by_someone_else(
+        self, member_user, others_draft
+    ):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(member_user, others_draft) is True
+
+    def test_manager_can_edit_draft_of_other_department(
+        self, dept_manager_user, others_draft
+    ):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(dept_manager_user, others_draft) is True
+
+    def test_viewer_cannot_edit_draft(self, viewer_user, others_draft):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(viewer_user, others_draft) is False
+
+    def test_member_cannot_edit_active_asset(self, member_user, asset):
+        from assets.services.permissions import can_edit_asset
+
+        assert can_edit_asset(member_user, asset) is False
+
+    def test_member_can_add_image_and_nfc_to_others_draft(
+        self, member_client, others_draft
+    ):
+        detail = member_client.get(
+            reverse("assets:asset_detail", args=[others_draft.pk])
+        ).content.decode()
+        for name in ("image_upload", "nfc_add"):
+            url = reverse(f"assets:{name}", args=[others_draft.pk])
+            assert url in detail
+        resp = member_client.get(
+            reverse("assets:nfc_add", args=[others_draft.pk])
+        )
+        assert resp.status_code == 200
+
+    def test_no_one_but_admins_edits_drafts_of_inactive_department(
+        self, member_user, dept_manager_user, admin_user, others_draft
+    ):
+        """S7.7.2: a deactivated department is read-only."""
+        from assets.services.permissions import can_edit_asset
+
+        dept = others_draft.category.department
+        dept.is_active = False
+        dept.save()
+        assert can_edit_asset(member_user, others_draft) is False
+        assert can_edit_asset(dept_manager_user, others_draft) is False
+        assert can_edit_asset(admin_user, others_draft) is True

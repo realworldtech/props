@@ -29,6 +29,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.http import (
+    Http404,
     HttpResponse,
     HttpResponseForbidden,
     HttpResponseNotAllowed,
@@ -40,6 +41,7 @@ from django.utils import timezone
 from .forms import (
     AssetForm,
     AssetImageForm,
+    AssetStatusChangeForm,
     CategoryForm,
     LocationForm,
     QuickCaptureForm,
@@ -63,13 +65,17 @@ from .models import (
     VirtualBarcode,
 )
 from .services.permissions import (
+    can_assign_category,
+    can_change_status,
     can_checkout_asset,
     can_delete_asset,
     can_edit_asset,
     can_handover_asset,
+    can_manage_asset,
     get_user_role,
 )
 from .services.search import build_asset_search
+from .services.state import dispose_asset, recover_on_checkin
 
 BARCODE_PATTERN = re.compile(r"^[A-Z]+-[A-Z0-9]+$", re.IGNORECASE)
 
@@ -498,35 +504,34 @@ def asset_detail(request, pk):
     can_delete = can_delete_asset(request.user, asset)
     can_checkout = can_checkout_asset(request.user, asset)
     can_handover = can_handover_asset(request.user, asset)
+    status_actions = []
+    if can_change_status(request.user, asset):
+        from assets.services.state import status_actions as get_status_actions
+
+        status_actions = get_status_actions(asset)
 
     from assets.services.holdlists import get_active_hold_items
 
     active_holds = get_active_hold_items(asset)
 
-    # V494: Conversion link for managers/admins
-    role = get_user_role(request.user)
-    can_convert = role in ("system_admin", "department_manager")
+    # V494: conversion and barcode actions for the asset's managers
+    can_manage = can_manage_asset(request.user, asset)
+
+    disposal = None
+    if asset.status == "disposed":
+        disposal = (
+            asset.transactions.filter(
+                action="note", notes__startswith="Status:"
+            )
+            .filter(notes__contains="→ Disposed")
+            .select_related("user", "from_location")
+            .order_by("-timestamp")
+            .first()
+        )
 
     member_of_kits = AssetKit.objects.filter(component=asset).select_related(
         "kit"
     )
-
-    # S7.5.4: Show a warning when the asset is checked out and
-    # could be marked as missing
-    checkout_warning = None
-    if asset.is_checked_out and asset.status == "active":
-        borrower = asset.checked_out_to
-        borrower_name = (
-            borrower.get_full_name() or borrower.username
-            if borrower
-            else "unknown"
-        )
-        checkout_warning = (
-            f"Warning: This asset is currently checked out to "
-            f"{borrower_name}. Changing the status to missing, "
-            f"lost, or stolen requires explicit confirmation "
-            f"acknowledging that the asset is checked out."
-        )
 
     # V492: Serialised assets — active + archived serial sections
     active_serials = []
@@ -592,8 +597,10 @@ def asset_detail(request, pk):
             "can_handover": can_handover,
             "active_holds": active_holds,
             "member_of_kits": member_of_kits,
-            "checkout_warning": checkout_warning,
-            "can_convert": can_convert,
+            "status_actions": status_actions,
+            "can_convert": can_manage,
+            "can_manage_this_asset": can_manage,
+            "disposal": disposal,
             "active_serials": active_serials,
             "archived_serials": archived_serials,
             "remote_print_available": remote_print_available,
@@ -725,8 +732,11 @@ def asset_delete(request, pk):
         return redirect("assets:asset_detail", pk=asset.pk)
 
     if request.method == "POST":
-        asset.status = "disposed"
-        asset.save(update_fields=["status"])
+        try:
+            dispose_asset(asset, request.user)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+            return redirect("assets:asset_detail", pk=asset.pk)
         messages.success(request, f"Asset '{asset.name}' has been disposed.")
         return redirect("assets:asset_list")
 
@@ -988,12 +998,52 @@ def drafts_bulk_action(request):
             return redirect("assets:drafts_queue")
 
         drafts = Asset.objects.filter(pk__in=selected_ids, status="draft")
+        if action in ("activate", "delete"):
+            from .services.bulk import split_by_edit_permission
+
+            # S2.8.3-05: leave out drafts the user cannot change.
+            if action == "delete":
+                allowed = [
+                    d for d in drafts if can_delete_asset(request.user, d)
+                ]
+                excluded = [d.name for d in drafts if d not in allowed]
+            else:
+                allowed, excluded = split_by_edit_permission(
+                    request.user, drafts
+                )
+            if excluded:
+                messages.warning(
+                    request,
+                    f"{len(excluded)} draft(s) were excluded because you do "
+                    f"not have permission to change them: "
+                    f"{', '.join(excluded)}.",
+                )
+            drafts = Asset.objects.filter(pk__in=[d.pk for d in allowed])
         if action == "activate":
             category_id = request.POST.get("category")
             location_id = request.POST.get("location")
             if category_id and location_id:
-                count = drafts.count()
-                drafts.update(
+                category = get_object_or_404(
+                    Category.objects.select_related("department"),
+                    pk=category_id,
+                )
+                if not can_assign_category(request.user, category):
+                    messages.error(
+                        request,
+                        f"The category '{category.name}' belongs to an "
+                        f"inactive department.",
+                    )
+                    return redirect("assets:drafts_queue")
+                # S7.6.2: an inactive location cannot accept assets.
+                location = get_object_or_404(Location, pk=location_id)
+                if not location.is_active:
+                    messages.error(
+                        request,
+                        "The selected location is inactive and cannot "
+                        "accept assets.",
+                    )
+                    return redirect("assets:drafts_queue")
+                count = drafts.update(
                     status="active",
                     category_id=category_id,
                     current_location_id=location_id,
@@ -1012,8 +1062,10 @@ def drafts_bulk_action(request):
                         activated += 1
                 messages.success(request, f"{activated} draft(s) activated.")
         elif action == "delete":
-            count = drafts.count()
-            drafts.update(status="disposed")
+            count = 0
+            for draft in drafts:
+                dispose_asset(draft, request.user)
+                count += 1
             messages.success(request, f"{count} draft(s) disposed.")
         elif action == "remote_print":
             remote_printer = request.POST.get("remote_printer", "")
@@ -1369,9 +1421,6 @@ def _convert_to_jpeg(uploaded_file):
 @login_required
 def image_upload(request, pk):
     """Upload an image to an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        raise PermissionDenied
     # V899: Configurable via MAX_IMAGE_SIZE_MB env var
     import os
 
@@ -1387,6 +1436,8 @@ def image_upload(request, pk):
     }
 
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
+        raise PermissionDenied
     if request.method == "POST":
         form = AssetImageForm(request.POST, request.FILES)
         if form.is_valid():
@@ -1437,8 +1488,8 @@ def image_upload(request, pk):
 @login_required
 def image_delete(request, pk, image_pk):
     """Delete an asset image."""
-    role = get_user_role(request.user)
-    if role == "viewer":
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
         raise PermissionDenied
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
     if request.method == "POST":
@@ -1458,6 +1509,8 @@ def image_delete(request, pk, image_pk):
 def image_set_primary(request, pk, image_pk):
     """Set an image as primary."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
     if request.method == "POST":
         image.is_primary = True
         image.save()
@@ -1912,8 +1965,14 @@ def asset_checkin(request, pk):
                 asset.home_location = to_location
                 serial_update_fields.append("home_location")
             asset.save(update_fields=serial_update_fields)
+            if not still_out:
+                # bool() reads the cached serials from before the check-in.
+                recover_on_checkin(
+                    asset, request.user, was_checked_out=bool(checked_out)
+                )
         else:
             # --- Non-serialised check-in ---
+            was_checked_out = asset.checked_out_to_id is not None
             Transaction.objects.create(
                 asset=asset,
                 user=request.user,
@@ -1934,6 +1993,9 @@ def asset_checkin(request, pk):
                 asset.home_location = to_location
                 update_fields.append("home_location")
             asset.save(update_fields=update_fields)
+            recover_on_checkin(
+                asset, request.user, was_checked_out=was_checked_out
+            )
 
         messages.success(
             request,
@@ -2753,10 +2815,9 @@ def remote_print_submit(request, pk):
 @login_required
 def clear_barcode(request, pk):
     """Clear an asset's barcode (V163 — S2.4.2-05)."""
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
-        raise PermissionDenied
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_manage_asset(request.user, asset):
+        raise PermissionDenied
     if request.method == "POST" and asset.barcode:
         old_barcode = asset.barcode
         # Use queryset.update() to bypass save() override which
@@ -2932,10 +2993,9 @@ def virtual_barcode_list(request):
 @login_required
 def nfc_add(request, pk):
     """Assign an NFC tag to an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
-        raise PermissionDenied
     asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
+        raise PermissionDenied
 
     if request.method == "POST":
         tag_id = request.POST.get("tag_id", "").strip()
@@ -2984,8 +3044,8 @@ def nfc_add(request, pk):
 @login_required
 def nfc_remove(request, pk, nfc_pk):
     """Remove an NFC tag from an asset."""
-    role = get_user_role(request.user)
-    if role == "viewer":
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_edit_asset(request.user, asset):
         raise PermissionDenied
     # Verify the tag exists (raises 404 if not found)
     get_object_or_404(NFCTag, pk=nfc_pk, asset_id=pk, removed_at__isnull=True)
@@ -3426,6 +3486,11 @@ def category_edit(request, pk):
     if request.method == "POST":
         form = CategoryForm(request.POST, instance=category)
         if form.is_valid():
+            # The new department must also be one the manager manages.
+            if role == "department_manager":
+                dept = form.cleaned_data.get("department")
+                if dept not in request.user.managed_departments.all():
+                    raise PermissionDenied
             form.save()
             messages.success(request, f"Category '{category.name}' updated.")
             return redirect("assets:category_list")
@@ -3723,8 +3788,9 @@ def stocktake_list(request):
 @login_required
 def stocktake_start(request):
     """Start a new stocktake session."""
+    # S2.7.1-05: stocktake is for managers and admins.
     role = get_user_role(request.user)
-    if role == "viewer":
+    if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
     if request.method == "POST":
         location_id = request.POST.get("location")
@@ -3813,8 +3879,9 @@ def stocktake_detail(request, pk):
 @login_required
 def stocktake_confirm(request, pk):
     """Confirm an asset in a stocktake session (HTMX or POST)."""
+    # S2.7.1-05: stocktake is for managers and admins.
     role = get_user_role(request.user)
-    if role == "viewer":
+    if role not in ("system_admin", "department_manager"):
         raise PermissionDenied
     session = get_object_or_404(StocktakeSession, pk=pk, status="in_progress")
 
@@ -3824,6 +3891,8 @@ def stocktake_confirm(request, pk):
         if transfer_id:
             try:
                 transfer_asset = Asset.objects.get(pk=transfer_id)
+                if not can_edit_asset(request.user, transfer_asset):
+                    raise PermissionDenied
                 old_loc = transfer_asset.current_location
                 transfer_asset.current_location = session.location
                 transfer_asset.save(update_fields=["current_location"])
@@ -4028,13 +4097,51 @@ def stocktake_complete(request, pk):
             # Mark unconfirmed assets as missing
             mark_missing = request.POST.get("mark_missing") == "1"
             if mark_missing:
-                missing = session.missing_assets.filter(
-                    checked_out_to__isnull=True
+                # S2.2.3-03: only assets the user can mark missing. Use
+                # one permitted set for the assets, items and records.
+                missing = list(
+                    session.missing_assets.select_related(
+                        "category__department"
+                    )
                 )
-                missing_count = missing.update(status="missing")
+                expected_items = list(
+                    session.items.filter(status="expected").select_related(
+                        "asset__category__department"
+                    )
+                )
+                candidates = {a.pk: a for a in missing}
+                candidates.update(
+                    {i.asset.pk: i.asset for i in expected_items}
+                )
+                permitted = {
+                    pk
+                    for pk, a in candidates.items()
+                    if can_change_status(request.user, a)
+                }
+                excluded = [
+                    a.name
+                    for pk, a in candidates.items()
+                    if pk not in permitted
+                ]
+                if excluded:
+                    messages.warning(
+                        request,
+                        f"{len(excluded)} asset(s) were not marked missing "
+                        f"because you do not manage their department: "
+                        f"{', '.join(sorted(excluded))}.",
+                    )
+                missing_count = Asset.objects.filter(
+                    pk__in=[
+                        a.pk
+                        for a in missing
+                        if a.pk in permitted and a.checked_out_to_id is None
+                    ]
+                ).update(status="missing")
                 # M7: Update StocktakeItems and create Transactions
-                missing_items = session.items.filter(status="expected")
-                for item in missing_items.select_related("asset"):
+                missing_items = [
+                    i for i in expected_items if i.asset.pk in permitted
+                ]
+                for item in missing_items:
                     Transaction.objects.create(
                         asset=item.asset,
                         user=request.user,
@@ -4046,7 +4153,9 @@ def stocktake_complete(request, pk):
                             f"stocktake #{session.pk}"
                         ),
                     )
-                missing_items.update(status="missing")
+                StocktakeItem.objects.filter(
+                    pk__in=[i.pk for i in missing_items]
+                ).update(status="missing")
                 messages.success(
                     request,
                     f"Stocktake completed. {missing_count} asset(s) "
@@ -4264,7 +4373,15 @@ def bulk_actions(request):
         )
         count = result["transferred"]
         skipped = result["skipped"]
-        messages.success(request, f"{count} asset(s) transferred.")
+        if count:
+            messages.success(request, f"{count} asset(s) transferred.")
+        if result["excluded"]:
+            messages.warning(
+                request,
+                f"{len(result['excluded'])} asset(s) were excluded because "
+                f"you do not have permission to change them: "
+                f"{', '.join(result['excluded'])}.",
+            )
         if skipped:
             skipped_list = ", ".join(skipped)
             messages.warning(
@@ -4278,12 +4395,20 @@ def bulk_actions(request):
         if not new_status:
             messages.error(request, "Please select a status.")
             return redirect("assets:asset_list")
-        from .services.bulk import bulk_status_change
+        from .services.bulk import (
+            BULK_LOST_STOLEN_MESSAGE,
+            bulk_status_change,
+        )
+
+        if new_status in ("lost", "stolen"):
+            messages.error(request, BULK_LOST_STOLEN_MESSAGE)
+            return redirect("assets:asset_list")
 
         count, failures = bulk_status_change(
             [int(i) for i in asset_ids], new_status, request.user
         )
-        messages.success(request, f"{count} asset(s) updated.")
+        if count:
+            messages.success(request, f"{count} asset(s) updated.")
         if failures:
             fail_summary = "; ".join(failures[:5])
             if len(failures) > 5:
@@ -4305,12 +4430,20 @@ def bulk_actions(request):
             return redirect("assets:asset_list")
         from .services.bulk import bulk_edit
 
-        count = bulk_edit(
+        count, failures = bulk_edit(
             [int(i) for i in asset_ids],
+            request.user,
             category_id=int(edit_category) if edit_category else None,
             location_id=int(edit_location) if edit_location else None,
         )
-        messages.success(request, f"{count} asset(s) updated.")
+        if count:
+            messages.success(request, f"{count} asset(s) updated.")
+        if failures:
+            messages.warning(
+                request,
+                f"{len(failures)} asset(s) were not changed: "
+                f"{'; '.join(failures)}",
+            )
 
     elif action == "bulk_checkout":
         borrower_id = request.POST.get("bulk_borrower")
@@ -4684,6 +4817,8 @@ def asset_merge_execute(request):
 def ai_analyse(request, pk, image_pk):
     """Trigger AI analysis for an asset image."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
 
     from props.context_processors import is_ai_analysis_enabled
 
@@ -4707,6 +4842,8 @@ def ai_analyse(request, pk, image_pk):
 def ai_apply_suggestions(request, pk, image_pk):
     """Apply AI suggestions to the asset."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
     asset = image.asset
 
     if request.method == "POST":
@@ -4850,6 +4987,8 @@ def ai_status(request, pk, image_pk):
 def ai_reanalyse(request, pk, image_pk):
     """Retry AI analysis for a failed image."""
     image = get_object_or_404(AssetImage, pk=image_pk, asset_id=pk)
+    if not can_edit_asset(request.user, image.asset):
+        raise PermissionDenied
 
     from props.context_processors import is_ai_analysis_enabled
 
@@ -4867,6 +5006,68 @@ def ai_reanalyse(request, pk, image_pk):
 
 
 # --- Handover ---
+
+
+@login_required
+def asset_change_status(request, pk, new_status):
+    """Mark an asset missing, lost, stolen, or found/recovered."""
+    from .services.state import (
+        CHECKED_OUT_MISSING_WARNING,
+        MANUAL_STATUSES,
+        change_status,
+        status_action_label,
+        status_actions,
+    )
+
+    if new_status not in MANUAL_STATUSES:
+        raise Http404
+    asset = get_object_or_404(Asset, pk=pk)
+    if not can_change_status(request.user, asset):
+        raise PermissionDenied
+    if new_status not in dict(status_actions(asset)):
+        messages.error(
+            request,
+            f"A {asset.get_status_display().lower()} asset cannot be "
+            f"changed to {new_status}.",
+        )
+        return redirect("assets:asset_detail", pk=pk)
+
+    title = status_action_label(asset, new_status)
+    form = AssetStatusChangeForm(
+        request.POST or None, asset=asset, new_status=new_status
+    )
+    if request.method == "POST" and form.is_valid():
+        try:
+            change_status(
+                asset,
+                new_status,
+                request.user,
+                notes=form.cleaned_data.get("notes", ""),
+                location=form.cleaned_data.get("location"),
+                confirm_checked_out=form.cleaned_data.get(
+                    "confirm_checked_out", False
+                ),
+            )
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            messages.success(
+                request,
+                f"'{asset.name}' is now {asset.get_status_display().lower()}.",
+            )
+            return redirect("assets:asset_detail", pk=pk)
+
+    return render(
+        request,
+        "assets/asset_change_status.html",
+        {
+            "asset": asset,
+            "form": form,
+            "title": title,
+            "new_status": new_status,
+            "checked_out_warning": CHECKED_OUT_MISSING_WARNING,
+        },
+    )
 
 
 @login_required
@@ -4992,8 +5193,7 @@ def asset_handover(request, pk):
 def asset_convert_serialisation(request, pk):
     """Show conversion impact and handle confirmation."""
     asset = get_object_or_404(Asset, pk=pk)
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    if not can_manage_asset(request.user, asset):
         raise PermissionDenied
 
     if request.method == "POST":
@@ -5176,7 +5376,7 @@ def holdlist_detail(request, pk):
             items_by_location[loc_name] = []
         items_by_location[loc_name].append(item)
 
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     can_write = role in HOLD_LIST_WRITE_ROLES
     # Edit requires ownership for members (mirrors holdlist_edit)
     can_edit = role in ("system_admin", "department_manager") or (
@@ -5257,7 +5457,7 @@ def holdlist_edit(request, pk):
     from assets.models import Department, HoldList, HoldListStatus, Project
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5599,7 +5799,7 @@ def holdlist_delete(request, pk):
     from assets.models import HoldList
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5621,7 +5821,7 @@ def holdlist_lock(request, pk):
     from assets.services.holdlists import lock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5641,7 +5841,7 @@ def holdlist_unlock(request, pk):
     from assets.services.holdlists import unlock_hold_list
 
     hold_list = get_object_or_404(HoldList, pk=pk)
-    role = get_user_role(request.user)
+    role = get_user_role(request.user, hold_list.department)
     if hold_list.created_by != request.user and role not in (
         "system_admin",
         "department_manager",
@@ -5735,8 +5935,7 @@ def kit_contents(request, pk):
     components = AssetKit.objects.filter(kit=asset).select_related(
         "component", "serial"
     )
-    role = get_user_role(request.user)
-    can_manage = role in ("system_admin", "department_manager")
+    can_manage = can_manage_asset(request.user, asset)
     return render(
         request,
         "assets/kit_contents.html",
@@ -5752,8 +5951,7 @@ def kit_contents(request, pk):
 def kit_add_component(request, pk):
     """Add a component to a kit."""
     asset = get_object_or_404(Asset, pk=pk)
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    if not can_manage_asset(request.user, asset):
         raise PermissionDenied
     if not asset.is_kit:
         messages.error(request, "This asset is not a kit.")
@@ -5786,8 +5984,8 @@ def kit_add_component(request, pk):
 @login_required
 def kit_remove_component(request, pk, component_pk):
     """Remove a component from a kit."""
-    role = get_user_role(request.user)
-    if role not in ("system_admin", "department_manager"):
+    kit = get_object_or_404(Asset, pk=pk)
+    if not can_manage_asset(request.user, kit):
         raise PermissionDenied
     if request.method == "POST":
         AssetKit.objects.filter(kit_id=pk, pk=component_pk).delete()

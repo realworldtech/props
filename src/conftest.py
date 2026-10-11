@@ -244,28 +244,36 @@ def viewer_user(db, password):
     return u
 
 
-@pytest.fixture
-def client_logged_in(client, user, password):
+def _logged_in_client(user, password):
+    """Return a new Client for the user.
+
+    Each fixture has its own Client, so a test can use two of them.
+    """
+    from django.test import Client
+
+    client = Client()
     client.login(username=user.username, password=password)
     return client
 
 
 @pytest.fixture
-def admin_client(client, admin_user, password):
-    client.login(username=admin_user.username, password=password)
-    return client
+def client_logged_in(user, password):
+    return _logged_in_client(user, password)
 
 
 @pytest.fixture
-def member_client(client, member_user, password):
-    client.login(username=member_user.username, password=password)
-    return client
+def admin_client(admin_user, password):
+    return _logged_in_client(admin_user, password)
 
 
 @pytest.fixture
-def viewer_client(client, viewer_user, password):
-    client.login(username=viewer_user.username, password=password)
-    return client
+def member_client(member_user, password):
+    return _logged_in_client(member_user, password)
+
+
+@pytest.fixture
+def viewer_client(viewer_user, password):
+    return _logged_in_client(viewer_user, password)
 
 
 @pytest.fixture
@@ -283,9 +291,8 @@ def dept_manager_user(db, password, department):
 
 
 @pytest.fixture
-def dept_manager_client(client, dept_manager_user, password):
-    client.login(username=dept_manager_user.username, password=password)
-    return client
+def dept_manager_client(dept_manager_user, password):
+    return _logged_in_client(dept_manager_user, password)
 
 
 # --- Core model fixtures ---

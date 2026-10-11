@@ -104,6 +104,11 @@ urlpatterns = [
         name="asset_relocate",
     ),
     path(
+        "assets/<int:pk>/status/<str:new_status>/",
+        views.asset_change_status,
+        name="asset_change_status",
+    ),
+    path(
         "assets/<int:pk>/handover/",
         views.asset_handover,
         name="asset_handover",
